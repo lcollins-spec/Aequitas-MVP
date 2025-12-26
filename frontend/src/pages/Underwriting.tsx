@@ -8,8 +8,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { FileText, Download, AlertCircle, ChevronDown, MapPin, RefreshCw } from 'lucide-react';
-import type { DemographicData } from '../types/census';
+import { FileText, Download, AlertCircle, ChevronDown } from 'lucide-react';
 
 // --- FINANCIAL CALCULATION UTILITIES ---
 const calculatePMT = (rate: number, nper: number, pv: number) => {
@@ -40,7 +39,7 @@ const calculateIRR = (values: number[], guess = 0.1) => {
   return rate;
 };
 
-const defaultAmiOptions = [
+const amiOptions = [
   '30% AMI - $24,000/year',
   '50% AMI - $40,000/year',
   '60% AMI - $48,000/year',
@@ -55,7 +54,6 @@ const Underwriting = () => {
   // Deal Parameters State
   const [dealName, setDealName] = useState('New Development Project');
   const [location, setLocation] = useState('Sacramento, CA');
-  const [zipcode, setZipcode] = useState('95814');
   const [totalUnits, setTotalUnits] = useState(200);
   const [purchasePrice, setPurchasePrice] = useState(15000000);
   const [constructionCost, setConstructionCost] = useState(25000000);
@@ -69,47 +67,6 @@ const Underwriting = () => {
   const [holdingPeriod, setHoldingPeriod] = useState(10);
   const [amiTarget, setAmiTarget] = useState('60% AMI - $48,000/year');
   const [gpPartner, setGpPartner] = useState('Aequitas Housing');
-
-  // Demographics State
-  const [demographics, setDemographics] = useState<DemographicData | null>(null);
-  const [loadingDemographics, setLoadingDemographics] = useState(false);
-  const [demographicsError, setDemographicsError] = useState<string | null>(null);
-
-  // Fetch Market Data
-  const fetchMarketData = async () => {
-    if (!zipcode || zipcode.length !== 5) {
-      setDemographicsError('Please enter a valid 5-digit ZIP code');
-      return;
-    }
-
-    setLoadingDemographics(true);
-    setDemographicsError(null);
-
-    try {
-      const response = await fetch(`/api/v1/demographics/${zipcode}`);
-      const result = await response.json();
-
-      if (result.success && result.data) {
-        setDemographics(result.data);
-        // Auto-populate fields
-        setAvgMonthlyRent(result.data.housing.medianGrossRent);
-      } else {
-        setDemographicsError(result.error || 'Failed to fetch demographics');
-      }
-    } catch (error) {
-      setDemographicsError('Network error: Unable to fetch market data');
-    } finally {
-      setLoadingDemographics(false);
-    }
-  };
-
-  // Dynamic AMI options based on demographics
-  const amiOptions = demographics ? [
-    `30% AMI - $${demographics.income.ami30Percent.toLocaleString()}/year`,
-    `50% AMI - $${demographics.income.ami50Percent.toLocaleString()}/year`,
-    `60% AMI - $${demographics.income.ami60Percent.toLocaleString()}/year`,
-    `80% AMI - $${demographics.income.ami80Percent.toLocaleString()}/year`,
-  ] : defaultAmiOptions;
 
   // CALCULATIONS (Memoized for performance)
   const metrics = useMemo(() => {
@@ -212,65 +169,6 @@ const Underwriting = () => {
                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
               />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">ZIP Code</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={zipcode}
-                  onChange={(e) => setZipcode(e.target.value)}
-                  maxLength={5}
-                  placeholder="95814"
-                  className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-                />
-                <button
-                  onClick={fetchMarketData}
-                  disabled={loadingDemographics}
-                  className="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-                >
-                  {loadingDemographics ? (
-                    <>
-                      <RefreshCw size={16} className="animate-spin" />
-                      Loading...
-                    </>
-                  ) : (
-                    <>
-                      <MapPin size={16} />
-                      Fetch Data
-                    </>
-                  )}
-                </button>
-              </div>
-              {demographicsError && (
-                <p className="text-xs text-red-500 mt-1">{demographicsError}</p>
-              )}
-            </div>
-
-            {/* Market Context Panel */}
-            {demographics && (
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
-                <h4 className="text-sm font-semibold text-blue-900 mb-3">Market Context</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <span className="text-xs text-blue-700 block">Median Income:</span>
-                    <span className="text-sm font-bold text-blue-900">${demographics.income.medianHouseholdIncome.toLocaleString()}</span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-blue-700 block">Median Rent:</span>
-                    <span className="text-sm font-bold text-blue-900">${demographics.housing.medianGrossRent}</span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-blue-700 block">Occupancy Rate:</span>
-                    <span className="text-sm font-bold text-blue-900">{demographics.housing.occupancyRate}%</span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-blue-700 block">Total Households:</span>
-                    <span className="text-sm font-bold text-blue-900">{demographics.population.totalHouseholds.toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1.5">Total Units</label>
               <input

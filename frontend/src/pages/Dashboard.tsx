@@ -67,23 +67,9 @@ const recentDeals = [
   },
 ];
 
-interface MarketInsights {
-  avg_ami_served: number;
-  total_markets: number;
-  avg_market_income: number;
-  avg_occupancy_rate: number;
-  avg_median_rent: number;
-}
-
-interface MetricsData {
-  total_affordable_units?: number;
-  families_housed?: number;
-  market_insights?: MarketInsights;
-}
-
 const Dashboard = () => {
   const [dealDescription, setDealDescription] = useState('');
-  const [metrics, setMetrics] = useState<MetricsData | null>(null);
+  const [metrics, setMetrics] = useState<{ total_affordable_units?: number; families_housed?: number } | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(true);
 
   useEffect(() => {
@@ -160,31 +146,6 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
-
-      {/* Market Insights Section */}
-      {metrics?.market_insights && (
-        <div className="mb-6">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4">Market Insights</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl p-5 shadow-sm">
-              <span className="text-xs text-indigo-600 font-medium mb-2 block">Avg AMI Served</span>
-              <span className="text-2xl md:text-3xl font-bold text-indigo-900">{metrics.market_insights.avg_ami_served}%</span>
-            </div>
-            <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl p-5 shadow-sm">
-              <span className="text-xs text-emerald-600 font-medium mb-2 block">Markets Served</span>
-              <span className="text-2xl md:text-3xl font-bold text-emerald-900">{metrics.market_insights.total_markets}</span>
-            </div>
-            <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl p-5 shadow-sm">
-              <span className="text-xs text-amber-600 font-medium mb-2 block">Avg Market Income</span>
-              <span className="text-2xl md:text-3xl font-bold text-amber-900">${(metrics.market_insights.avg_market_income / 1000).toFixed(0)}k</span>
-            </div>
-            <div className="bg-gradient-to-br from-rose-50 to-pink-50 rounded-xl p-5 shadow-sm">
-              <span className="text-xs text-rose-600 font-medium mb-2 block">Avg Median Rent</span>
-              <span className="text-2xl md:text-3xl font-bold text-rose-900">${metrics.market_insights.avg_median_rent}</span>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

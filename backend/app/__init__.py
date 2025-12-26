@@ -1,6 +1,5 @@
 import os
 from flask import Flask
-from flask_cors import CORS
 from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', '.env'))
@@ -17,13 +16,6 @@ def create_app(test_config=None):
         app.config.from_pyfile('config.py', silent=True)
     else:
         app.config.update(test_config)
-
-    # Enable CORS for frontend communication
-    CORS(app, resources={
-        r"/api/*": {
-            "origins": app.config.get('FRONTEND_URL', 'http://localhost:5173')
-        }
-    })
 
     # Simple route
     from .routes import main_bp
