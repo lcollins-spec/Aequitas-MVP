@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   BarChart,
   Bar,
@@ -8,7 +8,8 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { FileText, Download, AlertCircle, ChevronDown } from 'lucide-react';
+import { FileText, Download, AlertCircle, ChevronDown, TrendingUp } from 'lucide-react';
+import { fredApi } from '../services/fredApi';
 
 // --- FINANCIAL CALCULATION UTILITIES ---
 const calculatePMT = (rate: number, nper: number, pv: number) => {
@@ -67,6 +68,30 @@ const Underwriting = () => {
   const [holdingPeriod, setHoldingPeriod] = useState(10);
   const [amiTarget, setAmiTarget] = useState('60% AMI - $48,000/year');
   const [gpPartner, setGpPartner] = useState('Aequitas Housing');
+
+  // FRED API State
+  const [currentMortgageRate, setCurrentMortgageRate] = useState<number | null>(null);
+  const [rateLastUpdated, setRateLastUpdated] = useState<string>('');
+  const [loadingRates, setLoadingRates] = useState(true);
+
+  // Fetch current mortgage rates on mount
+  useEffect(() => {
+    async function fetchCurrentRates() {
+      try {
+        setLoadingRates(true);
+        const response = await fredApi.getRates();
+        if (response.success && response.data) {
+          setCurrentMortgageRate(response.data.mortgage30Year);
+          setRateLastUpdated(response.lastUpdated || new Date().toISOString());
+        }
+      } catch (error) {
+        console.error('Error fetching FRED rates:', error);
+      } finally {
+        setLoadingRates(false);
+      }
+    }
+    fetchCurrentRates();
+  }, []);
 
   // CALCULATIONS (Memoized for performance)
   const metrics = useMemo(() => {
@@ -224,7 +249,24 @@ const Underwriting = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">Interest Rate (%)</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-medium text-gray-600">Interest Rate (%)</label>
+                {currentMortgageRate && !loadingRates && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                      <TrendingUp size={12} />
+                      Market: {currentMortgageRate.toFixed(2)}%
+                    </span>
+                    <button
+                      onClick={() => setInterestRate(currentMortgageRate / 100)}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium underline"
+                      title="Use current 30-year mortgage rate"
+                    >
+                      Use
+                    </button>
+                  </div>
+                )}
+              </div>
               <input
                 type="number"
                 step="0.1"
@@ -232,6 +274,15 @@ const Underwriting = () => {
                 onChange={(e) => setInterestRate((Number(e.target.value) || 0) / 100)}
                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
               />
+              {currentMortgageRate && !loadingRates && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Current 30-year mortgage: {currentMortgageRate.toFixed(2)}% (FRED) •
+                  Last updated: {new Date(rateLastUpdated).toLocaleDateString()}
+                </p>
+              )}
+              {loadingRates && (
+                <p className="text-xs text-gray-400 mt-1">Loading current rates...</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1.5">LTV Ratio (%)</label>

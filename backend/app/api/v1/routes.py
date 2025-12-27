@@ -1,14 +1,19 @@
 from flask import Blueprint, jsonify, request, current_app
 import os
 import json
+from datetime import datetime
 
 from pathlib import Path
 from app.services.census_service import CensusService
+from app.services.fred_service import FREDService
 
 api_v1 = Blueprint('api_v1', __name__)
 
 # Initialize Census service (will be created on first request)
 _census_service = None
+
+# Initialize FRED service (will be created on first request)
+_fred_service = None
 
 
 def get_census_service():
@@ -22,6 +27,18 @@ def get_census_service():
             cache_ttl=current_app.config.get('CENSUS_CACHE_TTL', 86400)
         )
     return _census_service
+
+
+def get_fred_service():
+    """Get or create FRED service instance."""
+    global _fred_service
+    if _fred_service is None:
+        _fred_service = FREDService(
+            api_key=current_app.config.get('FRED_API_KEY', ''),
+            base_url=current_app.config.get('FRED_API_BASE_URL', 'https://api.stlouisfed.org/fred'),
+            cache_ttl=current_app.config.get('FRED_CACHE_TTL', 3600)
+        )
+    return _fred_service
 
 @api_v1.route('/ping', methods=['GET'])
 def ping():
@@ -254,6 +271,330 @@ def calculate_ami():
         return jsonify({
             'success': True,
             'data': result
+        })
+
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'code': 'INVALID_INPUT'
+        }), 400
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error',
+            'code': 'SERVER_ERROR'
+        }), 500
+
+
+# ==================== FRED API Routes ====================
+
+@api_v1.route('/fred/macro', methods=['GET'])
+def get_fred_macro():
+    """
+    Get complete macroeconomic snapshot.
+
+    Returns:
+        JSON response with all FRED data categories
+    """
+    try:
+        fred_service = get_fred_service()
+        macro_data = fred_service.get_macroeconomic_snapshot()
+
+        if macro_data is None:
+            return jsonify({
+                'success': False,
+                'error': 'Unable to fetch macroeconomic data',
+                'code': 'NO_DATA'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'data': macro_data.to_dict()
+        })
+
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'code': 'CONFIGURATION_ERROR'
+        }), 500
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error',
+            'code': 'SERVER_ERROR'
+        }), 500
+
+
+@api_v1.route('/fred/rates', methods=['GET'])
+def get_fred_rates():
+    """
+    Get current interest rates.
+
+    Returns:
+        JSON response with interest rate data
+    """
+    try:
+        fred_service = get_fred_service()
+        rates_data = fred_service.get_interest_rates()
+
+        if rates_data is None:
+            return jsonify({
+                'success': False,
+                'error': 'Unable to fetch interest rates',
+                'code': 'NO_DATA'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'data': rates_data.to_dict(),
+            'lastUpdated': datetime.now().isoformat()
+        })
+
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'code': 'CONFIGURATION_ERROR'
+        }), 500
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error',
+            'code': 'SERVER_ERROR'
+        }), 500
+
+
+@api_v1.route('/fred/inflation', methods=['GET'])
+def get_fred_inflation():
+    """
+    Get inflation metrics.
+
+    Returns:
+        JSON response with inflation data
+    """
+    try:
+        fred_service = get_fred_service()
+        inflation_data = fred_service.get_inflation_data()
+
+        if inflation_data is None:
+            return jsonify({
+                'success': False,
+                'error': 'Unable to fetch inflation data',
+                'code': 'NO_DATA'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'data': inflation_data.to_dict(),
+            'lastUpdated': datetime.now().isoformat()
+        })
+
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'code': 'CONFIGURATION_ERROR'
+        }), 500
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error',
+            'code': 'SERVER_ERROR'
+        }), 500
+
+
+@api_v1.route('/fred/housing-market', methods=['GET'])
+def get_fred_housing_market():
+    """
+    Get housing market indicators.
+
+    Returns:
+        JSON response with housing market data
+    """
+    try:
+        fred_service = get_fred_service()
+        housing_data = fred_service.get_housing_market_data()
+
+        if housing_data is None:
+            return jsonify({
+                'success': False,
+                'error': 'Unable to fetch housing market data',
+                'code': 'NO_DATA'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'data': housing_data.to_dict(),
+            'lastUpdated': datetime.now().isoformat()
+        })
+
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'code': 'CONFIGURATION_ERROR'
+        }), 500
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error',
+            'code': 'SERVER_ERROR'
+        }), 500
+
+
+@api_v1.route('/fred/economic-indicators', methods=['GET'])
+def get_fred_economic_indicators():
+    """
+    Get economic indicators.
+
+    Returns:
+        JSON response with economic indicators data
+    """
+    try:
+        fred_service = get_fred_service()
+        indicators_data = fred_service.get_economic_indicators()
+
+        if indicators_data is None:
+            return jsonify({
+                'success': False,
+                'error': 'Unable to fetch economic indicators',
+                'code': 'NO_DATA'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'data': indicators_data.to_dict(),
+            'lastUpdated': datetime.now().isoformat()
+        })
+
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'code': 'CONFIGURATION_ERROR'
+        }), 500
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error',
+            'code': 'SERVER_ERROR'
+        }), 500
+
+
+@api_v1.route('/fred/mortgage-rates', methods=['GET'])
+def get_fred_mortgage_rates():
+    """
+    Get historical mortgage rate trends.
+
+    Query Parameters:
+        months: Number of months of history (1-60, default 12)
+
+    Returns:
+        JSON response with mortgage rate time series
+    """
+    try:
+        # Validate months parameter
+        months = request.args.get('months', 12, type=int)
+        if months < 1 or months > 60:
+            return jsonify({
+                'success': False,
+                'error': 'months parameter must be between 1 and 60',
+                'code': 'INVALID_INPUT'
+            }), 400
+
+        fred_service = get_fred_service()
+
+        # Calculate approximate number of observations needed (weekly data)
+        limit = months * 5  # Roughly 4-5 weeks per month
+
+        time_series = fred_service.get_time_series('MORTGAGE30US', limit=limit)
+
+        if time_series is None:
+            return jsonify({
+                'success': False,
+                'error': 'Unable to fetch mortgage rate history',
+                'code': 'NO_DATA'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'data': [point.to_dict() for point in time_series],
+            'months': months
+        })
+
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'code': 'INVALID_INPUT'
+        }), 400
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error',
+            'code': 'SERVER_ERROR'
+        }), 500
+
+
+@api_v1.route('/fred/series/<series_id>', methods=['GET'])
+def get_fred_series(series_id):
+    """
+    Get time series data for any FRED series.
+
+    Path Parameters:
+        series_id: FRED series identifier (e.g., 'FEDFUNDS')
+
+    Query Parameters:
+        start_date: Start date in YYYY-MM-DD format (optional)
+        end_date: End date in YYYY-MM-DD format (optional)
+        limit: Maximum number of observations (1-1000, default 100)
+
+    Returns:
+        JSON response with time series data
+    """
+    try:
+        # Get query parameters
+        start_date = request.args.get('start_date', None)
+        end_date = request.args.get('end_date', None)
+        limit = request.args.get('limit', 100, type=int)
+
+        # Validate limit
+        if limit < 1 or limit > 1000:
+            return jsonify({
+                'success': False,
+                'error': 'limit parameter must be between 1 and 1000',
+                'code': 'INVALID_INPUT'
+            }), 400
+
+        fred_service = get_fred_service()
+        time_series = fred_service.get_time_series(
+            series_id=series_id,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit
+        )
+
+        if time_series is None:
+            return jsonify({
+                'success': False,
+                'error': f'Unable to fetch data for series {series_id}',
+                'code': 'NO_DATA'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'seriesId': series_id,
+            'data': [point.to_dict() for point in time_series],
+            'count': len(time_series)
         })
 
     except ValueError as e:
