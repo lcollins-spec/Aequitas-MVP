@@ -21,7 +21,7 @@ const MapPage = () => {
     searchValue: '95814' // Default Sacramento zipcode
   });
   const [filters, setFilters] = useState<PropertyFilters>({
-    propertyType: 'Rental'
+    propertyType: 'All'
   });
 
   // Property and map state
@@ -168,7 +168,7 @@ const MapPage = () => {
    */
   const handleClearFilters = () => {
     setFilters({
-      propertyType: 'Rental'
+      propertyType: 'All'
     });
   };
 

@@ -14,7 +14,8 @@ import { fredApi } from '../services/fredApi';
 import { rentcastApi } from '../services/rentcastApi';
 import { dealApi } from '../services/dealApi';
 import type { RentEstimateData, RentalComparable } from '../types/rentcast';
-import type { Deal } from '../types/deal';
+import type { Deal, DealStatus } from '../types/deal';
+import { DEAL_STATUS_LABELS } from '../types/deal';
 import DealsListSidebar from '../components/DealsListSidebar';
 
 // --- FINANCIAL CALCULATION UTILITIES ---
@@ -67,6 +68,7 @@ const Underwriting = () => {
 
   // Deal Parameters State
   const [dealName, setDealName] = useState('New Development Project');
+  const [dealStatus, setDealStatus] = useState<DealStatus>('potential');
   const [location, setLocation] = useState('Sacramento, CA');
   const [totalUnits, setTotalUnits] = useState(200);
   const [purchasePrice, setPurchasePrice] = useState(15000000);
@@ -174,6 +176,7 @@ const Underwriting = () => {
 
       // Populate form fields from deal
       if (deal.dealName) setDealName(deal.dealName);
+      if (deal.status) setDealStatus(deal.status);
       if (deal.location) setLocation(deal.location);
       if (deal.purchasePrice) setPurchasePrice(deal.purchasePrice);
       if (deal.closingCosts) setClosingCosts(deal.closingCosts);
@@ -208,6 +211,7 @@ const Underwriting = () => {
     try {
       await dealApi.updateDeal(currentDealId, {
         dealName,
+        status: dealStatus,
         location,
         purchasePrice,
         closingCosts,
@@ -365,6 +369,23 @@ const Underwriting = () => {
                 onChange={(e) => setDealName(e.target.value)}
                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
               />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">Deal Status</label>
+              <div className="relative">
+                <select
+                  value={dealStatus}
+                  onChange={(e) => setDealStatus(e.target.value as DealStatus)}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white appearance-none cursor-pointer"
+                >
+                  {Object.entries(DEAL_STATUS_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1.5">Location</label>
