@@ -20,6 +20,9 @@ import {
   ChevronDown,
   Bot,
 } from 'lucide-react';
+import { dealApi } from '../services/dealApi';
+import type { Deal } from '../types/deal';
+import { DEAL_STATUS_LABELS, DEAL_STATUS_COLORS } from '../types/deal';
 
 const unitsOverTimeData = [
   { year: '2020', units: 1200 },
@@ -36,41 +39,12 @@ const unitsByStateData = [
   { state: 'Ohio', units: 3100 },
 ];
 
-const recentDeals = [
-  {
-    name: 'Richmond Commons',
-    location: 'Richmond, VA',
-    units: 180,
-    ami: '60%',
-    status: 'Active',
-  },
-  {
-    name: 'Brooklyn Heights Apartments',
-    location: 'Brooklyn, NY',
-    units: 240,
-    ami: '80%',
-    status: 'Underwriting',
-  },
-  {
-    name: 'Newark View Residences',
-    location: 'Newark, NJ',
-    units: 160,
-    ami: '50%',
-    status: 'Closed',
-  },
-  {
-    name: 'Columbus Gardens',
-    location: 'Columbus, OH',
-    units: 200,
-    ami: '70%',
-    status: 'Active',
-  },
-];
-
 const Dashboard = () => {
   const [dealDescription, setDealDescription] = useState('');
   const [metrics, setMetrics] = useState<{ total_affordable_units?: number; families_housed?: number } | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(true);
+  const [recentDeals, setRecentDeals] = useState<Deal[]>([]);
+  const [dealsLoading, setDealsLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -87,6 +61,31 @@ const Dashboard = () => {
       }
     };
     fetchMetrics();
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchRecentDeals = async () => {
+      try {
+        const deals = await dealApi.getAllDeals(undefined, 10);
+        if (mounted) {
+          // Sort by updatedAt or createdAt in descending order and take the 4 most recent
+          const sortedDeals = deals.sort((a, b) => {
+            const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+            const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+            return dateB - dateA;
+          }).slice(0, 4);
+          setRecentDeals(sortedDeals);
+        }
+      } catch (err) {
+        console.error('Error fetching recent deals:', err);
+        if (mounted) setRecentDeals([]);
+      } finally {
+        if (mounted) setDealsLoading(false);
+      }
+    };
+    fetchRecentDeals();
     return () => { mounted = false; };
   }, []);
 
@@ -251,26 +250,41 @@ const Dashboard = () => {
         <div className="bg-white rounded-xl p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Recent Deals</h3>
           <div className="space-y-3">
-            {recentDeals.map((deal, index) => (
-              <div key={index} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer">
-                <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center flex-shrink-0">
-                  <MapPin size={16} color="#6b7280" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="block font-medium text-gray-800 text-sm">{deal.name}</span>
-                  <span className="block text-xs text-gray-500 mt-0.5">
-                    {deal.location} • {deal.units} units • {deal.ami} AMI
-                  </span>
-                </div>
-                <span className={`px-2.5 py-1 rounded-full text-xs font-medium flex-shrink-0 ${
-                  deal.status === 'Active' ? 'bg-green-100 text-green-700' :
-                  deal.status === 'Underwriting' ? 'bg-blue-100 text-blue-700' :
-                  'bg-gray-200 text-gray-700'
-                }`}>
-                  {deal.status}
-                </span>
+            {dealsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
               </div>
-            ))}
+            ) : recentDeals.length === 0 ? (
+              <div className="py-8 text-center">
+                <p className="text-sm text-gray-500">No deals saved yet. Create a deal to get started.</p>
+              </div>
+            ) : (
+              recentDeals.map((deal) => {
+                const colors = DEAL_STATUS_COLORS[deal.status];
+                return (
+                  <div key={deal.id || deal.dealName} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer">
+                    <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center flex-shrink-0">
+                      <MapPin size={16} color="#6b7280" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="block font-medium text-gray-800 text-sm">{deal.dealName}</span>
+                      <span className="block text-xs text-gray-500 mt-0.5">
+                        {deal.location}
+                        {deal.propertyAddress && ` • ${deal.propertyAddress}`}
+                      </span>
+                      {deal.purchasePrice && (
+                        <span className="block text-xs text-gray-600 mt-1">
+                          ${(deal.purchasePrice / 1000000).toFixed(2)}M
+                        </span>
+                      )}
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium flex-shrink-0 border ${colors.bg} ${colors.text} ${colors.border}`}>
+                      {DEAL_STATUS_LABELS[deal.status]}
+                    </span>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
