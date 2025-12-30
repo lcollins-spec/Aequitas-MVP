@@ -234,7 +234,7 @@ const Underwriting = () => {
   };
 
   /**
-   * Export deal to Excel
+   * Export deal to Excel (Multifamily Underwriting Model)
    */
   const handleExportExcel = async () => {
     if (!currentDealId) {
@@ -244,7 +244,119 @@ const Underwriting = () => {
 
     setExporting(true);
     try {
-      await dealApi.exportDealToExcel(currentDealId, dealName);
+      // Build comprehensive multifamily underwriting data
+      const underwritingData = {
+        propertyName: dealName,
+        address: location,
+        city: location.split(',')[0]?.trim() || '',
+        county: 'Sacramento County', // TODO: Extract from location or add field
+        state: location.split(',')[1]?.trim() || 'CA',
+        zipCode: '95814', // TODO: Add field or extract from location
+        yearBuilt: 1985, // TODO: Add field
+        buildingType: 'Garden Style', // TODO: Add field
+        numberOfBuildings: 4, // TODO: Add field
+        parkingSpaces: totalUnits * 1.5, // Estimate
+
+        purchasePrice: purchasePrice,
+        acquisitionDate: new Date().toISOString(),
+        earnestMoneyPct: 0.02,
+        closingCostsPct: closingCosts / purchasePrice,
+        dueDiligenceCosts: 50000,
+
+        // Generate basic unit mix from total units
+        unitMix: [
+          {
+            unitType: '1BR/1BA',
+            count: Math.floor(totalUnits * 0.3),
+            avgSf: 650,
+            currentRent: avgMonthlyRent * 0.85,
+            marketRent: avgMonthlyRent,
+            renovationCostPerUnit: 8000
+          },
+          {
+            unitType: '2BR/2BA',
+            count: Math.floor(totalUnits * 0.5),
+            avgSf: 900,
+            currentRent: avgMonthlyRent,
+            marketRent: avgMonthlyRent * 1.15,
+            renovationCostPerUnit: 10000
+          },
+          {
+            unitType: '3BR/2BA',
+            count: Math.floor(totalUnits * 0.2),
+            avgSf: 1100,
+            currentRent: avgMonthlyRent * 1.2,
+            marketRent: avgMonthlyRent * 1.4,
+            renovationCostPerUnit: 12000
+          }
+        ],
+
+        physicalOccupancy: 0.95,
+        economicOccupancy: 0.90,
+        vacancyLossAnnual: totalUnits * avgMonthlyRent * 12 * 0.05,
+        concessionsAnnual: 20000,
+        badDebtAnnual: 25000,
+
+        otherIncome: {
+          laundryPerUnit: 15,
+          petRentPerUnit: 25,
+          parkingPerSpace: 30,
+          otherPerUnit: 10
+        },
+
+        operatingExpenses: {
+          propertyTax: purchasePrice * 0.011,
+          insurance: totalUnits * 600,
+          utilitiesElectric: totalUnits * 50 * 12,
+          utilitiesGas: totalUnits * 30 * 12,
+          utilitiesWaterSewer: totalUnits * 40 * 12,
+          utilitiesTrash: totalUnits * 25 * 12,
+          repairsMaintenance: totalUnits * 500,
+          payroll: totalUnits * 350,
+          managementFeePct: 0.04,
+          marketing: totalUnits * 100,
+          legalProfessional: 25000,
+          administrative: totalUnits * 150
+        },
+
+        renovationBudget: {
+          commonAreaExterior: constructionCost || 100000,
+          contingencyPct: 0.10
+        },
+
+        operatingProjections: {
+          marketRentGrowth: 0.03,
+          inplaceRentGrowth: 0.025,
+          otherIncomeGrowth: 0.03,
+          opexGrowth: 0.03,
+          stabilizedVacancy: 0.05,
+          capexPerUnitAnnual: 400
+        },
+
+        financing: {
+          loanType: 'Agency Fixed',
+          ltv: ltv / 100,
+          interestRate: interestRate,
+          amortizationYears: 30,
+          loanTermYears: loanTermYears,
+          originationFeePct: 0.01,
+          lenderLegalDd: 25000
+        },
+
+        exitAssumptions: {
+          holdPeriodYears: holdingPeriod,
+          exitCapRate: exitCapRate,
+          saleCostsPct: 0.04
+        },
+
+        propertyTax: {
+          countyTaxRate: 0.011,
+          prop13Cap: 0.02,
+          specialAssessments: 0
+        }
+      };
+
+      await dealApi.exportMultifamilyToExcel(currentDealId, underwritingData);
     } catch (error) {
       console.error('Error exporting to Excel:', error);
       alert('Failed to export to Excel');

@@ -158,7 +158,7 @@ class DealApiClient {
   }
 
   /**
-   * Export a deal to Excel
+   * Export a deal to Excel (single-family financial model)
    * Downloads the Excel file directly
    */
   async exportDealToExcel(dealId: number, dealName: string): Promise<void> {
@@ -186,6 +186,45 @@ class DealApiClient {
       document.body.removeChild(a);
     } catch (error) {
       console.error(`Error exporting deal ${dealId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Export multifamily underwriting to Excel
+   * Downloads comprehensive multifamily underwriting model
+   */
+  async exportMultifamilyToExcel(dealId: number, underwritingData: any): Promise<void> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/underwriting/${dealId}/export-excel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(underwritingData)
+      });
+
+      if (!response.ok) {
+        const error: ApiError = await response.json();
+        throw new Error(error.error || 'Failed to export multifamily underwriting');
+      }
+
+      // Get the blob from the response
+      const blob = await response.blob();
+
+      // Create a download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${underwritingData.propertyName?.replace(/\s+/g, '_') || 'Property'}_Underwriting_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+
+      // Cleanup
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error(`Error exporting multifamily underwriting ${dealId}:`, error);
       throw error;
     }
   }
