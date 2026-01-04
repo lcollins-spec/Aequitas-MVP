@@ -6,8 +6,8 @@ load_dotenv(os.path.join(base_dir, '.env'))
 
 class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'you-will-never-guess')
-    DEBUG = os.getenv('FLASK_DEBUG', '1') == '1'
-    ENV = os.getenv('FLASK_ENV', 'development')
+    DEBUG = os.getenv('FLASK_DEBUG', '0') == '1'  # Default to False in production
+    ENV = os.getenv('FLASK_ENV', 'production')
 
     # Census API Configuration
     CENSUS_API_KEY = os.getenv('CENSUS_API_KEY', '')
@@ -24,14 +24,20 @@ class Config:
     RENTCAST_API_KEY = os.getenv('RENTCAST_API_KEY', '')
     RENTCAST_CACHE_TTL = int(os.getenv('RENTCAST_CACHE_TTL', '604800'))
 
-    # Frontend URL for CORS
+    # Frontend URL for CORS (only used in development)
     FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
 
     # Database Configuration
-    SQLALCHEMY_DATABASE_URI = os.getenv(
-        'DATABASE_URL',
-        f'sqlite:///{os.path.join(base_dir, "aequitas.db")}'
-    )
+    # Use persistent volume in production, local file in development
+    in_docker = os.path.exists('/.dockerenv')
+    if in_docker:
+        # Production: Use persistent volume mounted at /app/data
+        db_path = '/app/data/aequitas.db'
+    else:
+        # Development: Use local file
+        db_path = os.path.join(base_dir, 'aequitas.db')
+
+    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', f'sqlite:///{db_path}')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ECHO = DEBUG
 

@@ -1,5 +1,5 @@
 import os
-from flask import Flask
+from flask import Flask, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 from app.database import db
@@ -8,7 +8,18 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)),
 
 
 def create_app(test_config=None):
-    app = Flask(__name__, instance_relative_config=True)
+    # Detect if running in Docker (production)
+    in_docker = os.path.exists('/.dockerenv')
+
+    # Set static folder to frontend dist if in production
+    if in_docker:
+        static_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'frontend', 'dist'))
+        app = Flask(__name__,
+                    instance_relative_config=True,
+                    static_folder=static_folder,
+                    static_url_path='')
+    else:
+        app = Flask(__name__, instance_relative_config=True)
 
     # Load default config
     app.config.from_object('config.Config')
@@ -31,18 +42,20 @@ def create_app(test_config=None):
     with app.app_context():
         db.create_all()
 
-    # Enable CORS for frontend communication
-    CORS(app, resources={
-        r"/api/*": {
-            "origins": app.config.get('FRONTEND_URL', 'http://localhost:5173')
-        }
-    })
+    # Enable CORS for frontend communication (only in development)
+    # In production (Docker), CORS not needed as same-origin
+    if not in_docker:
+        CORS(app, resources={
+            r"/api/*": {
+                "origins": app.config.get('FRONTEND_URL', 'http://localhost:5173')
+            }
+        })
 
     # Simple route
     from .routes import main_bp
     app.register_blueprint(main_bp)
 
-    # API blueprints
+    # API blueprints (register BEFORE catch-all)
     from .api.v1.routes import api_v1
     app.register_blueprint(api_v1, url_prefix='/api/v1')
 
@@ -65,5 +78,16 @@ def create_app(test_config=None):
     # Risk assessment API
     from .api.v1.risk_assessment_routes import risk_assessment_bp
     app.register_blueprint(risk_assessment_bp, url_prefix='/api/v1')
+
+    # Serve frontend (only in production/Docker)
+    if in_docker:
+        @app.route('/', defaults={'path': ''})
+        @app.route('/<path:path>')
+        def serve_frontend(path):
+            """Serve React frontend, fallback to index.html for client-side routing"""
+            if path and os.path.exists(os.path.join(app.static_folder, path)):
+                return send_from_directory(app.static_folder, path)
+            else:
+                return send_from_directory(app.static_folder, 'index.html')
 
     return app

@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: aequitas-mvp
+    runtime: docker
+    region: oregon  # Options: oregon, frankfurt, singapore
+    plan: free  # Options: free, starter ($7/mo), standard, pro
+
+    # Docker configuration
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+
+    # Environment variables
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true  # Render auto-generates secure secret
+
+      - key: FLASK_ENV
+        value: production
+
+      - key: FLASK_DEBUG
+        value: 0
+
+      - key: CENSUS_API_KEY
+        sync: false  # Must be set manually in Render dashboard
+
+      - key: FRED_API_KEY
+        sync: false
+
+      - key: RENTCAST_API_KEY
+        sync: false
+
+      - key: FRONTEND_URL
+        value: https://aequitas-mvp.onrender.com  # Update with your actual URL
+
+      - key: DATABASE_URL
+        value: sqlite:////app/data/aequitas.db
+
+      - key: PORT
+        value: 10000  # Render provides this, but setting default
+
+    # Persistent disk for SQLite database
+    disk:
+      name: aequitas-data
+      mountPath: /app/data
+      sizeGB: 1  # Free tier allows up to 1GB
