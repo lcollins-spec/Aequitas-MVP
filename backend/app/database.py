@@ -778,6 +778,7 @@ class RiskAssessmentModel(db.Model):
     cash_flow_cyclicality = Column(String(20))  # 'Low', 'Medium', 'High'
     regulatory_risk_score = Column(Float)
     idiosyncratic_risk_score = Column(Float)
+    composite_risk_score = Column(Float)  # 0-100
     composite_risk_level = Column(String(20))  # 'Low', 'Medium', 'High'
 
     # Part 6: Limits to Arbitrage
@@ -842,6 +843,7 @@ class RiskAssessmentModel(db.Model):
             'cashFlowCyclicality': self.cash_flow_cyclicality,
             'regulatoryRiskScore': self.regulatory_risk_score,
             'idiosyncraticRiskScore': self.idiosyncratic_risk_score,
+            'compositeRiskScore': self.composite_risk_score,
             'compositeRiskLevel': self.composite_risk_level,
 
             # Part 6: Limits to Arbitrage

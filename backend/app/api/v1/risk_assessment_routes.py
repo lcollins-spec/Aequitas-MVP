@@ -54,7 +54,7 @@ def calculate_risk_assessment(deal_id):
         return jsonify({
             'success': True,
             'deal_id': deal_id,
-            'assessment': assessment
+            'data': assessment
         }), 200
 
     except ValueError as e:
@@ -93,7 +93,7 @@ def get_risk_assessment(deal_id):
         return jsonify({
             'success': True,
             'deal_id': deal_id,
-            'assessment': assessment
+            'data': assessment
         }), 200
 
     except Exception as e:
@@ -134,7 +134,7 @@ def get_deal_memo(deal_id):
         return jsonify({
             'success': True,
             'deal_id': deal_id,
-            'memo': memo
+            'data': memo
         }), 200
 
     except ValueError as e:
@@ -200,7 +200,7 @@ def compare_deals():
 
         return jsonify({
             'success': True,
-            'comparison': comparison
+            'data': comparison
         }), 200
 
     except ValueError as e:
@@ -256,7 +256,7 @@ def get_benchmark_data(decile):
             'success': True,
             'decile': decile,
             'geography': geography,
-            'benchmark': benchmark.to_dict()
+            'data': benchmark.to_dict()
         }), 200
 
     except Exception as e:

@@ -41,7 +41,26 @@ const RiskAssessmentPanel: React.FC<RiskAssessmentPanelProps> = ({
       setError(null);
       const data = await getRiskAssessment(dealId);
       if (data) {
-        setAssessment(convertToCamelCase(data) as RiskAssessment);
+        const camelCaseData = convertToCamelCase(data) as RiskAssessment;
+
+        // Validate that all essential fields exist
+        const requiredFields = [
+          'compositeRiskScore', 'compositeRiskLevel', 'betaGdp', 'betaStocks',
+          'systematicRiskScore', 'regulatoryRiskScore', 'idiosyncraticRiskScore',
+          'rpsScore', 'netYield', 'totalReturnLevered', 'totalReturnUnlevered'
+        ];
+
+        const isComplete = requiredFields.every(field =>
+          (camelCaseData as any)[field] !== undefined &&
+          (camelCaseData as any)[field] !== null
+        );
+
+        if (isComplete) {
+          setAssessment(camelCaseData);
+        } else {
+          console.warn('Incomplete risk assessment data, clearing assessment. Please recalculate.');
+          setAssessment(null);
+        }
       }
     } catch (err) {
       console.error('Error loading risk assessment:', err);
@@ -197,11 +216,11 @@ const RiskAssessmentPanel: React.FC<RiskAssessmentPanelProps> = ({
               {/* Composite Risk */}
               <div className="border rounded-lg p-4">
                 <div className="text-sm text-gray-600 mb-1">Risk Level</div>
-                <div className={`inline-block px-3 py-1 rounded-full text-sm font-medium border ${getRiskLevelColor(assessment.compositeRiskLevel)}`}>
-                  {assessment.compositeRiskLevel}
+                <div className={`inline-block px-3 py-1 rounded-full text-sm font-medium border ${getRiskLevelColor(assessment.compositeRiskLevel || 'Unknown')}`}>
+                  {assessment.compositeRiskLevel || 'Unknown'}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
-                  Score: {assessment.compositeRiskScore.toFixed(1)}/100
+                  Score: {assessment.compositeRiskScore?.toFixed(1) ?? 'N/A'}/100
                 </div>
               </div>
             </div>
