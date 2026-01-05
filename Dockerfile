@@ -30,10 +30,11 @@ ENV PYTHONUNBUFFERED=1 \
 # Create app directory
 WORKDIR /app
 
-# Install system dependencies (if needed for Python packages)
+# Install system dependencies (PostgreSQL client libraries for psycopg2)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     gcc \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy backend requirements and install Python dependencies
@@ -45,9 +46,6 @@ COPY backend/ ./backend/
 
 # Copy built frontend from stage 1
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
-
-# Create directory for SQLite database with proper permissions
-RUN mkdir -p /app/data && chmod 777 /app/data
 
 # Expose port (Render will set PORT env var)
 EXPOSE ${PORT}

@@ -28,25 +28,49 @@ class Config:
     FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
 
     # Database Configuration
-    # Use persistent volume in production, local file in development
+    # Supports both PostgreSQL (production) and SQLite (local development)
     in_docker = os.path.exists('/.dockerenv')
     if in_docker:
-        # Production: Use persistent volume mounted at /app/data
-        db_path = '/app/data/aequitas.db'
-    else:
-        # Development: Use local file
-        db_path = os.path.join(base_dir, 'aequitas.db')
+        # Production: Use Render's DATABASE_URL (PostgreSQL)
+        # Render auto-generates this environment variable
+        db_url = os.getenv('DATABASE_URL', '')
 
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', f'sqlite:///{db_path}')
+        # Handle postgres:// vs postgresql:// prefix
+        # Render uses postgres://, SQLAlchemy requires postgresql://
+        if db_url.startswith('postgres://'):
+            db_url = db_url.replace('postgres://', 'postgresql://', 1)
+
+        SQLALCHEMY_DATABASE_URI = db_url
+    else:
+        # Development: Use local SQLite
+        db_path = os.path.join(base_dir, 'aequitas.db')
+        SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', f'sqlite:///{db_path}')
+
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ECHO = DEBUG
 
-    # SQLite-specific connection arguments
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        'connect_args': {
-            'check_same_thread': False,
-            'timeout': 30
-        },
-        'pool_pre_ping': True,
-        'pool_recycle': 3600
-    }
+    # Database-agnostic engine options
+    # Configure based on database type
+    db_uri = SQLALCHEMY_DATABASE_URI
+    if db_uri.startswith('postgresql://'):
+        # PostgreSQL-specific configuration
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            'pool_pre_ping': True,  # Verify connections before using
+            'pool_recycle': 3600,   # Recycle connections after 1 hour
+            'pool_size': 5,         # Connection pool size (free tier limit)
+            'max_overflow': 0,      # No overflow connections on free tier
+            'connect_args': {
+                'connect_timeout': 10,
+                'options': '-c timezone=utc'  # Force UTC timezone
+            }
+        }
+    else:
+        # SQLite-specific configuration
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            'connect_args': {
+                'check_same_thread': False,
+                'timeout': 30
+            },
+            'pool_pre_ping': True,
+            'pool_recycle': 3600
+        }
