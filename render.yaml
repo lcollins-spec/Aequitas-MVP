@@ -4,7 +4,8 @@ services:
     name: aequitas-db
     plan: free
     region: oregon
-    ipAllowList: []  # Allow connections from any Render service
+    databaseName: aequitas
+    databaseUser: aequitas
 
   # Web Service
   - type: web
