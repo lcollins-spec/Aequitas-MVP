@@ -4,8 +4,6 @@ services:
     name: aequitas-db
     plan: free
     region: oregon
-    databaseName: aequitas
-    databaseUser: aequitas
 
   # Web Service
   - type: web
