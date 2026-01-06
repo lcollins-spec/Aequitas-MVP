@@ -85,7 +85,7 @@ const Underwriting = () => {
   const [operatingExpenseRatio, setOperatingExpenseRatio] = useState(0.35);
   const [interestRate, setInterestRate] = useState(0.065);
   const [loanTermYears, setLoanTermYears] = useState(30);
-  const [ltv, setLtv] = useState(75);
+  const [ltv, setLtv] = useState(70);
   const [exitCapRate, setExitCapRate] = useState(0.06);
   const [holdingPeriod, setHoldingPeriod] = useState(10);
   const [amiTarget, setAmiTarget] = useState('60% AMI - $48,000/year');
@@ -145,8 +145,8 @@ const Underwriting = () => {
 
         if (response.success && response.data) {
           setRentEstimate(response.data);
-          // Optionally auto-populate rent if user hasn't changed it from default
-          if (avgMonthlyRent === 1200 && response.data.estimatedRent) {
+          // Auto-populate rent from RentCast data
+          if (response.data.estimatedRent) {
             setAvgMonthlyRent(Math.round(response.data.estimatedRent));
           }
         }
