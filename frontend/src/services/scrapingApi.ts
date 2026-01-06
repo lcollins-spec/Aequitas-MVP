@@ -46,6 +46,36 @@ class ScrapingApiClient {
   }
 
   /**
+   * Extract property data from a PDF file
+   */
+  async extractFromPdf(file: File): Promise<PropertyImport> {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`${API_BASE_URL}/scraping/extract-pdf`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const data: PropertyImportResponse = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to extract property data from PDF');
+      }
+
+      if (!data.data) {
+        throw new Error('No data returned from extraction');
+      }
+
+      return data.data;
+    } catch (error) {
+      console.error('Error extracting data from PDF:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get a property import by ID
    */
   async getImport(importId: number): Promise<PropertyImport> {

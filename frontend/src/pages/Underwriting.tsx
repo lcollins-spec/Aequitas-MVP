@@ -19,6 +19,7 @@ import { DEAL_STATUS_LABELS } from '../types/deal';
 import DealsListSidebar from '../components/DealsListSidebar';
 import RiskAssessmentPanel from '../components/RiskAssessmentPanel';
 import PropertyUrlInput from '../components/PropertyUrlInput';
+import PropertyPdfUpload from '../components/PropertyPdfUpload';
 
 // --- FINANCIAL CALCULATION UTILITIES ---
 const calculatePMT = (rate: number, nper: number, pv: number) => {
@@ -68,6 +69,7 @@ const Underwriting = () => {
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importTab, setImportTab] = useState<'url' | 'pdf'>('url');
 
   // Deal Parameters State
   const [dealName, setDealName] = useState('New Development Project');
@@ -882,14 +884,17 @@ const Underwriting = () => {
         </div>
       </div>
 
-      {/* Import URL Modal */}
+      {/* Import Property Modal */}
       {isImportModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="relative w-full max-w-2xl p-6 bg-white rounded-lg shadow-xl">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-800">Import Property from URL</h2>
+              <h2 className="text-lg font-bold text-gray-800">Import Property Data</h2>
               <button
-                onClick={() => setIsImportModalOpen(false)}
+                onClick={() => {
+                  setIsImportModalOpen(false);
+                  setImportTab('url'); // Reset to URL tab on close
+                }}
                 className="p-1 text-gray-400 hover:text-gray-600"
                 aria-label="Close import modal"
               >
@@ -897,13 +902,54 @@ const Underwriting = () => {
               </button>
             </div>
 
-            <PropertyUrlInput
-              onDataExtracted={async (data) => {
-                await handleImportCreateDeal(data);
-                setIsImportModalOpen(false);
-              }}
-              onError={(err) => console.warn('Import error:', err)}
-            />
+            {/* Tabs */}
+            <div className="flex border-b border-gray-200 mb-4">
+              <button
+                onClick={() => setImportTab('url')}
+                className={`flex-1 py-2 px-4 text-sm font-medium border-b-2 transition-colors ${
+                  importTab === 'url'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Import from URL
+              </button>
+              <button
+                onClick={() => setImportTab('pdf')}
+                className={`flex-1 py-2 px-4 text-sm font-medium border-b-2 transition-colors ${
+                  importTab === 'pdf'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Upload PDF
+              </button>
+            </div>
+
+            {/* Tab Content */}
+            <div>
+              {importTab === 'url' && (
+                <PropertyUrlInput
+                  onDataExtracted={async (data) => {
+                    await handleImportCreateDeal(data);
+                    setIsImportModalOpen(false);
+                    setImportTab('url');
+                  }}
+                  onError={(err) => console.warn('Import error:', err)}
+                />
+              )}
+
+              {importTab === 'pdf' && (
+                <PropertyPdfUpload
+                  onDataExtracted={async (data) => {
+                    await handleImportCreateDeal(data);
+                    setIsImportModalOpen(false);
+                    setImportTab('url');
+                  }}
+                  onError={(err) => console.warn('PDF import error:', err)}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}

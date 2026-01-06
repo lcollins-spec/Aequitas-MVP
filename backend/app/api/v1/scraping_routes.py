@@ -1,16 +1,21 @@
 """
 Property scraping API routes
-Provides REST endpoints for extracting property data from listing URLs
+Provides REST endpoints for extracting property data from listing URLs and PDFs
 """
 import json
+import os
+import tempfile
 from flask import Blueprint, request, jsonify
+from werkzeug.utils import secure_filename
 from app.services.scraping_service import ScrapingService
+from app.services.pdf_extraction_service import PDFExtractionService
 from app.database import db, PropertyImportModel
 
 scraping_bp = Blueprint('scraping', __name__)
 
-# Initialize service (lazy loading)
+# Initialize services (lazy loading)
 _scraping_service = None
+_pdf_service = None
 
 
 def get_scraping_service():
@@ -19,6 +24,14 @@ def get_scraping_service():
     if _scraping_service is None:
         _scraping_service = ScrapingService(cache_ttl=86400)  # 24 hours
     return _scraping_service
+
+
+def get_pdf_service():
+    """Get or create PDF extraction service instance."""
+    global _pdf_service
+    if _pdf_service is None:
+        _pdf_service = PDFExtractionService()
+    return _pdf_service
 
 
 @scraping_bp.route('/scraping/extract', methods=['POST'])
@@ -132,6 +145,143 @@ def extract_property_data():
         }), 400
     except Exception as e:
         print(f"Error in extract_property_data: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error',
+            'code': 'SERVER_ERROR'
+        }), 500
+
+
+@scraping_bp.route('/scraping/extract-pdf', methods=['POST'])
+def extract_from_pdf():
+    """
+    Extract property data from uploaded PDF file.
+
+    Request:
+        Multipart form data with 'file' field containing PDF
+
+    Returns:
+        JSON response with extracted property data and import metadata
+    """
+    try:
+        # Check if file is present
+        if 'file' not in request.files:
+            return jsonify({
+                'success': False,
+                'error': 'No file provided',
+                'code': 'INVALID_INPUT'
+            }), 400
+
+        file = request.files['file']
+
+        # Check if filename is empty
+        if file.filename == '':
+            return jsonify({
+                'success': False,
+                'error': 'No file selected',
+                'code': 'INVALID_INPUT'
+            }), 400
+
+        # Check file extension
+        if not file.filename.lower().endswith('.pdf'):
+            return jsonify({
+                'success': False,
+                'error': 'File must be a PDF',
+                'code': 'INVALID_FILE_TYPE'
+            }), 400
+
+        # Save file to temporary location
+        filename = secure_filename(file.filename)
+        temp_dir = tempfile.mkdtemp()
+        temp_path = os.path.join(temp_dir, filename)
+
+        try:
+            file.save(temp_path)
+
+            # Extract property data from PDF
+            pdf_service = get_pdf_service()
+            result = pdf_service.extract_from_pdf(temp_path)
+
+            # Save import record to database
+            import_record = PropertyImportModel(
+                source_url=f'pdf_upload:{filename}',
+                source_platform='pdf_upload',
+                import_status=result.status,
+                import_method=result.method,
+                error_type=result.error_type,
+                error_message=result.error_message,
+                confidence_score=result.confidence_score,
+                user_assisted=False
+            )
+
+            # Save extracted data as JSON
+            if result.extracted_data:
+                import_record.extracted_data = json.dumps(result.extracted_data.to_dict())
+
+                # Also save individual fields for easy querying
+                import_record.property_address = result.extracted_data.address
+                import_record.city = result.extracted_data.city
+                import_record.state = result.extracted_data.state
+                import_record.zipcode = result.extracted_data.zipcode
+                import_record.latitude = result.extracted_data.latitude
+                import_record.longitude = result.extracted_data.longitude
+                import_record.price = result.extracted_data.asking_price
+                import_record.square_footage = result.extracted_data.building_size_sf
+                import_record.units = result.extracted_data.num_units
+                import_record.bedrooms = result.extracted_data.bedrooms
+                import_record.bathrooms = result.extracted_data.bathrooms
+                import_record.year_built = result.extracted_data.year_built
+                import_record.property_type = result.extracted_data.property_type
+                import_record.noi = result.extracted_data.noi
+                import_record.cap_rate = result.extracted_data.cap_rate
+                import_record.gross_income = result.extracted_data.gross_income
+
+            # Commit to database
+            db.session.add(import_record)
+            db.session.commit()
+
+            # Clean up temp file
+            try:
+                os.remove(temp_path)
+                os.rmdir(temp_dir)
+            except:
+                pass  # Ignore cleanup errors
+
+            # Return result
+            if result.status == 'failed':
+                return jsonify({
+                    'success': False,
+                    'error': result.error_message or 'Failed to extract property data from PDF',
+                    'code': 'EXTRACTION_FAILED',
+                    'details': {
+                        'importId': import_record.id,
+                        'status': result.status,
+                        'errorType': result.error_type,
+                        'errorMessage': result.error_message,
+                        'suggestedAction': result.suggested_action
+                    }
+                }), 400
+
+            response_data = result.to_dict()
+            response_data['importId'] = import_record.id
+
+            return jsonify({
+                'success': True,
+                'data': response_data
+            }), 200
+
+        finally:
+            # Ensure cleanup even if an error occurs
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                if os.path.exists(temp_dir):
+                    os.rmdir(temp_dir)
+            except:
+                pass
+
+    except Exception as e:
+        print(f"Error in extract_from_pdf: {str(e)}")
         return jsonify({
             'success': False,
             'error': 'Internal server error',
