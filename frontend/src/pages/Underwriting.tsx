@@ -36,17 +36,35 @@ const calculateIRR = (values: number[], guess = 0.1) => {
   const maxIter = 1000;
   const precision = 0.00001;
   let rate = guess;
+
   for (let i = 0; i < maxIter; i++) {
     const npvValue = npv(rate, values);
     if (Math.abs(npvValue) < precision) return rate;
+
     const npvDerivative = values.reduce(
       (acc, val, j) => acc - (j * val) / Math.pow(1 + rate, j + 1),
       0
     );
+
+    // Safety check for division by zero
+    if (Math.abs(npvDerivative) < 0.0000001) {
+      console.error('IRR calculation failed: derivative approaching zero');
+      return NaN;
+    }
+
     const newRate = rate - npvValue / npvDerivative;
+
+    // Bounds checking to prevent Infinity/NaN
+    if (!isFinite(newRate) || isNaN(newRate)) {
+      console.error('IRR calculation diverged');
+      return NaN;
+    }
+
     if (Math.abs(newRate - rate) < precision) return newRate;
     rate = newRate;
   }
+
+  console.warn('IRR did not converge after', maxIter, 'iterations');
   return rate;
 };
 
@@ -88,6 +106,8 @@ const Underwriting = () => {
   const [ltv, setLtv] = useState(70);
   const [exitCapRate, setExitCapRate] = useState(0.06);
   const [holdingPeriod, setHoldingPeriod] = useState(10);
+  const [vacancyRate, setVacancyRate] = useState(0.05); // 5% default
+  const [badDebtRate, setBadDebtRate] = useState(0.00); // 0% default
   const [amiTarget, setAmiTarget] = useState('60% AMI - $48,000/year');
   const [gpPartner, setGpPartner] = useState('Aequitas Housing');
 
@@ -372,9 +392,11 @@ const Underwriting = () => {
 
         physicalOccupancy: 0.95,
         economicOccupancy: 0.90,
-        vacancyLossAnnual: totalUnits * avgMonthlyRent * 12 * 0.05,
+        vacancyRate: vacancyRate,
+        badDebtRate: badDebtRate,
+        vacancyLossAnnual: totalUnits * avgMonthlyRent * 12 * vacancyRate,
         concessionsAnnual: 20000,
-        badDebtAnnual: 25000,
+        badDebtAnnual: totalUnits * avgMonthlyRent * 12 * badDebtRate,
 
         otherIncome: {
           laundryPerUnit: 15,
@@ -452,8 +474,9 @@ const Underwriting = () => {
     const annualDebtService = calculatePMT(interestRate / 12, loanTermYears * 12, loanAmount) * 12 * -1;
     
     const grossPotentialRent = totalUnits * avgMonthlyRent * 12;
-    const vacancyLoss = grossPotentialRent * 0.05;
-    const effectiveGrossIncome = grossPotentialRent - vacancyLoss;
+    const vacancyLoss = grossPotentialRent * vacancyRate;
+    const badDebtLoss = grossPotentialRent * badDebtRate;
+    const effectiveGrossIncome = grossPotentialRent - vacancyLoss - badDebtLoss;
     const operatingExpenses = effectiveGrossIncome * operatingExpenseRatio;
     const netOperatingIncome = effectiveGrossIncome - operatingExpenses;
     
@@ -469,13 +492,38 @@ const Underwriting = () => {
     }
     
     const exitNOI = projectedNOI * 1.02;
-    const salePrice = exitNOI / exitCapRate;
-    const loanBalance = loanAmount;
+
+    // Validate exit cap rate before division to prevent Infinity
+    let validExitCapRate = exitCapRate;
+    if (exitCapRate <= 0 || exitCapRate > 1) {
+      console.error('Invalid exit cap rate:', exitCapRate, '- using default 6%');
+      validExitCapRate = 0.06; // Default to 6% if invalid
+    }
+
+    const salePrice = exitNOI / validExitCapRate;
+
+    // Calculate remaining loan balance after holdingPeriod years
+    const monthlyRate = interestRate / 12;
+    const totalPayments = loanTermYears * 12;
+    const paymentsMade = holdingPeriod * 12;
+
+    let loanBalance = loanAmount;
+    if (paymentsMade < totalPayments && monthlyRate > 0) {
+      loanBalance = loanAmount *
+        ((Math.pow(1 + monthlyRate, totalPayments) - Math.pow(1 + monthlyRate, paymentsMade)) /
+         (Math.pow(1 + monthlyRate, totalPayments) - 1));
+    } else if (paymentsMade >= totalPayments) {
+      loanBalance = 0; // Loan fully paid off
+    }
+
     const saleProceeds = salePrice - loanBalance;
     irrStream[irrStream.length - 1] += saleProceeds;
     
     const irr = calculateIRR(irrStream) * 100;
-    const totalReturn = (irrStream.reduce((a, b) => a + b, 0) + equityRequired) / equityRequired;
+
+    // Calculate total cash returned to equity investors (excluding initial investment)
+    const totalCashReturned = irrStream.slice(1).reduce((a, b) => a + b, 0);
+    const totalReturn = totalCashReturned / equityRequired;
     
     return {
       totalProjectCost,
@@ -488,7 +536,7 @@ const Underwriting = () => {
       irr,
       totalReturn,
     };
-  }, [purchasePrice, constructionCost, closingCosts, totalUnits, avgMonthlyRent, operatingExpenseRatio, interestRate, loanTermYears, ltv, exitCapRate, holdingPeriod]);
+  }, [purchasePrice, constructionCost, closingCosts, totalUnits, avgMonthlyRent, operatingExpenseRatio, interestRate, loanTermYears, ltv, exitCapRate, holdingPeriod, vacancyRate, badDebtRate]);
 
   // Format cash flow data for chart
   const cashFlowData = metrics.annualCashFlows.map((cashFlow, index) => ({
@@ -698,6 +746,32 @@ const Underwriting = () => {
               />
             </div>
             <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">Vacancy Rate (%)</label>
+              <input
+                type="number"
+                step="0.1"
+                value={vacancyRate * 100}
+                onChange={(e) => setVacancyRate((Number(e.target.value) || 0) / 100)}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Typical range: 5-8% (stabilized) or 8-15% (value-add)
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">Bad Debt / Loss to Lease (%)</label>
+              <input
+                type="number"
+                step="0.1"
+                value={badDebtRate * 100}
+                onChange={(e) => setBadDebtRate((Number(e.target.value) || 0) / 100)}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Typical range: 0-2% (stabilized) or 5-10% (distressed/value-add)
+              </p>
+            </div>
+            <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-medium text-gray-600">Interest Rate (%)</label>
                 {currentMortgageRate && !loadingRates && (
@@ -890,7 +964,20 @@ const Underwriting = () => {
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm">
               <span className="block text-xs text-gray-500 mb-1">10-Year IRR</span>
-              <span className="block text-xl font-bold text-green-600">{metrics.irr.toFixed(2)}%</span>
+              <span className={`block text-xl font-bold ${
+                isNaN(metrics.irr) || !isFinite(metrics.irr)
+                  ? 'text-red-600'
+                  : metrics.irr > 0
+                    ? 'text-green-600'
+                    : 'text-orange-600'
+              }`}>
+                {isNaN(metrics.irr) || !isFinite(metrics.irr)
+                  ? 'Error'
+                  : `${metrics.irr.toFixed(2)}%`}
+              </span>
+              {(isNaN(metrics.irr) || !isFinite(metrics.irr)) && (
+                <p className="text-xs text-red-600 mt-1">Check exit cap rate</p>
+              )}
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm">
               <span className="block text-xs text-gray-500 mb-1">Equity Multiple</span>
@@ -900,7 +987,14 @@ const Underwriting = () => {
 
           {/* Cash Flow Chart */}
           <div className="bg-white rounded-xl p-6 shadow-sm">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Annual Cash Flow Analysis ({holdingPeriod} Years)</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">
+              Annual Cash Flow Analysis ({holdingPeriod} Years)
+              {metrics.annualCashFlows.some(cf => cf < 0) && (
+                <span className="ml-2 text-xs text-orange-600 font-normal">
+                  ⚠️ Contains negative cash flow (typical for value-add deals)
+                </span>
+              )}
+            </h3>
             <div className="relative">
               <div className="absolute -left-4 top-1/2 -translate-y-1/2 -rotate-90 text-xs text-gray-500 font-medium">Cash Flow ($)</div>
               <ResponsiveContainer width="100%" height={280}>
