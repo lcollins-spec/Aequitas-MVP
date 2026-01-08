@@ -7,11 +7,13 @@
 import React, { useState, useEffect } from 'react';
 import type { RiskAssessment } from '../types/riskAssessment';
 import { calculateRiskAssessment, getRiskAssessment, convertToCamelCase } from '../services/riskAssessmentApi';
+import { dealApi } from '../services/dealApi';
 import RentTierClassification from './RentTierClassification';
 import YieldBreakdown from './YieldBreakdown';
 import CapitalAppreciationChart from './CapitalAppreciationChart';
 import ArbitrageOpportunityCard from './ArbitrageOpportunityCard';
 import DealMemoModal from './DealMemoModal';
+import MissingFieldsModal, { type MissingFieldsData } from './MissingFieldsModal';
 
 interface RiskAssessmentPanelProps {
   dealId: number;
@@ -29,6 +31,8 @@ const RiskAssessmentPanel: React.FC<RiskAssessmentPanelProps> = ({
   const [calculating, setCalculating] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [showMemoModal, setShowMemoModal] = useState<boolean>(false);
+  const [showMissingFieldsModal, setShowMissingFieldsModal] = useState<boolean>(false);
+  const [missingFields, setMissingFields] = useState<string[]>([]);
 
   // Load existing assessment on mount
   useEffect(() => {
@@ -77,10 +81,45 @@ const RiskAssessmentPanel: React.FC<RiskAssessmentPanelProps> = ({
       const data = await calculateRiskAssessment(dealId, holdingPeriod, geography);
       setAssessment(convertToCamelCase(data) as RiskAssessment);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to calculate assessment');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to calculate assessment';
+
+      // Check if error is about missing required fields
+      if (errorMessage.includes('Missing required fields for risk assessment')) {
+        // Parse the missing fields from the error message
+        // Expected format: "Missing required fields for risk assessment: ['bedrooms', 'bathrooms']"
+        const match = errorMessage.match(/\[(.*?)\]/);
+        if (match) {
+          const fields = match[1]
+            .split(',')
+            .map(f => f.trim().replace(/['"]/g, ''));
+          setMissingFields(fields);
+          setShowMissingFieldsModal(true);
+        } else {
+          setError(errorMessage);
+        }
+      } else {
+        setError(errorMessage);
+      }
+
       console.error('Error calculating risk assessment:', err);
     } finally {
       setCalculating(false);
+    }
+  };
+
+  const handleMissingFieldsSubmit = async (fieldsData: MissingFieldsData) => {
+    try {
+      // Update the deal with the missing fields
+      await dealApi.updateDeal(dealId, fieldsData);
+
+      // Close the modal
+      setShowMissingFieldsModal(false);
+      setMissingFields([]);
+
+      // Retry the risk assessment calculation
+      await handleCalculateAssessment();
+    } catch (err) {
+      throw new Error(err instanceof Error ? err.message : 'Failed to update deal');
     }
   };
 
@@ -383,6 +422,17 @@ const RiskAssessmentPanel: React.FC<RiskAssessmentPanelProps> = ({
         onClose={() => setShowMemoModal(false)}
         holdingPeriod={holdingPeriod}
         geography={geography}
+      />
+
+      {/* Missing Fields Modal */}
+      <MissingFieldsModal
+        isOpen={showMissingFieldsModal}
+        onClose={() => {
+          setShowMissingFieldsModal(false);
+          setMissingFields([]);
+        }}
+        onSubmit={handleMissingFieldsSubmit}
+        missingFields={missingFields}
       />
     </div>
   );
