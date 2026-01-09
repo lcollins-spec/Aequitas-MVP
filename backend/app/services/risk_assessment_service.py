@@ -435,16 +435,23 @@ class RiskAssessmentService:
         systematic_risk: Dict,
         regulatory_risk: Dict,
         idiosyncratic_risk: Dict,
-        rent_decile: int
+        rent_decile: int,
+        climate_risk: Optional[Dict] = None  # NEW: 4th dimension
     ) -> Dict:
         """
-        Calculate overall composite risk score
+        Calculate overall composite risk score with optional climate risk (4th dimension)
 
         Key Finding: Low-rent properties have LOWER total risk
         - D1 total risk score: 25-35
         - D10 total risk score: 55-70
 
-        Weighting:
+        Weighting (with climate risk):
+        - Systematic: 30%
+        - Regulatory: 25%
+        - Idiosyncratic: 25%
+        - Climate: 20%
+
+        Weighting (without climate risk - backward compatible):
         - Systematic: 40%
         - Regulatory: 30%
         - Idiosyncratic: 30%
@@ -454,14 +461,17 @@ class RiskAssessmentService:
             regulatory_risk: Output from calculate_regulatory_risk()
             idiosyncratic_risk: Output from calculate_idiosyncratic_risk()
             rent_decile: Property's rent tier (for validation)
+            climate_risk: Optional output from ClimateRiskService (NEW)
 
         Returns:
             {
                 'composite_risk_score': 42.5,  # 0-100
                 'composite_risk_level': 'Low',
-                'systematic_weight': 40,
-                'regulatory_weight': 30,
-                'idiosyncratic_weight': 30,
+                'systematic_weight': 30,
+                'regulatory_weight': 25,
+                'idiosyncratic_weight': 25,
+                'climate_weight': 20,
+                'has_climate_risk': True,
                 'interpretation': 'Lower total risk than high-rent properties',
                 'validation_vs_research': 'Aligned'
             }
@@ -472,12 +482,45 @@ class RiskAssessmentService:
         regulatory_score = regulatory_risk['regulatory_risk_score']
         idiosyncratic_score = idiosyncratic_risk['idiosyncratic_risk_score']
 
-        # Calculate weighted composite (0-100)
-        composite_risk_score = (
-            systematic_score * 0.40 +
-            regulatory_score * 0.30 +
-            idiosyncratic_score * 0.30
+        # Check if climate risk is available and valid
+        has_climate_risk = (
+            climate_risk and
+            'climate_risk_score' in climate_risk and
+            climate_risk.get('climate_risk_level') != 'Unknown'
         )
+
+        # Calculate weighted composite (0-100)
+        if has_climate_risk:
+            climate_score = climate_risk['climate_risk_score']
+
+            # 4-dimension weighting
+            composite_risk_score = (
+                systematic_score * 0.30 +
+                regulatory_score * 0.25 +
+                idiosyncratic_score * 0.25 +
+                climate_score * 0.20
+            )
+
+            weights = {
+                'systematic_weight': 30,
+                'regulatory_weight': 25,
+                'idiosyncratic_weight': 25,
+                'climate_weight': 20
+            }
+        else:
+            # Fallback to 3-dimension weighting (backward compatible)
+            composite_risk_score = (
+                systematic_score * 0.40 +
+                regulatory_score * 0.30 +
+                idiosyncratic_score * 0.30
+            )
+
+            weights = {
+                'systematic_weight': 40,
+                'regulatory_weight': 30,
+                'idiosyncratic_weight': 30,
+                'climate_weight': 0
+            }
 
         # Determine risk level
         if composite_risk_score < 35:
@@ -532,15 +575,15 @@ class RiskAssessmentService:
             'composite_risk_score': round(composite_risk_score, 1),
             'composite_risk_level': composite_risk_level,
             'expected_risk_level': expected_risk,
-            'systematic_weight': 40,
-            'regulatory_weight': 30,
-            'idiosyncratic_weight': 30,
+            **weights,  # Include dynamic weights (systematic, regulatory, idiosyncratic, climate)
+            'has_climate_risk': has_climate_risk,
             'interpretation': interpretation,
             'validation_vs_research': validation,
             'components': {
                 'systematic_score': systematic_score,
                 'regulatory_score': regulatory_score,
-                'idiosyncratic_score': idiosyncratic_score
+                'idiosyncratic_score': idiosyncratic_score,
+                'climate_score': climate_risk.get('climate_risk_score') if has_climate_risk else None
             }
         }
 

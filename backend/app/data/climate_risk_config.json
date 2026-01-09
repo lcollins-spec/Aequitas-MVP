@@ -1,0 +1,200 @@
+{
+  "api_config": {
+    "noaa_cdo": {
+      "base_url": "https://www.ncdc.noaa.gov/cdo-web/api/v2",
+      "rate_limit": 1000,
+      "rate_period": "day",
+      "requires_token": true,
+      "token_env_var": "NOAA_CDO_API_TOKEN"
+    },
+    "usgs_earthquake": {
+      "base_url": "https://earthquake.usgs.gov/fdsnws/event/1/query",
+      "rate_limit": null,
+      "requires_token": false
+    },
+    "fema_nfhl": {
+      "base_url": "https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer",
+      "rate_limit": null,
+      "requires_token": false
+    },
+    "census_geocoder": {
+      "base_url": "https://geocoding.geo.census.gov/geocoder/locations/address",
+      "rate_limit": null,
+      "requires_token": false
+    },
+    "noaa_hurricane": {
+      "base_url": "https://www.ncdc.noaa.gov/cdo-web/api/v2",
+      "rate_limit": 1000,
+      "rate_period": "day",
+      "requires_token": true
+    }
+  },
+
+  "cache_ttl_days": {
+    "flood": 365,
+    "wildfire": 90,
+    "hurricane": 365,
+    "earthquake": 365,
+    "tornado": 180,
+    "extreme_heat": 30,
+    "sea_level_rise": 365,
+    "drought": 7
+  },
+
+  "hazard_weights": {
+    "flood": 0.20,
+    "wildfire": 0.18,
+    "hurricane": 0.15,
+    "earthquake": 0.12,
+    "tornado": 0.10,
+    "extreme_heat": 0.10,
+    "sea_level_rise": 0.08,
+    "drought": 0.07
+  },
+
+  "scoring_thresholds": {
+    "flood": {
+      "zone_mappings": {
+        "A": [90, 100],
+        "AE": [90, 100],
+        "AH": [85, 95],
+        "AO": [85, 95],
+        "V": [95, 100],
+        "VE": [95, 100],
+        "X500": [50, 70],
+        "X": [0, 20],
+        "D": [10, 30],
+        "AREA NOT INCLUDED": [0, 10]
+      },
+      "default": [25, 50]
+    },
+    "wildfire": {
+      "very_high": [90, 100],
+      "high": [70, 89],
+      "moderate": [40, 69],
+      "low": [20, 39],
+      "very_low": [0, 19],
+      "default": [30, 50]
+    },
+    "hurricane": {
+      "coastal_thresholds": {
+        "0_25_miles": [90, 100],
+        "25_50_miles": [70, 85],
+        "50_100_miles": [40, 60],
+        "100_plus_miles": [0, 30]
+      },
+      "frequency_multiplier": {
+        "high": 1.2,
+        "moderate": 1.0,
+        "low": 0.8
+      }
+    },
+    "earthquake": {
+      "pga_thresholds": {
+        "very_high": [90, 100],
+        "high": [60, 89],
+        "moderate": [30, 59],
+        "low": [0, 29]
+      },
+      "pga_values": {
+        "very_high": 0.4,
+        "high": 0.2,
+        "moderate": 0.1
+      }
+    },
+    "tornado": {
+      "ef_scale_weights": {
+        "EF0": 1,
+        "EF1": 2,
+        "EF2": 4,
+        "EF3": 8,
+        "EF4": 16,
+        "EF5": 32
+      },
+      "frequency_thresholds": {
+        "very_high": [90, 100],
+        "high": [60, 89],
+        "moderate": [30, 59],
+        "low": [0, 29]
+      }
+    },
+    "extreme_heat": {
+      "days_over_100f": {
+        "very_high": 30,
+        "high": 15,
+        "moderate": 5
+      },
+      "trend_adjustment": 10
+    },
+    "sea_level_rise": {
+      "coastal_distance_miles": 10,
+      "elevation_thresholds": {
+        "very_high": 10,
+        "high": 20,
+        "moderate": 50
+      }
+    },
+    "drought": {
+      "pdsi_thresholds": {
+        "D4_exceptional": [90, 100],
+        "D3_extreme": [60, 89],
+        "D2_severe": [40, 59],
+        "D1_moderate": [20, 39],
+        "D0_abnormally_dry": [10, 19],
+        "none": [0, 9]
+      }
+    }
+  },
+
+  "composite_risk_levels": {
+    "low": [0, 25],
+    "medium": [25, 50],
+    "high": [50, 75],
+    "very_high": [75, 100]
+  },
+
+  "hazard_labels": {
+    "flood": "Flood",
+    "wildfire": "Wildfire",
+    "hurricane": "Hurricane",
+    "earthquake": "Earthquake",
+    "tornado": "Tornado",
+    "extreme_heat": "Extreme Heat",
+    "sea_level_rise": "Sea Level Rise",
+    "drought": "Drought"
+  },
+
+  "hazard_icons": {
+    "flood": "🌊",
+    "wildfire": "🔥",
+    "hurricane": "🌀",
+    "earthquake": "⚠️",
+    "tornado": "🌪️",
+    "extreme_heat": "🌡️",
+    "sea_level_rise": "🌊",
+    "drought": "🏜️"
+  },
+
+  "notes": {
+    "data_sources": [
+      "FEMA National Flood Hazard Layer (NFHL) - https://www.fema.gov/flood-maps",
+      "USDA Forest Service Wildfire Hazard Potential - https://www.fs.usda.gov/",
+      "NOAA National Hurricane Center - https://www.nhc.noaa.gov/",
+      "USGS Earthquake Hazards Program - https://earthquake.usgs.gov/",
+      "NOAA Storm Prediction Center - https://www.spc.noaa.gov/",
+      "NOAA Climate Data Online - https://www.ncdc.noaa.gov/cdo-web/",
+      "NOAA Sea Level Rise Viewer - https://coast.noaa.gov/slr/",
+      "U.S. Drought Monitor - https://droughtmonitor.unl.edu/"
+    ],
+    "update_recommendations": {
+      "flood": "Annual update from FEMA",
+      "wildfire": "Quarterly update during fire season",
+      "hurricane": "Annual update after hurricane season",
+      "earthquake": "Annual update from USGS",
+      "tornado": "Biannual update from NOAA SPC",
+      "extreme_heat": "Monthly update from NOAA CDO",
+      "sea_level_rise": "Annual update from NOAA",
+      "drought": "Weekly update from US Drought Monitor"
+    }
+  }
+}

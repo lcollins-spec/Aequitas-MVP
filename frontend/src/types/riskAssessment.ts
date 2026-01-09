@@ -55,6 +55,32 @@ export interface RiskAssessment {
   compositeRiskScore: number;
   compositeRiskLevel: 'Low' | 'Medium' | 'High';
 
+  // Climate Risk (Part 5b - NEW: 4th dimension)
+  climateRiskScore?: number; // 0-100 composite score
+  climateRiskLevel?: 'Low' | 'Medium' | 'High' | 'Very High' | 'Unknown';
+
+  // Individual hazard scores (8 hazards)
+  floodRiskScore?: number;
+  wildfireRiskScore?: number;
+  hurricaneRiskScore?: number;
+  earthquakeRiskScore?: number; // Phase 2
+  tornadoRiskScore?: number; // Phase 2
+  extremeHeatRiskScore?: number; // Phase 2
+  seaLevelRiseRiskScore?: number; // Phase 2
+  droughtRiskScore?: number; // Phase 2
+
+  // Geocoding results
+  propertyLatitude?: number;
+  propertyLongitude?: number;
+  geocodedAddress?: string;
+
+  // Top climate hazards
+  topClimateHazards?: Array<{
+    hazard: string;
+    score: number;
+    label: string;
+  }>;
+
   // Arbitrage Opportunities (Part 6)
   renterConstraintScore: number;
   institutionalConstraintScore: number;
@@ -76,6 +102,7 @@ export interface RiskAssessment {
     systematicRisk?: any;
     regulatoryRisk?: any;
     idiosyncraticRisk?: any;
+    climateRisk?: any; // NEW: Climate risk component
     compositeRisk?: any;
     renterConstraints?: any;
     institutionalConstraints?: any;

@@ -12,6 +12,7 @@ import RentTierClassification from './RentTierClassification';
 import YieldBreakdown from './YieldBreakdown';
 import CapitalAppreciationChart from './CapitalAppreciationChart';
 import ArbitrageOpportunityCard from './ArbitrageOpportunityCard';
+import ClimateRiskPanel from './ClimateRiskPanel';
 import DealMemoModal from './DealMemoModal';
 import MissingFieldsModal, { type MissingFieldsData } from './MissingFieldsModal';
 
@@ -377,6 +378,27 @@ const RiskAssessmentPanel: React.FC<RiskAssessmentPanelProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Climate Risk (NEW - 4th Dimension) */}
+          {assessment.climateRiskScore !== undefined && (
+            <div className="mt-6">
+              <ClimateRiskPanel
+                climateRiskScore={assessment.climateRiskScore}
+                climateRiskLevel={assessment.climateRiskLevel}
+                topHazards={assessment.topClimateHazards}
+                individualScores={{
+                  flood: assessment.floodRiskScore,
+                  wildfire: assessment.wildfireRiskScore,
+                  hurricane: assessment.hurricaneRiskScore,
+                  earthquake: assessment.earthquakeRiskScore,
+                  tornado: assessment.tornadoRiskScore,
+                  extremeHeat: assessment.extremeHeatRiskScore,
+                  seaLevelRise: assessment.seaLevelRiseRiskScore,
+                  drought: assessment.droughtRiskScore
+                }}
+              />
+            </div>
+          )}
 
           {/* Calculation Metadata */}
           <div className="bg-gray-50 rounded-lg p-4">

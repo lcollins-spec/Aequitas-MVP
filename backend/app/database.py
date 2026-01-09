@@ -3,7 +3,7 @@ Database configuration and models for Aequitas MVP
 """
 from datetime import datetime, date
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Date, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Date, ForeignKey, Boolean, JSON, Index
 from sqlalchemy.sql import func
 
 db = SQLAlchemy()
@@ -781,6 +781,29 @@ class RiskAssessmentModel(db.Model):
     composite_risk_score = Column(Float)  # 0-100
     composite_risk_level = Column(String(20))  # 'Low', 'Medium', 'High'
 
+    # Part 5b: Climate Risk (NEW - 4th dimension)
+    climate_risk_score = Column(Float)  # 0-100 composite score
+    climate_risk_level = Column(String(20))  # 'Low', 'Medium', 'High', 'Very High', 'Unknown'
+
+    # Individual hazard scores (8 hazards)
+    flood_risk_score = Column(Float)
+    wildfire_risk_score = Column(Float)
+    hurricane_risk_score = Column(Float)
+    earthquake_risk_score = Column(Float)
+    tornado_risk_score = Column(Float)
+    extreme_heat_risk_score = Column(Float)
+    sea_level_rise_risk_score = Column(Float)
+    drought_risk_score = Column(Float)
+
+    # Geocoding results
+    property_latitude = Column(Float)
+    property_longitude = Column(Float)
+    geocoded_address = Column(String(500))
+
+    # Climate data metadata
+    climate_data_sources = Column(JSON)  # Track which APIs were used
+    climate_calculation_date = Column(DateTime)
+
     # Part 6: Limits to Arbitrage
     renter_constraint_score = Column(Float)
     institutional_constraint_score = Column(Float)
@@ -845,6 +868,23 @@ class RiskAssessmentModel(db.Model):
             'idiosyncraticRiskScore': self.idiosyncratic_risk_score,
             'compositeRiskScore': self.composite_risk_score,
             'compositeRiskLevel': self.composite_risk_level,
+
+            # Part 5b: Climate Risk (NEW)
+            'climateRiskScore': self.climate_risk_score,
+            'climateRiskLevel': self.climate_risk_level,
+            'floodRiskScore': self.flood_risk_score,
+            'wildfireRiskScore': self.wildfire_risk_score,
+            'hurricaneRiskScore': self.hurricane_risk_score,
+            'earthquakeRiskScore': self.earthquake_risk_score,
+            'tornadoRiskScore': self.tornado_risk_score,
+            'extremeHeatRiskScore': self.extreme_heat_risk_score,
+            'seaLevelRiseRiskScore': self.sea_level_rise_risk_score,
+            'droughtRiskScore': self.drought_risk_score,
+            'propertyLatitude': self.property_latitude,
+            'propertyLongitude': self.property_longitude,
+            'geocodedAddress': self.geocoded_address,
+            'climateDataSources': self.climate_data_sources,
+            'climateCalculationDate': self.climate_calculation_date.isoformat() if self.climate_calculation_date else None,
 
             # Part 6: Limits to Arbitrage
             'renterConstraintScore': self.renter_constraint_score,
@@ -1357,3 +1397,86 @@ class PropertyImportModel(db.Model):
             user_assisted=data.get('userAssisted', False),
             confidence_score=data.get('confidenceScore')
         )
+
+
+class ClimateRiskCache(db.Model):
+    """
+    SQLAlchemy model for caching climate risk API responses
+    Reduces API calls and improves performance
+    """
+    __tablename__ = 'climate_risk_cache'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    latitude = Column(Float, nullable=False, index=True)
+    longitude = Column(Float, nullable=False, index=True)
+    hazard_type = Column(String(30), nullable=False)  # 'flood', 'wildfire', etc.
+
+    # Risk data
+    risk_score = Column(Float)  # 0-100
+    risk_details = Column(JSON)  # Store full hazard data
+
+    # Metadata
+    data_source = Column(String(100))  # e.g., 'FEMA NFHL', 'USGS'
+    created_at = Column(DateTime, default=func.now())
+    expires_at = Column(DateTime)  # TTL
+
+    # Composite index for fast lookups
+    __table_args__ = (
+        Index('idx_location_hazard', 'latitude', 'longitude', 'hazard_type'),
+    )
+
+    def __repr__(self):
+        return f'<ClimateRiskCache {self.hazard_type} at ({self.latitude}, {self.longitude})>'
+
+    def is_expired(self):
+        """Check if cache entry has expired"""
+        if not self.expires_at:
+            return False
+        return datetime.utcnow() > self.expires_at
+
+
+class ApiRateLimit(db.Model):
+    """
+    SQLAlchemy model for tracking API usage to avoid exceeding rate limits
+    """
+    __tablename__ = 'api_rate_limits'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    api_name = Column(String(50), nullable=False)  # 'NOAA_CDO', 'USGS', etc.
+    date = Column(Date, nullable=False, index=True)
+    request_count = Column(Integer, default=0)
+    limit_per_day = Column(Integer)
+
+    __table_args__ = (
+        Index('idx_api_date', 'api_name', 'date'),
+    )
+
+    def __repr__(self):
+        return f'<ApiRateLimit {self.api_name} on {self.date}: {self.request_count}/{self.limit_per_day}>'
+
+    @staticmethod
+    def check_and_increment(api_name, limit):
+        """Check if we can make another request and increment counter"""
+        from datetime import date as date_class
+        today = date_class.today()
+
+        rate_limit = ApiRateLimit.query.filter_by(
+            api_name=api_name,
+            date=today
+        ).first()
+
+        if not rate_limit:
+            rate_limit = ApiRateLimit(
+                api_name=api_name,
+                date=today,
+                request_count=0,
+                limit_per_day=limit
+            )
+            db.session.add(rate_limit)
+
+        if rate_limit.request_count >= limit:
+            return False  # Limit exceeded
+
+        rate_limit.request_count += 1
+        db.session.commit()
+        return True

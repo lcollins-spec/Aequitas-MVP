@@ -13,6 +13,7 @@ from app.services.capital_appreciation_service import CapitalAppreciationService
 from app.services.total_return_service import TotalReturnService
 from app.services.risk_assessment_service import RiskAssessmentService
 from app.services.arbitrage_limits_service import ArbitrageLimitsService
+from app.services.climate_risk_service import ClimateRiskService
 
 
 class DealService:
@@ -295,8 +296,12 @@ class DealService:
         if year_built:
             property_age = datetime.now().year - year_built
 
-        # Default state (should be extracted from address in production)
-        state = 'CA'
+        # Try to determine state / coordinates from existing deal data
+        # Prefer explicit latitude/longitude if present, otherwise attempt to parse
+        # the provided property address into components and call the Census geocoder.
+        state = getattr(deal, 'state', None)
+        latitude = getattr(deal, 'latitude', None)
+        longitude = getattr(deal, 'longitude', None)
 
         systematic_risk = RiskAssessmentService.calculate_systematic_risk(
             rent_decile=rent_decile,
@@ -304,7 +309,7 @@ class DealService:
         )
 
         regulatory_risk = RiskAssessmentService.calculate_regulatory_risk(
-            state=state,
+            state=state or 'CA',
             city=None,
             rent_level=predicted_rent,
             ami_percentage=None
@@ -318,11 +323,102 @@ class DealService:
             occupancy_rate=None
         )
 
+        # Step 7b: Calculate Climate Risk (NEW - 4th dimension)
+        climate_risk = None
+        try:
+            # If deal already has lat/lon use them directly (no geocoding needed)
+            if latitude is not None and longitude is not None:
+                climate_risk = ClimateRiskService.calculate_composite_climate_risk(
+                    latitude=latitude,
+                    longitude=longitude,
+                    property_type=getattr(deal, 'property_type', None)
+                )
+
+                print(f"✓ Climate risk calculated from existing coordinates: {climate_risk['climate_risk_score']:.1f} ({climate_risk['climate_risk_level']})")
+            else:
+                # Try to build address components from model fields or single-line property_address
+                property_address = getattr(deal, 'property_address', '') or ''
+                street = getattr(deal, 'street_address', None) or ''
+                city = getattr(deal, 'city', None) or ''
+                zipcode = getattr(deal, 'zipcode', None) or ''
+
+                # If components missing, do a lightweight parse of property_address
+                if not (street or city or zipcode or state):
+                    import re
+                    # Extract ZIP (5 digits, optionally +4)
+                    m_zip = re.search(r"(\b\d{5}(?:-\d{4})?\b)", property_address)
+                    if m_zip:
+                        zipcode = zipcode or m_zip.group(1)
+
+                    # Extract state abbreviation if present (e.g., ", CA 94102")
+                    m_state = re.search(r",\s*([A-Z]{2})(?:\s+\d{5})?$", property_address)
+                    if m_state:
+                        state = state or m_state.group(1)
+
+                    # Naive split: street, city, state/zip
+                    parts = [p.strip() for p in property_address.split(',') if p.strip()]
+                    if len(parts) >= 3:
+                        street = street or parts[0]
+                        city = city or parts[-2]
+                        if not state:
+                            # try to pull state from last part
+                            last = parts[-1].split()
+                            if last:
+                                state = last[0]
+                    elif len(parts) == 2:
+                        street = street or parts[0]
+                        city = city or parts[1]
+
+                # Final fallback for state
+                if not state:
+                    state = 'CA'
+
+                # Call geocoder with whatever components we have (Census geocoder accepts missing pieces)
+                geocode_result = ClimateRiskService.geocode_property_address(
+                    street=street or '',
+                    city=city or '',
+                    state=state,
+                    zipcode=zipcode or ''
+                )
+
+                if geocode_result:
+                    latitude = geocode_result['latitude']
+                    longitude = geocode_result['longitude']
+
+                    # Calculate climate risk (Phase 1: Flood, Wildfire, Hurricane)
+                    climate_risk = ClimateRiskService.calculate_composite_climate_risk(
+                        latitude=latitude,
+                        longitude=longitude,
+                        property_type=getattr(deal, 'property_type', None)
+                    )
+
+                    print(f"✓ Climate risk calculated: {climate_risk['climate_risk_score']:.1f} ({climate_risk['climate_risk_level']})")
+                else:
+                    # Geocoding failed - use default Unknown
+                    print(f"⚠ Geocoding failed for deal {deal_id}, climate risk will be marked Unknown")
+                    climate_risk = {
+                        'climate_risk_score': 0,
+                        'climate_risk_level': 'Unknown',
+                        'error': 'Unable to geocode property address',
+                        'warning': 'Property address could not be converted to coordinates'
+                    }
+        except Exception as e:
+            # Climate risk calculation failed - don't fail entire assessment
+            print(f"⚠ Climate risk calculation failed: {e}")
+            climate_risk = {
+                'climate_risk_score': 0,
+                'climate_risk_level': 'Unknown',
+                'error': str(e),
+                'warning': 'Climate risk calculation unavailable'
+            }
+
+        # Step 7c: Calculate composite risk (with optional climate risk)
         composite_risk = RiskAssessmentService.calculate_composite_risk(
             systematic_risk=systematic_risk,
             regulatory_risk=regulatory_risk,
             idiosyncratic_risk=idiosyncratic_risk,
-            rent_decile=rent_decile
+            rent_decile=rent_decile,
+            climate_risk=climate_risk  # NEW: Pass climate risk if available
         )
 
         # Step 8: Calculate arbitrage opportunity
@@ -418,6 +514,21 @@ class DealService:
             'composite_risk_score': composite_risk['composite_risk_score'],
             'composite_risk_level': composite_risk['composite_risk_level'],
 
+            # Climate Risk (NEW - 4th dimension)
+            'climate_risk_score': climate_risk.get('climate_risk_score') if climate_risk else None,
+            'climate_risk_level': climate_risk.get('climate_risk_level') if climate_risk else None,
+            'flood_risk_score': climate_risk.get('hazards', {}).get('flood', {}).get('score') if climate_risk else None,
+            'wildfire_risk_score': climate_risk.get('hazards', {}).get('wildfire', {}).get('score') if climate_risk else None,
+            'hurricane_risk_score': climate_risk.get('hazards', {}).get('hurricane', {}).get('score') if climate_risk else None,
+            'earthquake_risk_score': climate_risk.get('hazards', {}).get('earthquake', {}).get('score') if climate_risk else None,
+            'tornado_risk_score': climate_risk.get('hazards', {}).get('tornado', {}).get('score') if climate_risk else None,
+            'extreme_heat_risk_score': climate_risk.get('hazards', {}).get('extreme_heat', {}).get('score') if climate_risk else None,
+            'sea_level_rise_risk_score': climate_risk.get('hazards', {}).get('sea_level_rise', {}).get('score') if climate_risk else None,
+            'drought_risk_score': climate_risk.get('hazards', {}).get('drought', {}).get('score') if climate_risk else None,
+            'property_latitude': climate_risk.get('latitude') if climate_risk else None,
+            'property_longitude': climate_risk.get('longitude') if climate_risk else None,
+            'top_climate_hazards': climate_risk.get('top_hazards') if climate_risk else None,
+
             # Arbitrage
             'renter_constraint_score': renter_constraints['renter_constraint_score'],
             'institutional_constraint_score': institutional_constraints['institutional_constraint_score'],
@@ -445,6 +556,7 @@ class DealService:
                 'systematic_risk': systematic_risk,
                 'regulatory_risk': regulatory_risk,
                 'idiosyncratic_risk': idiosyncratic_risk,
+                'climate_risk': climate_risk,  # NEW: Climate risk component
                 'composite_risk': composite_risk,
                 'renter_constraints': renter_constraints,
                 'institutional_constraints': institutional_constraints,
@@ -530,6 +642,20 @@ class DealService:
                 idiosyncratic_risk_score=assessment['idiosyncratic_risk_score'],
                 composite_risk_level=assessment['composite_risk_level'],
                 composite_risk_score=assessment['composite_risk_score'],
+                # Climate Risk (NEW)
+                climate_risk_score=assessment.get('climate_risk_score'),
+                climate_risk_level=assessment.get('climate_risk_level'),
+                flood_risk_score=assessment.get('flood_risk_score'),
+                wildfire_risk_score=assessment.get('wildfire_risk_score'),
+                hurricane_risk_score=assessment.get('hurricane_risk_score'),
+                earthquake_risk_score=assessment.get('earthquake_risk_score'),
+                tornado_risk_score=assessment.get('tornado_risk_score'),
+                extreme_heat_risk_score=assessment.get('extreme_heat_risk_score'),
+                sea_level_rise_risk_score=assessment.get('sea_level_rise_risk_score'),
+                drought_risk_score=assessment.get('drought_risk_score'),
+                property_latitude=assessment.get('property_latitude'),
+                property_longitude=assessment.get('property_longitude'),
+                climate_calculation_date=datetime.utcnow() if assessment.get('climate_risk_score') else None,
                 renter_constraint_score=assessment['renter_constraint_score'],
                 institutional_constraint_score=assessment['institutional_constraint_score'],
                 medium_landlord_constraint_score=assessment['medium_landlord_fit_score'],
