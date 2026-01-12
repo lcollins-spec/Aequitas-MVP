@@ -130,130 +130,129 @@ const DealFormModal = ({ isOpen, onClose, onSubmit, initialData, showUrlImport =
           </div>
         )}
 
-        {/* Toggle Button & URL Input Section (optional) */}
+        {/* Toggle Button - only show if URL import feature is enabled */}
         {showUrlImport && (
-          <>
-            <div className="mb-4">
-              <button
-                type="button"
-                onClick={() => setShowUrlInput(!showUrlInput)}
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={() => setShowUrlInput(!showUrlInput)}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 transition-colors bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+            >
+              {showUrlInput ? (
+                <>
+                  <Edit3 size={16} />
+                  Enter Manually
+                </>
+              ) : (
+                <>
+                  <Link2 size={16} />
+                  Import from URL
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Conditional: Show URL input OR manual form */}
+        {showUrlImport && showUrlInput ? (
+          <PropertyUrlInput
+            onDataExtracted={handleDataExtracted}
+            onError={setError}
+          />
+        ) : (
+          /* Manual Form */
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Deal Name */}
+            <div>
+              <label htmlFor="dealName" className="block mb-1 text-sm font-medium text-gray-700">
+                Deal Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                id="dealName"
+                value={formData.dealName}
+                onChange={(e) => setFormData({ ...formData, dealName: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="e.g., Sacramento Rental Property"
                 disabled={loading}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 transition-colors bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50"
-              >
-                {showUrlInput ? (
-                  <>
-                    <Edit3 size={16} />
-                    Enter Manually
-                  </>
-                ) : (
-                  <>
-                    <Link2 size={16} />
-                    Import from URL
-                  </>
-                )}
-              </button>
+                required
+              />
             </div>
 
-            {showUrlInput ? (
-              <PropertyUrlInput
-                onDataExtracted={handleDataExtracted}
-                onError={setError}
+            {/* Location */}
+            <div>
+              <label htmlFor="location" className="block mb-1 text-sm font-medium text-gray-700">
+                Location <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                id="location"
+                value={formData.location}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="e.g., Sacramento, CA"
+                disabled={loading}
+                required
               />
-            ) : (
-              /* Manual Form */
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {/* Deal Name */}
-                <div>
-                  <label htmlFor="dealName" className="block mb-1 text-sm font-medium text-gray-700">
-                    Deal Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="dealName"
-                    value={formData.dealName}
-                    onChange={(e) => setFormData({ ...formData, dealName: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., Sacramento Rental Property"
-                    disabled={loading}
-                    required
-                  />
-                </div>
+            </div>
 
-                {/* Location */}
-                <div>
-                  <label htmlFor="location" className="block mb-1 text-sm font-medium text-gray-700">
-                    Location <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="location"
-                    value={formData.location}
-                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., Sacramento, CA"
-                    disabled={loading}
-                    required
-                  />
-                </div>
-
-                {/* Property Address (optional, pre-filled) */}
-                {formData.propertyAddress && (
-                  <div>
-                    <label htmlFor="propertyAddress" className="block mb-1 text-sm font-medium text-gray-700">
-                      Property Address
-                    </label>
-                    <input
-                      type="text"
-                      id="propertyAddress"
-                      value={formData.propertyAddress}
-                      onChange={(e) => setFormData({ ...formData, propertyAddress: e.target.value })}
-                      className="w-full px-3 py-2 text-gray-600 bg-gray-50 border border-gray-300 rounded-lg"
-                      disabled={loading}
-                      readOnly
-                    />
-                  </div>
-                )}
-
-                {/* Status */}
-                <div>
-                  <label htmlFor="status" className="block mb-1 text-sm font-medium text-gray-700">
-                    Status
-                  </label>
-                  <select
-                    id="status"
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value as DealStatus })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    disabled={loading}
-                  >
-                    <option value="potential">{DEAL_STATUS_LABELS.potential}</option>
-                    <option value="ongoing">{DEAL_STATUS_LABELS.ongoing}</option>
-                    <option value="completed">{DEAL_STATUS_LABELS.completed}</option>
-                    <option value="rejected">{DEAL_STATUS_LABELS.rejected}</option>
-                  </select>
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={handleClose}
-                    disabled={loading}
-                    className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 transition-colors bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="flex-1 px-4 py-2 text-sm font-medium text-white transition-colors bg-blue-500 rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {loading ? 'Creating...' : 'Create Deal'}
-                  </button>
-                </div>
-              </form>
+            {/* Property Address (optional, pre-filled) */}
+            {formData.propertyAddress && (
+              <div>
+                <label htmlFor="propertyAddress" className="block mb-1 text-sm font-medium text-gray-700">
+                  Property Address
+                </label>
+                <input
+                  type="text"
+                  id="propertyAddress"
+                  value={formData.propertyAddress}
+                  onChange={(e) => setFormData({ ...formData, propertyAddress: e.target.value })}
+                  className="w-full px-3 py-2 text-gray-600 bg-gray-50 border border-gray-300 rounded-lg"
+                  disabled={loading}
+                  readOnly
+                />
+              </div>
             )}
-          </>
+
+            {/* Status */}
+            <div>
+              <label htmlFor="status" className="block mb-1 text-sm font-medium text-gray-700">
+                Status
+              </label>
+              <select
+                id="status"
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value as DealStatus })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                disabled={loading}
+              >
+                <option value="potential">{DEAL_STATUS_LABELS.potential}</option>
+                <option value="ongoing">{DEAL_STATUS_LABELS.ongoing}</option>
+                <option value="completed">{DEAL_STATUS_LABELS.completed}</option>
+                <option value="rejected">{DEAL_STATUS_LABELS.rejected}</option>
+              </select>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-4">
+              <button
+                type="button"
+                onClick={handleClose}
+                disabled={loading}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 transition-colors bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white transition-colors bg-blue-500 rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Creating...' : 'Create Deal'}
+              </button>
+            </div>
+          </form>
         )}
       </div>
     </div>
