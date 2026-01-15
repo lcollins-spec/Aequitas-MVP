@@ -48,6 +48,11 @@ def create_underwriting_model(data=None):
 
     wb = Workbook()
     _workbook = wb  # Set global reference
+
+    # Enable automatic calculation
+    wb.calculation.calcMode = 'auto'
+    wb.calculation.fullCalcOnLoad = True
+
     wb.remove(wb.active)  # Remove default sheet
 
     # Create tabs in order

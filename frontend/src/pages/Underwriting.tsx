@@ -93,6 +93,11 @@ const Underwriting = () => {
   const [dealName, setDealName] = useState('New Development Project');
   const [dealStatus, setDealStatus] = useState<DealStatus>('potential');
   const [location, setLocation] = useState('Sacramento, CA');
+  const [county, setCounty] = useState('Sacramento County');
+  const [zipCode, setZipCode] = useState('95814');
+  const [yearBuilt, setYearBuilt] = useState(1985);
+  const [buildingType, setBuildingType] = useState('Garden Style');
+  const [numberOfBuildings, setNumberOfBuildings] = useState(4);
   const [totalUnits, setTotalUnits] = useState(200);
   const [purchasePrice, setPurchasePrice] = useState(15000000);
   const [constructionCostPct, setConstructionCostPct] = useState(10); // percentage
@@ -252,6 +257,40 @@ const Underwriting = () => {
         setLocation(data.address);
       }
 
+      // Populate new geographic fields
+      if (data.county) {
+        setCounty(data.county);
+      }
+
+      if (data.zipCode) {
+        setZipCode(data.zipCode);
+      }
+
+      if (data.yearBuilt) {
+        setYearBuilt(data.yearBuilt);
+      }
+
+      if (data.propertyType) {
+        // Try to map property type to building type
+        const typeMap: { [key: string]: string } = {
+          'Garden': 'Garden Style',
+          'Mid-Rise': 'Mid-Rise',
+          'High-Rise': 'High-Rise',
+          'Townhome': 'Townhome',
+          'Mixed Use': 'Mixed Use'
+        };
+        const mappedType = Object.keys(typeMap).find(key =>
+          data.propertyType.toLowerCase().includes(key.toLowerCase())
+        );
+        if (mappedType) {
+          setBuildingType(typeMap[mappedType]);
+        }
+      }
+
+      if (data.numberOfBuildings) {
+        setNumberOfBuildings(data.numberOfBuildings);
+      }
+
       if (data.askingPrice) {
         setPurchasePrice(data.askingPrice);
       }
@@ -340,6 +379,21 @@ const Underwriting = () => {
       return;
     }
 
+    // Validate required fields
+    const validationErrors: string[] = [];
+    if (!dealName) validationErrors.push('Deal Name is required');
+    if (!location) validationErrors.push('Location is required');
+    if (!county) validationErrors.push('County is required');
+    if (!zipCode) validationErrors.push('ZIP Code is required');
+    if (totalUnits <= 0) validationErrors.push('Total Units must be greater than 0');
+    if (purchasePrice <= 0) validationErrors.push('Purchase Price must be greater than 0');
+    if (avgMonthlyRent <= 0) validationErrors.push('Average Monthly Rent must be greater than 0');
+
+    if (validationErrors.length > 0) {
+      alert('Please fix the following errors before exporting:\n\n' + validationErrors.join('\n'));
+      return;
+    }
+
     setExporting(true);
     try {
       // Build comprehensive multifamily underwriting data
@@ -347,13 +401,13 @@ const Underwriting = () => {
         propertyName: dealName,
         address: location,
         city: location.split(',')[0]?.trim() || '',
-        county: 'Sacramento County', // TODO: Extract from location or add field
+        county: county,
         state: location.split(',')[1]?.trim() || 'CA',
-        zipCode: '95814', // TODO: Add field or extract from location
-        yearBuilt: 1985, // TODO: Add field
-        buildingType: 'Garden Style', // TODO: Add field
-        numberOfBuildings: 4, // TODO: Add field
-        parkingSpaces: totalUnits * 1.5, // Estimate
+        zipCode: zipCode,
+        yearBuilt: yearBuilt,
+        buildingType: buildingType,
+        numberOfBuildings: numberOfBuildings,
+        parkingSpaces: Math.round(totalUnits * 1.5), // Estimate 1.5 spaces per unit
 
         purchasePrice: purchasePrice,
         acquisitionDate: new Date().toISOString(),
@@ -632,7 +686,68 @@ const Underwriting = () => {
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                placeholder="City, State"
               />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">County</label>
+                <input
+                  type="text"
+                  value={county}
+                  onChange={(e) => setCounty(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                  placeholder="e.g., Fresno County"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">ZIP Code</label>
+                <input
+                  type="text"
+                  value={zipCode}
+                  onChange={(e) => setZipCode(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                  placeholder="e.g., 93704"
+                  maxLength={10}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Year Built</label>
+                <input
+                  type="number"
+                  value={yearBuilt}
+                  onChange={(e) => setYearBuilt(Number(e.target.value) || 1900)}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                  min="1800"
+                  max={new Date().getFullYear()}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Buildings</label>
+                <input
+                  type="number"
+                  value={numberOfBuildings}
+                  onChange={(e) => setNumberOfBuildings(Number(e.target.value) || 1)}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                  min="1"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">Building Type</label>
+              <select
+                value={buildingType}
+                onChange={(e) => setBuildingType(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+              >
+                <option value="Garden Style">Garden Style</option>
+                <option value="Mid-Rise">Mid-Rise</option>
+                <option value="High-Rise">High-Rise</option>
+                <option value="Townhome">Townhome</option>
+                <option value="Mixed Use">Mixed Use</option>
+              </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1.5">Total Units</label>
