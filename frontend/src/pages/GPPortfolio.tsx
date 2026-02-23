@@ -9,8 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   LineChart,
-  Line,
-  
+  Line
 } from 'recharts';
 import { gpApi } from '../services/gpApi';
 import type { GP, GPPerformanceComparison, GPTopPerformers, GPOverview } from '../types/gp';
@@ -115,7 +114,7 @@ const GPPortfolio = () => {
 
   if (loading) {
     return (
-      <div className="p-4 md:p-6 lg:p-8 bg-gray-50 min-h-screen">
+      <div className="min-h-screen p-4 md:p-6 lg:p-8 bg-gray-50">
         <div className="flex items-center justify-center h-64">
           <div className="text-gray-500">Loading GP Portfolio...</div>
         </div>
@@ -125,12 +124,12 @@ const GPPortfolio = () => {
 
   if (error) {
     return (
-      <div className="p-4 md:p-6 lg:p-8 bg-gray-50 min-h-screen">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+      <div className="min-h-screen p-4 md:p-6 lg:p-8 bg-gray-50">
+        <div className="p-4 border border-red-200 rounded-lg bg-red-50">
           <p className="text-red-700">Error: {error}</p>
           <button
             onClick={loadGPData}
-            className="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+            className="px-4 py-2 mt-2 text-white bg-red-600 rounded hover:bg-red-700"
           >
             Retry
           </button>
@@ -140,12 +139,12 @@ const GPPortfolio = () => {
   }
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 bg-gray-50 min-h-screen">
+    <div className="min-h-screen p-4 md:p-6 lg:p-8 bg-gray-50">
       {/* Header */}
-      <div className="mb-6 flex justify-between items-start">
+      <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">GP Portfolio</h1>
-          <p className="text-sm text-gray-500 mt-1">General Partner relationships and performance analytics</p>
+          <h1 className="text-2xl font-semibold text-gray-800 md:text-3xl">GP Portfolio</h1>
+          <p className="mt-1 text-sm text-gray-500">General Partner relationships and performance analytics</p>
         </div>
 
         {/* Filters */}
@@ -153,7 +152,7 @@ const GPPortfolio = () => {
           <select
             value={partnerFilter}
             onChange={(e) => setPartnerFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="all">All Partners</option>
             <option value="10">10 Partners</option>
@@ -163,7 +162,7 @@ const GPPortfolio = () => {
           <select
             value={timeFilter}
             onChange={(e) => setTimeFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="1year">Last 1 Yr</option>
             <option value="3years">Last 3 Yrs</option>
@@ -174,8 +173,8 @@ const GPPortfolio = () => {
       </div>
 
       {/* Performance Comparison Chart */}
-      <div className="bg-white rounded-xl p-6 shadow-sm mb-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">IRR Performance Comparison</h3>
+      <div className="p-6 mb-6 bg-white shadow-sm rounded-xl">
+        <h3 className="mb-4 text-lg font-semibold text-gray-800">IRR Performance Comparison</h3>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={performanceComparison}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -200,57 +199,57 @@ const GPPortfolio = () => {
       </div>
 
       {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 gap-4 mb-6 md:grid-cols-3">
         {/* Top Portfolio IRR */}
-        <div className="bg-white rounded-xl p-5 shadow-sm">
+        <div className="p-5 bg-white shadow-sm rounded-xl">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-xs text-gray-500 mb-1">Top Portfolio IRR</p>
+              <p className="mb-1 text-xs text-gray-500">Top Portfolio IRR</p>
               <p className="text-2xl font-bold text-gray-800">
                 {topPerformers?.topPerformer?.netIrr
                   ? formatPercentage(topPerformers.topPerformer.netIrr)
                   : 'N/A'
                 }
               </p>
-              <p className="text-xs text-gray-600 mt-1">
+              <p className="mt-1 text-xs text-gray-600">
                 {topPerformers?.topPerformer?.gpName || 'No data'}
               </p>
             </div>
-            <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center">
+            <div className="flex items-center justify-center w-12 h-12 bg-green-50 rounded-xl">
               <TrendingUp size={24} className="text-green-500" />
             </div>
           </div>
         </div>
 
         {/* Top Performer Recent Quarter */}
-        <div className="bg-white rounded-xl p-5 shadow-sm">
+        <div className="p-5 bg-white shadow-sm rounded-xl">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-xs text-gray-500 mb-1">Top Performer Recent Quarter</p>
+              <p className="mb-1 text-xs text-gray-500">Top Performer Recent Quarter</p>
               <p className="text-2xl font-bold text-gray-800">
                 {topPerformers?.topPerformer?.performanceRating || 'N/A'}
               </p>
-              <p className="text-xs text-gray-600 mt-1">
+              <p className="mt-1 text-xs text-gray-600">
                 {topPerformers?.topPerformer?.gpName || 'No data'}
               </p>
             </div>
-            <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
+            <div className="flex items-center justify-center w-12 h-12 bg-blue-50 rounded-xl">
               <Users size={24} className="text-blue-500" />
             </div>
           </div>
         </div>
 
         {/* Needs Attention */}
-        <div className="bg-white rounded-xl p-5 shadow-sm">
+        <div className="p-5 bg-white shadow-sm rounded-xl">
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <p className="text-xs text-gray-500 mb-1">Needs Attention</p>
+              <p className="mb-1 text-xs text-gray-500">Needs Attention</p>
               {topPerformers?.needsAttention && topPerformers.needsAttention.length > 0 ? (
                 <div>
                   <p className="text-lg font-bold text-orange-600">
                     {topPerformers.needsAttention[0].gpName}
                   </p>
-                  <p className="text-xs text-gray-600 mt-1">
+                  <p className="mt-1 text-xs text-gray-600">
                     {topPerformers.needsAttention[0].reason}
                   </p>
                 </div>
@@ -258,7 +257,7 @@ const GPPortfolio = () => {
                 <p className="text-lg font-bold text-gray-800">All on track</p>
               )}
             </div>
-            <div className="w-12 h-12 bg-orange-50 rounded-xl flex items-center justify-center">
+            <div className="flex items-center justify-center w-12 h-12 bg-orange-50 rounded-xl">
               <AlertTriangle size={24} className="text-orange-500" />
             </div>
           </div>
@@ -271,9 +270,9 @@ const GPPortfolio = () => {
           const gp = overview.gp;
 
           return (
-            <div key={gpId} className="bg-white rounded-xl p-6 shadow-sm">
+            <div key={gpId} className="p-6 bg-white shadow-sm rounded-xl">
               {/* GP Header */}
-              <div className="flex justify-between items-start mb-6">
+              <div className="flex items-start justify-between mb-6">
                 <div>
                   <h3 className="text-xl font-bold text-gray-800">{gp.gpName}</h3>
                   <p className="text-sm text-gray-500">{gp.location}</p>
@@ -306,7 +305,7 @@ const GPPortfolio = () => {
                         {gp.performanceRating}
                       </span>
                     )}
-                    <span className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                    <span className="px-3 py-1 text-xs font-medium text-gray-700 bg-gray-100 rounded-full">
                       IRR Performance
                     </span>
                   </div>
@@ -314,27 +313,27 @@ const GPPortfolio = () => {
               </div>
 
               {/* Performance Metrics and Charts */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 {/* Left Column - Metrics */}
                 <div>
                   {/* IRR Performance */}
                   <div className="mb-4">
-                    <div className="flex justify-between items-center mb-2">
+                    <div className="flex items-center justify-between mb-2">
                       <span className="text-sm text-gray-600">IRR Performance</span>
                       <span className="text-lg font-semibold text-gray-800">
                         {formatPercentage(gp.netIrr)}
                       </span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="w-full h-2 bg-gray-200 rounded-full">
                       <div
-                        className="bg-blue-500 h-2 rounded-full"
+                        className="h-2 bg-blue-500 rounded-full"
                         style={{ width: `${Math.min((gp.netIrr || 0) * 5, 100)}%` }}
                       ></div>
                     </div>
                   </div>
 
                   {/* Gross IRR */}
-                  <div className="flex justify-between items-center mb-2">
+                  <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-gray-600">Gross IRR</span>
                     <span className="text-sm font-semibold text-gray-800">
                       {formatPercentage(gp.grossIrr)}
@@ -342,7 +341,7 @@ const GPPortfolio = () => {
                   </div>
 
                   {/* IRR Trend */}
-                  <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center justify-between mb-4">
                     <span className="text-sm text-gray-600">Trend</span>
                     <div className="flex items-center gap-1">
                       {(gp.irrTrend || 0) >= 0 ? (
@@ -358,7 +357,7 @@ const GPPortfolio = () => {
 
                   {/* Recent IRR Trend Chart */}
                   <div className="mt-4">
-                    <h4 className="text-sm font-semibold text-gray-700 mb-2">Recent IRR Trend</h4>
+                    <h4 className="mb-2 text-sm font-semibold text-gray-700">Recent IRR Trend</h4>
                     <ResponsiveContainer width="100%" height={150}>
                       <LineChart data={overview.quarterlyPerformance.slice().reverse()}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -384,15 +383,15 @@ const GPPortfolio = () => {
 
                 {/* Right Column - Portfolio Summary */}
                 <div>
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3">Portfolio Summary</h4>
+                  <h4 className="mb-3 text-sm font-semibold text-gray-700">Portfolio Summary</h4>
 
                   {/* Recent Deal Performance */}
                   <div className="mb-4">
-                    <p className="text-xs text-gray-500 mb-2">Recent Deal Performance</p>
+                    <p className="mb-2 text-xs text-gray-500">Recent Deal Performance</p>
                     <div className="space-y-2">
                       {overview.portfolioSummary.map((summary) => (
                         <div key={summary.quartile}>
-                          <div className="flex justify-between items-center text-xs mb-1">
+                          <div className="flex items-center justify-between mb-1 text-xs">
                             <span className="text-gray-600">
                               {summary.year} - {summary.quartile} asset{summary.dealCount !== 1 ? 's' : ''}
                             </span>
@@ -407,12 +406,12 @@ const GPPortfolio = () => {
 
                   {/* Additional Metrics */}
                   <div className="grid grid-cols-2 gap-4 mt-6">
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <p className="text-xs text-gray-500 mb-1">Total Units</p>
+                    <div className="p-3 rounded-lg bg-gray-50">
+                      <p className="mb-1 text-xs text-gray-500">Total Units</p>
                       <p className="text-lg font-bold text-gray-800">{gp.dealCount || 0}</p>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <p className="text-xs text-gray-500 mb-1">Current Value</p>
+                    <div className="p-3 rounded-lg bg-gray-50">
+                      <p className="mb-1 text-xs text-gray-500">Current Value</p>
                       <p className="text-lg font-bold text-gray-800">
                         {formatCurrency(gp.currentValue)}
                       </p>
@@ -427,8 +426,8 @@ const GPPortfolio = () => {
 
       {/* Show message if no GPs */}
       {gps.length === 0 && (
-        <div className="bg-white rounded-xl p-8 shadow-sm text-center">
-          <Users size={48} className="text-gray-400 mx-auto mb-3" />
+        <div className="p-8 text-center bg-white shadow-sm rounded-xl">
+          <Users size={48} className="mx-auto mb-3 text-gray-400" />
           <p className="text-gray-500">No GPs found. Add your first General Partner to get started.</p>
         </div>
       )}

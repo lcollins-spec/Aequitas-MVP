@@ -8,8 +8,11 @@ WORKDIR /app/frontend
 # Copy frontend package files
 COPY frontend/package*.json ./
 
+# Upgrade npm to version 11
+RUN npm install -g npm@11
+
 # Install dependencies
-RUN npm ci --only=production
+RUN npm ci 
 
 # Copy frontend source
 COPY frontend/ ./
