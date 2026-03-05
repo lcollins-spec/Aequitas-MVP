@@ -25,10 +25,10 @@ This guide explains how to run the backend (Flask) and frontend (Vite/React) loc
    ```
 2. Start the backend (development):
    ```bash
-   # dev server (foreground) — this repo often uses port 5002 in examples
-   PORT=5002 python3 run.py
+   # dev server (foreground) — port 5000 is reserved by macOS AirPlay, use 5001
+   PORT=5001 python3 run.py
    # or in background (use gunicorn for production-like runs)
-   gunicorn -b 0.0.0.0:5002 "app:create_app()" --workers 2 --log-file -
+   gunicorn -b 0.0.0.0:5001 "app:create_app()" --workers 2 --log-file -
    ```
 
 ### Frontend
@@ -44,8 +44,8 @@ This guide explains how to run the backend (Flask) and frontend (Vite/React) loc
    environment variable when starting the frontend. Example:
 
    ```bash
-   # point Vite to a backend running on port 5002
-   BACKEND_URL=http://localhost:5002 npm run dev
+   # point Vite to a backend running on port 5001
+   BACKEND_URL=http://localhost:5001 npm run dev
    ```
 
 ### Notes
@@ -120,6 +120,7 @@ FLASK_DEBUG=0
 CENSUS_API_KEY=<your-census-api-key>
 FRED_API_KEY=<your-fred-api-key>
 RENTCAST_API_KEY=<your-rentcast-api-key>
+ANTHROPIC_API_KEY=<your-anthropic-api-key>  # Optional: enables PDF property extraction
 FRONTEND_URL=https://aequitas-mvp.onrender.com  # Update with your actual Render URL
 # DATABASE_URL is automatically set by Render when you link the PostgreSQL database
 ```
@@ -203,6 +204,7 @@ SECRET_KEY=dev-secret-key
 CENSUS_API_KEY=your-census-api-key
 FRED_API_KEY=your-fred-api-key
 RENTCAST_API_KEY=your-rentcast-api-key
+ANTHROPIC_API_KEY=your-anthropic-api-key  # Optional: enables PDF property extraction
 
 # Frontend Configuration
 FRONTEND_URL=http://localhost:5173
@@ -224,4 +226,5 @@ Set these in your hosting platform's environment variables dashboard:
 ### API Keys
 - **Census API**: Get a free key at https://api.census.gov/data/key_signup.html
 - **FRED API**: Get a free key at https://fred.stlouisfed.org/docs/api/api_key.html
-- **RentCast API**: Sign up at https://www.rentcast.io/
+- **RentCast API**: Sign up at https://www.rentcast.io/ (required for rent estimates and market data)
+- **Anthropic API**: Sign up at https://console.anthropic.com/ (optional — used for PDF property listing extraction)
