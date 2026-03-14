@@ -87,6 +87,14 @@ def create_app(test_config=None):
                     conn.execute(text("ALTER TABLE deals ADD COLUMN underwriting_json TEXT"))
                     conn.commit()
                     logger.info("Migration: added underwriting_json column to deals table")
+                if 'dscr_json' not in existing_cols:
+                    conn.execute(text("ALTER TABLE deals ADD COLUMN dscr_json TEXT"))
+                    conn.commit()
+                    logger.info("Migration: added dscr_json column to deals table")
+                if 'regulations_json' not in existing_cols:
+                    conn.execute(text("ALTER TABLE deals ADD COLUMN regulations_json TEXT"))
+                    conn.commit()
+                    logger.info("Migration: added regulations_json column to deals table")
     except Exception as e:
         logger.warning(f"Auto-migration warning (non-fatal): {e}")
 

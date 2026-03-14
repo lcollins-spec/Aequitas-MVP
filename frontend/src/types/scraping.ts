@@ -133,6 +133,8 @@ export interface OmExtractedData {
     repairsMaintenanceAnnual?: number | null;
     managementFeePct?: number | null;
   } | null;
+  vacancyRate?: number | null;
+  badDebtRate?: number | null;
   rentStabilized?: boolean | null;
   annualRentGrowthCap?: number | null;
 }

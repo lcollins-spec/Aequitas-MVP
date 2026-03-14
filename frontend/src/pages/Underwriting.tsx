@@ -638,28 +638,28 @@ const Underwriting = () => {
       }
       if (data.laundryIncome != null) setOmLaundryIncome(data.laundryIncome);
       if (data.operatingExpenses != null) setOmOperatingExpenses(data.operatingExpenses);
+      if (data.vacancyRate != null) setVacancyRate(data.vacancyRate);
+      if (data.badDebtRate != null) setBadDebtRate(data.badDebtRate);
       if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
       if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
 
-      // Create a deal record if one isn't loaded — required for Excel export
-      if (!currentDealId) {
-        const dealLocation = data.city && data.state
-          ? `${data.city}, ${data.state}`
-          : data.address || 'Location TBD';
-        const created = await dealApi.createDeal({
-          dealName: data.propertyName || `Deal - ${data.address || dealLocation || 'OM Import'}`,
-          location: dealLocation,
-          status: 'potential',
-          propertyAddress: data.address || undefined,
-          purchasePrice: data.askingPrice || undefined,
-        });
-        if (created && created.id) {
-          setCurrentDealId(created.id);
-          // Persist deal ID in URL so page refresh doesn't lose context
-          const url = new URL(window.location.href);
-          url.searchParams.set('dealId', String(created.id));
-          window.history.replaceState({}, '', url.toString());
-        }
+      // Always create a new deal record on OM upload — never overwrite an existing deal
+      const dealLocation = data.city && data.state
+        ? `${data.city}, ${data.state}`
+        : data.address || 'Location TBD';
+      const created = await dealApi.createDeal({
+        dealName: data.propertyName || `Deal - ${data.address || dealLocation || 'OM Import'}`,
+        location: dealLocation,
+        status: 'potential',
+        propertyAddress: data.address || undefined,
+        purchasePrice: data.askingPrice || undefined,
+      });
+      if (created && created.id) {
+        setCurrentDealId(created.id);
+        // Persist deal ID in URL so page refresh doesn't lose context
+        const url = new URL(window.location.href);
+        url.searchParams.set('dealId', String(created.id));
+        window.history.replaceState({}, '', url.toString());
       }
     } catch (err) {
       setOmError(err instanceof Error ? err.message : 'Failed to extract data from OM');
@@ -706,6 +706,11 @@ const Underwriting = () => {
         monthlyPayment: Math.abs(metrics.annualDebtService / 12),
         irr: metrics.irr,
         equityMultiple: metrics.totalReturn,
+        dscrJson: JSON.stringify(
+          metrics.yearlyData
+            .filter((r) => !r.isAcquisition && !r.isExit && r.debtService > 0)
+            .map((r) => ({ year: r.year, label: r.label, dscr: r.noi / r.debtService }))
+        ),
         // All multifamily-specific assumptions — restored on page refresh
         underwritingJson: JSON.stringify({
           totalUnits,
@@ -1168,6 +1173,27 @@ const Underwriting = () => {
 
             {/* ── OM Upload — prominent hero zone ── */}
             <div>
+              {/* "Underwrite a New Deal" button — shown whenever an OM is already loaded */}
+              {!omUploading && unitMix.length > 0 && (
+                <label className="flex items-center justify-center gap-2 w-full mb-3 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg cursor-pointer transition-colors">
+                  <Upload size={15} />
+                  Underwrite a New Deal
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        if (file.size > 20 * 1024 * 1024) { setOmError('File must be under 20MB'); return; }
+                        handleOmUpload(file);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                </label>
+              )}
+
               {/* Idle: large dashed upload target */}
               {!omUploading && unitMix.length === 0 && (
                 <label className={`flex flex-col items-center justify-center gap-3 w-full min-h-[148px] border-2 border-dashed rounded-xl transition-colors cursor-pointer px-4 py-7 text-center border-blue-300 bg-blue-50 hover:bg-blue-100 hover:border-blue-400 ${omUploading ? 'pointer-events-none' : ''}`}>
@@ -1610,7 +1636,7 @@ const Underwriting = () => {
                 onClick={() => setCashFlowTab('noi')}
                 className={`px-5 py-3 text-sm font-medium transition-colors ${cashFlowTab === 'noi' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
               >
-                NOI Waterfall
+                Unlevered Cash Flow
               </button>
               <button
                 onClick={() => setCashFlowTab('levered')}
@@ -1720,6 +1746,18 @@ const Underwriting = () => {
                           {row.isAcquisition || row.isExit ? '—' : `($${Math.round(row.debtService).toLocaleString('en-US')})`}
                         </td>
                       ))}
+                    </tr>
+                    {/* DSCR */}
+                    <tr className="bg-indigo-50/40 border-t border-indigo-100">
+                      <td className="sticky left-0 z-10 bg-indigo-50/40 px-4 py-2.5 text-xs font-medium text-indigo-700 pl-7">DSCR</td>
+                      {metrics.yearlyData.map((row) => {
+                        const dscr = row.debtService > 0 ? row.noi / row.debtService : null;
+                        return (
+                          <td key={row.label} className={`px-4 py-2.5 text-right text-xs font-mono font-semibold ${!row.isAcquisition && !row.isExit && dscr !== null ? (dscr >= 1.25 ? 'text-green-600' : dscr >= 1.0 ? 'text-orange-500' : 'text-red-600') : 'text-gray-400'}`}>
+                            {!row.isAcquisition && !row.isExit && dscr !== null ? `${dscr.toFixed(2)}x` : '—'}
+                          </td>
+                        );
+                      })}
                     </tr>
                     {/* CFBT */}
                     <tr className="bg-blue-50/40 hover:bg-blue-50">

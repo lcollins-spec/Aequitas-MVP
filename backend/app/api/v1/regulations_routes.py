@@ -7,6 +7,7 @@ import os
 import re
 import time
 from flask import Blueprint, request, jsonify
+from app.database import db, DealModel
 
 regulations_bp = Blueprint('regulations', __name__)
 
@@ -44,6 +45,7 @@ def fetch_regulations():
         if not market:
             return jsonify({'success': False, 'error': 'market is required', 'code': 'INVALID_INPUT'}), 400
 
+        deal_id = data.get('deal_id')
         topics = data.get('topics') or []
         topics_str = ', '.join(topics) if topics else (
             'rent control, eviction moratorium, LIHTC, ADU regulations, '
@@ -152,6 +154,17 @@ def fetch_regulations():
             }), 500
 
         regulations = json.loads(json_match.group(0))
+
+        # Persist to deal.regulations_json if a deal_id was provided
+        if deal_id:
+            try:
+                deal_model = DealModel.query.get(int(deal_id))
+                if deal_model:
+                    deal_model.regulations_json = json_match.group(0)
+                    db.session.commit()
+            except Exception as e:
+                print(f'[regulations/fetch] Failed to save to deal {deal_id}: {e}', flush=True)
+
         return jsonify({'success': True, 'data': regulations}), 200
 
     except json.JSONDecodeError as e:

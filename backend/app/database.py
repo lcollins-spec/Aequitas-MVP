@@ -84,6 +84,11 @@ class DealModel(db.Model):
     irr = Column(Float)
     equity_multiple = Column(Float)
 
+    # Generated data columns (written on Save)
+    climate_risk = Column(Text)       # JSON — climate risk scores from Claude
+    dscr_json = Column(Text)          # JSON — year-by-year DSCR values
+    regulations_json = Column(Text)   # JSON — regulations for deal's market
+
     def __repr__(self):
         return f'<Deal {self.id}: {self.deal_name} ({self.status})>'
 
@@ -146,7 +151,12 @@ class DealModel(db.Model):
             'roi': self.roi,
             'npv': self.npv,
             'irr': self.irr,
-            'equityMultiple': self.equity_multiple
+            'equityMultiple': self.equity_multiple,
+
+            # Generated data
+            'climateRisk': self.climate_risk,
+            'dscrJson': self.dscr_json,
+            'regulationsJson': self.regulations_json,
         }
 
     @staticmethod
@@ -206,7 +216,12 @@ class DealModel(db.Model):
             roi=data.get('roi'),
             npv=data.get('npv'),
             irr=data.get('irr'),
-            equity_multiple=data.get('equityMultiple')
+            equity_multiple=data.get('equityMultiple'),
+
+            # Generated data
+            climate_risk=data.get('climateRisk'),
+            dscr_json=data.get('dscrJson'),
+            regulations_json=data.get('regulationsJson'),
         )
 
     def update_from_dict(self, data):
@@ -306,6 +321,14 @@ class DealModel(db.Model):
             self.irr = data['irr']
         if 'equityMultiple' in data:
             self.equity_multiple = data['equityMultiple']
+
+        # Generated data
+        if 'climateRisk' in data:
+            self.climate_risk = data['climateRisk']
+        if 'dscrJson' in data:
+            self.dscr_json = data['dscrJson']
+        if 'regulationsJson' in data:
+            self.regulations_json = data['regulationsJson']
 
         # Update timestamp
         self.updated_at = datetime.utcnow()

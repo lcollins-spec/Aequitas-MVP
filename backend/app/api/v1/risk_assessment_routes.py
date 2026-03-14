@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify, request
 from app.services.deal_service import DealService
 from app.services.deal_memo_service import DealMemoService
 from app.services.rent_tier_service import RentTierService
-from app.database import db, RiskBenchmarkData, MarketDecileThresholds
+from app.database import db, DealModel, RiskBenchmarkData, MarketDecileThresholds
 
 # Create blueprint
 risk_assessment_bp = Blueprint('risk_assessment', __name__)
@@ -413,6 +413,13 @@ def get_climate_risk(deal_id):
             return jsonify({'success': False, 'error': 'No JSON object in response', 'code': 'PARSE_ERROR'}), 500
 
         scores = json.loads(json_match.group(0))
+
+        # Persist to deal.climate_risk
+        deal_model = DealModel.query.get(deal_id)
+        if deal_model:
+            deal_model.climate_risk = json.dumps(scores)
+            db.session.commit()
+
         return jsonify({'success': True, 'location': location, 'data': scores}), 200
 
     except json.JSONDecodeError as e:
@@ -427,6 +434,32 @@ def get_climate_risk(deal_id):
         if 'invalid_api_key' in error_msg or 'authentication' in error_msg.lower():
             return jsonify({'success': False, 'error': 'Anthropic API key is invalid.', 'code': 'AUTH_ERROR'}), 503
         return jsonify({'success': False, 'error': 'Internal server error', 'code': 'SERVER_ERROR'}), 500
+
+
+@risk_assessment_bp.route('/deals/<int:deal_id>/climate-risk', methods=['GET'])
+def get_climate_risk_stored(deal_id):
+    """
+    Return the stored climate risk scores for a deal.
+
+    GET /api/v1/deals/<deal_id>/climate-risk
+
+    Returns:
+        200: { success, data: { overall, heat, flood, fire, storm, drought } }
+        404: Deal not found or no climate risk data yet
+    """
+    try:
+        deal_model = DealModel.query.get(deal_id)
+        if not deal_model:
+            return jsonify({'success': False, 'error': f'Deal {deal_id} not found'}), 404
+
+        if not deal_model.climate_risk:
+            return jsonify({'success': False, 'error': 'No climate risk data for this deal', 'code': 'NOT_FOUND'}), 404
+
+        scores = json.loads(deal_model.climate_risk)
+        return jsonify({'success': True, 'location': deal_model.location, 'data': scores}), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @risk_assessment_bp.route('/deals/<int:deal_id>/summary', methods=['GET'])
