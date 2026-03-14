@@ -1636,7 +1636,7 @@ const Underwriting = () => {
                 onClick={() => setCashFlowTab('noi')}
                 className={`px-5 py-3 text-sm font-medium transition-colors ${cashFlowTab === 'noi' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
               >
-                Unlevered Cash Flow
+                NOI Waterfall
               </button>
               <button
                 onClick={() => setCashFlowTab('levered')}
@@ -1678,15 +1678,6 @@ const Underwriting = () => {
                       {metrics.yearlyData.map((row) => (
                         <td key={row.label} className="px-4 py-2.5 text-right text-xs text-red-500 font-mono">
                           {row.isAcquisition || row.isExit ? '—' : row.vacancyLoss === 0 ? '—' : `($${Math.round(row.vacancyLoss).toLocaleString('en-US')})`}
-                        </td>
-                      ))}
-                    </tr>
-                    {/* Bad Debt */}
-                    <tr className="hover:bg-gray-50">
-                      <td className="sticky left-0 z-10 bg-white hover:bg-gray-50 px-4 py-2.5 text-xs text-gray-500 pl-7">(–) Bad Debt</td>
-                      {metrics.yearlyData.map((row) => (
-                        <td key={row.label} className="px-4 py-2.5 text-right text-xs text-red-500 font-mono">
-                          {row.isAcquisition || row.isExit ? '—' : row.badDebtLoss === 0 ? '—' : `($${Math.round(row.badDebtLoss).toLocaleString('en-US')})`}
                         </td>
                       ))}
                     </tr>
