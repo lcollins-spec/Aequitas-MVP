@@ -1,4 +1,5 @@
-export type RegulationStatus = 'compliant' | 'concerning' | 'negotiation' | 'active' | 'proposed' | 'needed';
+// Legacy types kept for backward-compat with any other consumers
+export type RegulationStatus = 'compliant' | 'concerning' | 'negotiation' | 'active' | 'proposed' | 'needed' | 'enacted';
 
 export interface Regulation {
   id: string;
@@ -34,4 +35,37 @@ export interface MarketRegulationsSummary {
   proposedChangesCount: number;
   currentRegulations: Regulation[];
   upcomingChanges: RegulatoryChange[];
+}
+
+// --- New API-driven types ---
+
+export type ApiRegulationStatus = 'funding' | 'enabling' | 'risk';
+export type RegulationJurisdiction = 'federal' | 'state' | 'local';
+export type RegulationType = 'current' | 'upcoming';
+
+export interface RegulationItem {
+  title: string;
+  summary: string;
+  status: ApiRegulationStatus;
+  jurisdiction: RegulationJurisdiction;
+  type: RegulationType;
+}
+
+export interface MarketEntry {
+  id: string;
+  name: string;
+}
+
+export interface MarketData {
+  regulations: RegulationItem[];
+  lastChecked: string; // ISO datetime string
+}
+
+export interface PinnedItem {
+  id: string;
+  regulation: RegulationItem;
+  note: string;
+  pinnedAt: string;
+  marketId: string;
+  marketName: string;
 }

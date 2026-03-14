@@ -6,7 +6,6 @@ import Underwriting from './pages/Underwriting';
 import MapPage from './pages/MapPage';
 import GPPortfolio from './pages/GPPortfolio';
 import Regulations from './pages/Regulations';
-import Grants from './pages/Grants';
 import MarketAnalysis from './pages/MarketAnalysis';
 import DealExecution from './pages/DealExecution';
 
@@ -24,7 +23,6 @@ function App() {
             <Route path="/market-analysis" element={<MarketAnalysis />} />
             <Route path="/gp-portfolio" element={<GPPortfolio />} />
             <Route path="/regulations" element={<Regulations />} />
-            <Route path="/grants" element={<Grants />} />
             <Route path="/deal-execution/:dealId" element={<DealExecution />} />
           </Routes>
         </main>

@@ -6,7 +6,6 @@ import {
   Map,
   Users,
   FileCheck,
-  Gift,
   Building2,
   Menu,
   X,
@@ -31,8 +30,7 @@ const getNavItems = () => {
     { to: '/map', icon: Map, label: 'Map' },
     { to: '/market-analysis', icon: BarChart3, label: 'Market Analysis' },
     { to: '/gp-portfolio', icon: Users, label: 'GP Portfolio' },
-    { to: '/regulations', icon: FileCheck, label: 'Regulations' },
-    { to: '/grants', icon: Gift, label: 'Grants' },
+    { to: '/regulations', icon: FileCheck, label: 'Legislation and Government Funding' },
   ].filter(Boolean) as { to: string; icon: React.ElementType; label: string }[];
 };
 

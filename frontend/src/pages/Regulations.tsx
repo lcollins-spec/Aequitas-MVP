@@ -1,300 +1,815 @@
-import { useState } from 'react';
-import { ChevronDown, ChevronUp, CheckCircle, AlertCircle, Clock, FileText } from 'lucide-react';
-import type { Market, Regulation, RegulatoryChange, RegulationStatus } from '../types/regulation';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  ChevronDown,
+  ChevronUp,
+  CheckCircle,
+  AlertCircle,
+  Clock,
+  FileText,
+  Plus,
+  X,
+  RefreshCw,
+  Tag,
+  Star,
+  Pin,
+  PinOff,
+} from 'lucide-react';
+import type {
+  MarketEntry,
+  MarketData,
+  RegulationItem,
+  ApiRegulationStatus,
+  RegulationJurisdiction,
+  PinnedItem,
+} from '../types/regulation';
+import { fetchMarketRegulations } from '../services/regulationsApi';
 
-// Mock data - replace with API calls later
-const mockMarkets: Market[] = [
-  { id: '1', name: 'Austin, TX', state: 'TX', riskScore: 7.5 },
-  { id: '2', name: 'Phoenix, AZ', state: 'AZ', riskScore: 6.8 },
+// ── localStorage keys ──────────────────────────────────────────────────────
+const LS_MARKETS = 'aequitas_reg_markets';
+const LS_TOPICS = 'aequitas_reg_topics';
+const LS_DATA_PREFIX = 'aequitas_reg_data_';
+const LS_FEATURED = 'aequitas_reg_featured';
+const LS_PINS = 'aequitas_reg_pins';
+const AUTO_REFRESH_MS = 24 * 60 * 60 * 1000;
+
+const DEFAULT_TOPICS = [
+  'rent control',
+  'eviction moratorium',
+  'LIHTC',
+  'ADU regulations',
+  'property tax exemptions',
+  'zoning variance',
+  'landlord-tenant law',
 ];
 
-const mockRegulations: Regulation[] = [
-  {
-    id: '1',
-    title: 'Affordable Housing Density Bonus',
-    description: 'Incentive allowing increased building density for projects with 30%+ affordable units',
-    status: 'compliant',
-    effectiveDate: '2022-01-01',
-  },
-  {
-    id: '2',
-    title: 'Inclusionary Zoning Updates Requirements',
-    description: 'New developments >50 units must include 15% affordable housing',
-    status: 'needed',
-    effectiveDate: '2025-01-31',
-    sunset: '2030-12-31',
-  },
-  {
-    id: '3',
-    title: 'Construction Impact Fees',
-    description: 'Additional fees for projects impacting infrastructure',
-    status: 'negotiation',
-    effectiveDate: '2023-06-01',
-  },
+const DEFAULT_MARKETS: MarketEntry[] = [
+  { id: '1', name: 'Austin, TX' },
+  { id: '2', name: 'Phoenix, AZ' },
 ];
 
-const mockUpcomingChanges: RegulatoryChange[] = [
-  {
-    id: '1',
-    title: 'Rent Control Amendment - SB 91',
-    description: '5% annual cap on rent increases for properties near public transportation',
-    status: 'proposed',
-    proposedDate: '2024-11-15',
-  },
-  {
-    id: '2',
-    title: 'State Legislative Session - Oct 2024',
-    description: 'Potential changes to tax credit programs',
-    status: 'proposed',
-    proposedDate: '2024-10-01',
-  },
-  {
-    id: '3',
-    title: 'Transit Oriented Update - Nov 2024',
-    description: 'Increased density allowances near transit',
-    status: 'enacted',
-    enactedDate: '2024-11-20',
-    effectiveDate: '2025-01-01',
-  },
-];
+// ── localStorage helpers ───────────────────────────────────────────────────
 
-const getStatusColor = (status: RegulationStatus): { bg: string; text: string; border: string } => {
+function loadMarkets(): MarketEntry[] {
+  try {
+    const raw = localStorage.getItem(LS_MARKETS);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return DEFAULT_MARKETS;
+}
+function saveMarkets(m: MarketEntry[]) { localStorage.setItem(LS_MARKETS, JSON.stringify(m)); }
+
+function loadTopics(): string[] {
+  try {
+    const raw = localStorage.getItem(LS_TOPICS);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return DEFAULT_TOPICS;
+}
+function saveTopics(t: string[]) { localStorage.setItem(LS_TOPICS, JSON.stringify(t)); }
+
+function loadMarketData(id: string): MarketData | null {
+  try {
+    const raw = localStorage.getItem(LS_DATA_PREFIX + id);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
+}
+function saveMarketData(id: string, d: MarketData) { localStorage.setItem(LS_DATA_PREFIX + id, JSON.stringify(d)); }
+
+function loadFeatured(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LS_FEATURED);
+    if (raw) return new Set(JSON.parse(raw));
+  } catch {}
+  return new Set();
+}
+function saveFeatured(ids: Set<string>) { localStorage.setItem(LS_FEATURED, JSON.stringify([...ids])); }
+
+function loadPins(): Record<string, PinnedItem[]> {
+  try {
+    const raw = localStorage.getItem(LS_PINS);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+function savePins(p: Record<string, PinnedItem[]>) { localStorage.setItem(LS_PINS, JSON.stringify(p)); }
+
+function isStale(lastChecked: string): boolean {
+  return Date.now() - new Date(lastChecked).getTime() > AUTO_REFRESH_MS;
+}
+
+function formatTimestamp(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+}
+
+// ── Status helpers ─────────────────────────────────────────────────────────
+
+function getStatusColors(status: ApiRegulationStatus) {
   switch (status) {
-    case 'compliant':
-    case 'active':
-      return { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' };
-    case 'concerning':
-      return { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200' };
-    case 'negotiation':
-      return { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' };
-    case 'proposed':
-      return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' };
-    case 'needed':
-      return { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' };
-    default:
-      return { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' };
+    case 'funding': return { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' };
+    case 'enabling': return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' };
+    case 'risk': return { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' };
+    default: return { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' };
   }
-};
+}
 
-const getStatusLabel = (status: RegulationStatus): string => {
+function getStatusLabel(status: ApiRegulationStatus): string {
   switch (status) {
-    case 'compliant':
-      return 'Compliant';
-    case 'concerning':
-      return 'Concerning';
-    case 'negotiation':
-      return 'Negotiation';
-    case 'active':
-      return 'Active';
-    case 'proposed':
-      return 'Proposed';
-    case 'needed':
-      return 'Needed';
-    default:
-      return status;
+    case 'funding': return 'Funding Opportunity';
+    case 'enabling': return 'Enabling Legislation';
+    case 'risk': return 'Regulatory Risk';
+    default: return status;
   }
-};
+}
 
-const Regulations = () => {
-  const [selectedMarket, setSelectedMarket] = useState<Market>(mockMarkets[0]);
-  const [expandedRegulations, setExpandedRegulations] = useState<Set<string>>(new Set());
-  const [expandedChanges, setExpandedChanges] = useState<Set<string>>(new Set());
+// ── Pinned Drawer ──────────────────────────────────────────────────────────
 
-  const toggleRegulation = (id: string) => {
-    const newExpanded = new Set(expandedRegulations);
-    if (newExpanded.has(id)) {
-      newExpanded.delete(id);
-    } else {
-      newExpanded.add(id);
-    }
-    setExpandedRegulations(newExpanded);
-  };
+interface PinnedDrawerProps {
+  open: boolean;
+  onClose: () => void;
+  pins: Record<string, PinnedItem[]>;
+  markets: MarketEntry[];
+  onUnpin: (marketId: string, pinId: string) => void;
+  onNoteChange: (marketId: string, pinId: string, note: string) => void;
+}
 
-  const toggleChange = (id: string) => {
-    const newExpanded = new Set(expandedChanges);
-    if (newExpanded.has(id)) {
-      newExpanded.delete(id);
-    } else {
-      newExpanded.add(id);
-    }
-    setExpandedChanges(newExpanded);
-  };
-
-  const compliantCount = mockRegulations.filter(r => r.status === 'compliant').length;
-  const concerningCount = mockRegulations.filter(r => r.status === 'concerning' || r.status === 'negotiation').length;
-  const proposedChangesCount = mockUpcomingChanges.filter(c => c.status === 'proposed').length;
+const PinnedDrawer = ({ open, onClose, pins, markets, onUnpin, onNoteChange }: PinnedDrawerProps) => {
+  const allPinned = markets.flatMap((m) =>
+    (pins[m.id] ?? []).map((p) => ({ ...p, marketName: m.name }))
+  );
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      {/* Markets Sidebar */}
-      <div className="w-48 bg-white border-r border-gray-200 p-4">
-        <h3 className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">Markets</h3>
-        <div className="space-y-1">
-          {mockMarkets.map((market) => (
-            <div
-              key={market.id}
-              onClick={() => setSelectedMarket(market)}
-              className={`p-2.5 rounded-lg cursor-pointer transition-colors ${
-                selectedMarket.id === market.id
-                  ? 'bg-blue-50 border border-blue-200'
-                  : 'hover:bg-gray-50'
-              }`}
-            >
-              <div className="text-sm font-medium text-gray-800">{market.name}</div>
-              <div className="text-xs text-gray-500 mt-0.5">Risk Score: {market.riskScore}</div>
-            </div>
-          ))}
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          className="fixed inset-0 bg-black/20 z-40"
+          onClick={onClose}
+        />
+      )}
+
+      {/* Drawer */}
+      <div
+        className={`fixed top-0 right-0 h-full w-[420px] bg-white shadow-2xl z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${
+          open ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <Pin size={16} className="text-blue-500" />
+            <h2 className="text-base font-semibold text-gray-800">Pinned Regulations</h2>
+            <span className="text-xs text-gray-400">({allPinned.length})</span>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 transition-colors">
+            <X size={18} />
+          </button>
         </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+          {allPinned.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center mt-8">
+              No pinned regulations yet.<br />Click the pin icon on any regulation card.
+            </p>
+          ) : (
+            markets.map((m) => {
+              const mPins = pins[m.id] ?? [];
+              if (mPins.length === 0) return null;
+              return (
+                <div key={m.id}>
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                    {m.name}
+                  </div>
+                  <div className="space-y-4">
+                    {mPins.map((p) => {
+                      const colors = getStatusColors(p.regulation.status);
+                      return (
+                        <div key={p.id} className="border border-gray-200 rounded-lg p-4 relative">
+                          {/* Unpin */}
+                          <button
+                            onClick={() => onUnpin(m.id, p.id)}
+                            className="absolute top-3 right-3 text-gray-300 hover:text-red-400 transition-colors"
+                            aria-label="Unpin"
+                          >
+                            <X size={14} />
+                          </button>
+
+                          {/* Title + badges */}
+                          <div className="pr-5 mb-2">
+                            <p className="text-sm font-medium text-gray-800 leading-snug">{p.regulation.title}</p>
+                          </div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${colors.bg} ${colors.text} ${colors.border}`}>
+                              {getStatusLabel(p.regulation.status)}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200 capitalize">
+                              {p.regulation.jurisdiction}
+                            </span>
+                          </div>
+
+                          {/* Summary */}
+                          <p className="text-xs text-gray-500 mb-3 leading-relaxed">{p.regulation.summary}</p>
+
+                          {/* Notes textarea */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 mb-1">
+                              Notes / Questions / Ideas
+                            </label>
+                            <textarea
+                              rows={3}
+                              defaultValue={p.note}
+                              placeholder="Add notes, questions, or ideas…"
+                              onBlur={(e) => onNoteChange(m.id, p.id, e.target.value)}
+                              className="w-full text-sm px-2.5 py-2 border border-gray-200 rounded-md resize-none focus:outline-none focus:border-blue-400 text-gray-700 placeholder-gray-300"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
+// ── RegCard ────────────────────────────────────────────────────────────────
+
+interface RegCardProps {
+  item: RegulationItem;
+  expanded: boolean;
+  onToggle: () => void;
+  icon: 'file' | 'clock';
+  isPinned: boolean;
+  onPin: () => void;
+}
+
+const RegCard = ({ item, expanded, onToggle, icon, isPinned, onPin }: RegCardProps) => {
+  const colors = getStatusColors(item.status);
+  return (
+    <div className={`p-5 hover:bg-gray-50 transition-colors ${isPinned ? 'border-l-2 border-blue-400' : ''}`}>
+      <div className="flex items-start justify-between cursor-pointer" onClick={onToggle}>
+        <div className="flex-1">
+          <div className="flex items-center gap-3 mb-2">
+            {icon === 'file' ? (
+              <FileText size={18} className="text-gray-400 flex-shrink-0" />
+            ) : (
+              <Clock size={18} className="text-gray-400 flex-shrink-0" />
+            )}
+            <h3 className="font-medium text-gray-800">{item.title}</h3>
+          </div>
+          {expanded && (
+            <div className="ml-9 mt-3">
+              <p className="text-sm text-gray-600">{item.summary}</p>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2 ml-4" onClick={(e) => e.stopPropagation()}>
+          {/* Pin button */}
+          <button
+            onClick={onPin}
+            className={`p-1 rounded transition-colors ${isPinned ? 'text-blue-500 hover:text-blue-700' : 'text-gray-300 hover:text-blue-400'}`}
+            aria-label={isPinned ? 'Unpin' : 'Pin'}
+          >
+            {isPinned ? <Pin size={15} /> : <PinOff size={15} />}
+          </button>
+          <span className={`px-3 py-1 rounded-full text-xs font-medium border ${colors.bg} ${colors.text} ${colors.border}`}>
+            {getStatusLabel(item.status)}
+          </span>
+          {expanded ? <ChevronUp size={20} className="text-gray-400" /> : <ChevronDown size={20} className="text-gray-400" />}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── JurisdictionSection ────────────────────────────────────────────────────
+
+interface JurisdictionSectionProps {
+  label: string;
+  items: RegulationItem[];
+  expanded: Set<string>;
+  onToggle: (key: string) => void;
+  pins: PinnedItem[];
+  onPin: (item: RegulationItem, key: string) => void;
+}
+
+const JurisdictionSection = ({ label, items, expanded, onToggle, pins, onPin }: JurisdictionSectionProps) => {
+  const current = items.filter((r) => r.type === 'current');
+  const upcoming = items.filter((r) => r.type === 'upcoming');
+  if (items.length === 0) return null;
+
+  const isPinned = (item: RegulationItem) => pins.some((p) => p.regulation.title === item.title);
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm mb-6">
+      <div className="p-6 border-b border-gray-200">
+        <h2 className="text-lg font-semibold text-gray-800">{label}</h2>
+      </div>
+      {current.length > 0 && (
+        <div>
+          <div className="px-6 pt-4 pb-2">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Current Regulations</span>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {current.map((item, i) => {
+              const key = `${label}-current-${i}`;
+              return (
+                <RegCard
+                  key={key}
+                  item={item}
+                  expanded={expanded.has(key)}
+                  onToggle={() => onToggle(key)}
+                  icon="file"
+                  isPinned={isPinned(item)}
+                  onPin={() => onPin(item, key)}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {upcoming.length > 0 && (
+        <div className={current.length > 0 ? 'border-t border-gray-200' : ''}>
+          <div className="px-6 pt-4 pb-2">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Upcoming Changes</span>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {upcoming.map((item, i) => {
+              const key = `${label}-upcoming-${i}`;
+              return (
+                <RegCard
+                  key={key}
+                  item={item}
+                  expanded={expanded.has(key)}
+                  onToggle={() => onToggle(key)}
+                  icon="clock"
+                  isPinned={isPinned(item)}
+                  onPin={() => onPin(item, key)}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Main component ─────────────────────────────────────────────────────────
+
+const Regulations = () => {
+  const [markets, setMarkets] = useState<MarketEntry[]>(loadMarkets);
+  const [selectedMarket, setSelectedMarket] = useState<MarketEntry | null>(null);
+  const [featuredIds, setFeaturedIds] = useState<Set<string>>(loadFeatured);
+  const [topics, setTopics] = useState<string[]>(loadTopics);
+  const [topicsOpen, setTopicsOpen] = useState(false);
+  const [newTopic, setNewTopic] = useState('');
+  const [showAddMarket, setShowAddMarket] = useState(false);
+  const [newMarketInput, setNewMarketInput] = useState('');
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  const [loadingMarkets, setLoadingMarkets] = useState<Set<string>>(new Set());
+  const [errorMarkets, setErrorMarkets] = useState<Record<string, string>>({});
+  const [marketDataCache, setMarketDataCache] = useState<Record<string, MarketData>>({});
+  const [pins, setPins] = useState<Record<string, PinnedItem[]>>(loadPins);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const topicsRef = useRef(topics);
+  useEffect(() => { topicsRef.current = topics; }, [topics]);
+
+  // ── Init ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const featured = loadFeatured();
+    const mktList = loadMarkets();
+    // Default selection: first featured market, else first market
+    const firstFeatured = mktList.find((m) => featured.has(m.id));
+    setSelectedMarket(firstFeatured ?? mktList[0] ?? null);
+  }, []);
+
+  useEffect(() => {
+    const cache: Record<string, MarketData> = {};
+    for (const m of markets) {
+      const d = loadMarketData(m.id);
+      if (d) cache[m.id] = d;
+    }
+    setMarketDataCache(cache);
+  }, [markets]);
+
+  // Auto-refresh stale markets
+  useEffect(() => {
+    for (const m of markets) {
+      const d = loadMarketData(m.id);
+      if (!d || isStale(d.lastChecked)) triggerFetch(m.id, m.name);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Fetch ─────────────────────────────────────────────────────────────
+  const triggerFetch = useCallback(async (marketId: string, marketName: string) => {
+    setLoadingMarkets((prev) => new Set(prev).add(marketId));
+    setErrorMarkets((prev) => { const n = { ...prev }; delete n[marketId]; return n; });
+    try {
+      const regulations = await fetchMarketRegulations(marketName, topicsRef.current);
+      const data: MarketData = { regulations, lastChecked: new Date().toISOString() };
+      saveMarketData(marketId, data);
+      setMarketDataCache((prev) => ({ ...prev, [marketId]: data }));
+    } catch (err: any) {
+      setErrorMarkets((prev) => ({ ...prev, [marketId]: err.message || 'Failed to load regulations' }));
+    } finally {
+      setLoadingMarkets((prev) => { const n = new Set(prev); n.delete(marketId); return n; });
+    }
+  }, []);
+
+  // ── Market CRUD ───────────────────────────────────────────────────────
+  const addMarket = () => {
+    const name = newMarketInput.trim();
+    if (!name) return;
+    const id = Date.now().toString();
+    const entry: MarketEntry = { id, name };
+    const updated = [...markets, entry];
+    setMarkets(updated);
+    saveMarkets(updated);
+    setNewMarketInput('');
+    setShowAddMarket(false);
+    setSelectedMarket(entry);
+    triggerFetch(id, name);
+  };
+
+  const removeMarket = (id: string) => {
+    const updated = markets.filter((m) => m.id !== id);
+    setMarkets(updated);
+    saveMarkets(updated);
+    const newFeatured = new Set(featuredIds);
+    newFeatured.delete(id);
+    setFeaturedIds(newFeatured);
+    saveFeatured(newFeatured);
+    if (selectedMarket?.id === id) setSelectedMarket(updated[0] ?? null);
+  };
+
+  const toggleFeatured = (id: string) => {
+    const updated = new Set(featuredIds);
+    if (updated.has(id)) updated.delete(id); else updated.add(id);
+    setFeaturedIds(updated);
+    saveFeatured(updated);
+  };
+
+  // ── Topic CRUD ────────────────────────────────────────────────────────
+  const addTopic = () => {
+    const t = newTopic.trim();
+    if (!t || topics.includes(t)) return;
+    const updated = [...topics, t];
+    setTopics(updated);
+    saveTopics(updated);
+    setNewTopic('');
+  };
+
+  const removeTopic = (t: string) => {
+    const updated = topics.filter((x) => x !== t);
+    setTopics(updated);
+    saveTopics(updated);
+  };
+
+  // ── Pin CRUD ──────────────────────────────────────────────────────────
+  const togglePin = (marketId: string, marketName: string, item: RegulationItem) => {
+    const current = pins[marketId] ?? [];
+    const exists = current.find((p) => p.regulation.title === item.title);
+    let updated: PinnedItem[];
+    if (exists) {
+      updated = current.filter((p) => p.id !== exists.id);
+    } else {
+      const newPin: PinnedItem = {
+        id: Date.now().toString(),
+        regulation: item,
+        note: '',
+        pinnedAt: new Date().toISOString(),
+        marketId,
+        marketName,
+      };
+      updated = [...current, newPin];
+    }
+    const newPins = { ...pins, [marketId]: updated };
+    setPins(newPins);
+    savePins(newPins);
+  };
+
+  const unpinItem = (marketId: string, pinId: string) => {
+    const updated = (pins[marketId] ?? []).filter((p) => p.id !== pinId);
+    const newPins = { ...pins, [marketId]: updated };
+    setPins(newPins);
+    savePins(newPins);
+  };
+
+  const updateNote = (marketId: string, pinId: string, note: string) => {
+    const updated = (pins[marketId] ?? []).map((p) => p.id === pinId ? { ...p, note } : p);
+    const newPins = { ...pins, [marketId]: updated };
+    setPins(newPins);
+    savePins(newPins);
+  };
+
+  // ── Card toggle ───────────────────────────────────────────────────────
+  const toggleCard = (key: string) => {
+    setExpandedCards((prev) => {
+      const n = new Set(prev);
+      if (n.has(key)) n.delete(key); else n.add(key);
+      return n;
+    });
+  };
+
+  // ── Derived ───────────────────────────────────────────────────────────
+  const activeData = selectedMarket ? marketDataCache[selectedMarket.id] : null;
+  const regulations = activeData?.regulations ?? [];
+  const byJurisdiction = (j: RegulationJurisdiction) => regulations.filter((r) => r.jurisdiction === j);
+  const fundingCount = regulations.filter((r) => r.status === 'funding').length;
+  const enablingCount = regulations.filter((r) => r.status === 'enabling').length;
+  const riskCount = regulations.filter((r) => r.status === 'risk').length;
+  const isLoading = selectedMarket ? loadingMarkets.has(selectedMarket.id) : false;
+  const error = selectedMarket ? errorMarkets[selectedMarket.id] : undefined;
+  const activePins = selectedMarket ? (pins[selectedMarket.id] ?? []) : [];
+  const totalPinCount = Object.values(pins).reduce((sum, arr) => sum + arr.length, 0);
+
+  // Sorted market list: featured first
+  const featured = markets.filter((m) => featuredIds.has(m.id));
+  const unfeatured = markets.filter((m) => !featuredIds.has(m.id));
+
+  // ── Market sidebar item ───────────────────────────────────────────────
+  const MarketItem = ({ market }: { market: MarketEntry }) => {
+    const isFeatured = featuredIds.has(market.id);
+    const isSelected = selectedMarket?.id === market.id;
+    const refreshing = loadingMarkets.has(market.id);
+    const pinCount = (pins[market.id] ?? []).length;
+
+    return (
+      <div
+        onClick={() => setSelectedMarket(market)}
+        className={`p-2.5 rounded-lg cursor-pointer transition-colors group relative ${
+          isSelected ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-1">
+          {/* Star */}
+          <button
+            onClick={(e) => { e.stopPropagation(); toggleFeatured(market.id); }}
+            className={`flex-shrink-0 transition-colors ${isFeatured ? 'text-yellow-400' : 'text-gray-200 hover:text-yellow-300'}`}
+            aria-label={isFeatured ? 'Unstar' : 'Star market'}
+          >
+            <Star size={13} fill={isFeatured ? 'currentColor' : 'none'} />
+          </button>
+
+          <span className="text-sm font-medium text-gray-800 truncate flex-1">{market.name}</span>
+
+          {/* Pin count badge */}
+          {pinCount > 0 && (
+            <span className="flex-shrink-0 text-xs bg-blue-100 text-blue-600 rounded-full px-1.5 py-0.5 font-medium leading-none">
+              {pinCount}
+            </span>
+          )}
+
+          {/* Remove */}
+          <button
+            onClick={(e) => { e.stopPropagation(); removeMarket(market.id); }}
+            className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-opacity"
+            aria-label="Remove market"
+          >
+            <X size={12} />
+          </button>
+        </div>
+
+        {refreshing && (
+          <div className="flex items-center gap-1 mt-1 ml-4">
+            <RefreshCw size={10} className="text-blue-400 animate-spin" />
+            <span className="text-xs text-blue-400">Refreshing…</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────
+  return (
+    <div className="flex min-h-screen bg-gray-50">
+      {/* Pinned Drawer */}
+      <PinnedDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        pins={pins}
+        markets={markets}
+        onUnpin={unpinItem}
+        onNoteChange={updateNote}
+      />
+
+      {/* Markets Sidebar */}
+      <div className="w-52 bg-white border-r border-gray-200 p-4 flex flex-col">
+        {featured.length > 0 && (
+          <>
+            <h3 className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Featured</h3>
+            <div className="space-y-1 mb-4">
+              {featured.map((m) => <MarketItem key={m.id} market={m} />)}
+            </div>
+          </>
+        )}
+
+        <h3 className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
+          {featured.length > 0 ? 'My Markets' : 'Markets'}
+        </h3>
+        <div className="space-y-1 flex-1">
+          {unfeatured.map((m) => <MarketItem key={m.id} market={m} />)}
+          {unfeatured.length === 0 && featured.length > 0 && (
+            <p className="text-xs text-gray-400 italic px-1">All markets featured</p>
+          )}
+        </div>
+
+        {/* Add Market */}
+        {showAddMarket ? (
+          <div className="mt-3">
+            <input
+              autoFocus
+              type="text"
+              placeholder="City, ST"
+              value={newMarketInput}
+              onChange={(e) => setNewMarketInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addMarket(); if (e.key === 'Escape') setShowAddMarket(false); }}
+              className="w-full text-sm px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+            />
+            <div className="flex gap-1 mt-1.5">
+              <button onClick={addMarket} className="flex-1 text-xs py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">Add</button>
+              <button onClick={() => setShowAddMarket(false)} className="flex-1 text-xs py-1 border border-gray-300 text-gray-600 rounded-md hover:bg-gray-50 transition-colors">Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowAddMarket(true)}
+            className="mt-3 flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 transition-colors"
+          >
+            <Plus size={13} /> Add Market
+          </button>
+        )}
       </div>
 
       {/* Main Content */}
       <div className="flex-1 p-4 md:p-6 lg:p-8">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">Regulatory Monitor</h1>
-          <p className="text-sm text-gray-500 mt-1">Track local regulations affecting affordable housing development</p>
+        <div className="flex items-start justify-between mb-6">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">Legislation and Government Funding</h1>
+            <p className="text-sm text-gray-500 mt-1">Track local regulations affecting affordable housing development</p>
+          </div>
+          {/* Pinned button */}
+          {totalPinCount > 0 && (
+            <button
+              onClick={() => setDrawerOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
+            >
+              <Pin size={14} />
+              Pinned ({totalPinCount})
+            </button>
+          )}
         </div>
 
-        {/* Location Selector */}
-        <div className="mb-6 flex items-center justify-between bg-white rounded-lg p-4 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
-              <span className="text-sm font-medium text-gray-800">{selectedMarket.name}</span>
-              <ChevronDown size={16} className="text-gray-500" />
+        {/* Location bar */}
+        {selectedMarket && (
+          <div className="mb-6 flex items-center justify-between bg-white rounded-lg p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+                {featuredIds.has(selectedMarket.id) && <Star size={13} className="text-yellow-400" fill="currentColor" />}
+                <span className="text-sm font-medium text-gray-800">{selectedMarket.name}</span>
+              </div>
+              {activeData ? (
+                <span className="text-xs text-gray-500">Last checked: {formatTimestamp(activeData.lastChecked)}</span>
+              ) : isLoading ? (
+                <span className="text-xs text-blue-500">Fetching regulations…</span>
+              ) : null}
             </div>
-            <span className="text-xs text-gray-500">Last checked: 2025-01-22</span>
+            <button
+              onClick={() => triggerFetch(selectedMarket.id, selectedMarket.name)}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+              Refresh
+            </button>
           </div>
-          <div className="text-sm text-gray-600">
-            <span className="font-medium">P-REIT Risk Score</span>
-            <span className="ml-2 px-2.5 py-1 bg-orange-50 text-orange-700 border border-orange-200 rounded-full font-semibold">
-              {selectedMarket.riskScore.toFixed(1)}
-            </span>
-          </div>
+        )}
+
+        {/* Search Topics panel */}
+        <div className="bg-white rounded-xl shadow-sm mb-6">
+          <button
+            onClick={() => setTopicsOpen((o) => !o)}
+            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 rounded-xl transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Tag size={16} className="text-gray-500" />
+              <span className="text-sm font-semibold text-gray-700">Search Topics</span>
+              <span className="text-xs text-gray-400">({topics.length} tags — injected into API query)</span>
+            </div>
+            {topicsOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+          </button>
+          {topicsOpen && (
+            <div className="px-4 pb-4 border-t border-gray-100">
+              <div className="flex flex-wrap gap-2 mt-3">
+                {topics.map((t) => (
+                  <span key={t} className="flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs">
+                    {t}
+                    <button onClick={() => removeTopic(t)} className="hover:text-red-500 ml-0.5"><X size={11} /></button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2 mt-3">
+                <input
+                  type="text"
+                  placeholder="Add topic…"
+                  value={newTopic}
+                  onChange={(e) => setNewTopic(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') addTopic(); }}
+                  className="flex-1 text-sm px-3 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+                />
+                <button onClick={addTopic} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Add</button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-5 border border-green-200">
-            <div className="flex items-start justify-between mb-2">
-              <span className="text-sm font-medium text-green-700">Compliant Regulations</span>
-              <CheckCircle size={20} className="text-green-600" />
+        {selectedMarket && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-5 border border-green-200">
+              <div className="flex items-start justify-between mb-2">
+                <span className="text-sm font-medium text-green-700">Possible Funding Opportunities</span>
+                <CheckCircle size={20} className="text-green-600" />
+              </div>
+              <div className="text-3xl font-bold text-green-800">{fundingCount}</div>
             </div>
-            <div className="text-3xl font-bold text-green-800">{compliantCount}</div>
-          </div>
-          <div className="bg-gradient-to-br from-yellow-50 to-amber-50 rounded-xl p-5 border border-yellow-200">
-            <div className="flex items-start justify-between mb-2">
-              <span className="text-sm font-medium text-yellow-700">Concerning Regulations</span>
-              <AlertCircle size={20} className="text-yellow-600" />
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5 border border-blue-200">
+              <div className="flex items-start justify-between mb-2">
+                <span className="text-sm font-medium text-blue-700">Enabling Legislation</span>
+                <FileText size={20} className="text-blue-600" />
+              </div>
+              <div className="text-3xl font-bold text-blue-800">{enablingCount}</div>
             </div>
-            <div className="text-3xl font-bold text-yellow-800">{concerningCount}</div>
-          </div>
-          <div className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl p-5 border border-orange-200">
-            <div className="flex items-start justify-between mb-2">
-              <span className="text-sm font-medium text-orange-700">Proposed Changes</span>
-              <Clock size={20} className="text-orange-600" />
+            <div className="bg-gradient-to-br from-red-50 to-orange-50 rounded-xl p-5 border border-red-200">
+              <div className="flex items-start justify-between mb-2">
+                <span className="text-sm font-medium text-red-700">Regulatory Risks</span>
+                <AlertCircle size={20} className="text-red-600" />
+              </div>
+              <div className="text-3xl font-bold text-red-800">{riskCount}</div>
             </div>
-            <div className="text-3xl font-bold text-orange-800">{proposedChangesCount}</div>
           </div>
-        </div>
+        )}
 
-        {/* Current Regulations */}
-        <div className="bg-white rounded-xl shadow-sm mb-6">
-          <div className="p-6 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-800">Current Regulations</h2>
+        {/* Loading */}
+        {isLoading && regulations.length === 0 && (
+          <div className="bg-white rounded-xl shadow-sm p-12 text-center">
+            <RefreshCw size={32} className="animate-spin text-blue-400 mx-auto mb-3" />
+            <p className="text-gray-500 text-sm">Fetching real-time regulations for {selectedMarket?.name}…</p>
+            <p className="text-gray-400 text-xs mt-1">This may take 20–30 seconds while Claude searches the web.</p>
           </div>
-          <div className="divide-y divide-gray-200">
-            {mockRegulations.map((regulation) => {
-              const isExpanded = expandedRegulations.has(regulation.id);
-              const colors = getStatusColor(regulation.status);
+        )}
 
-              return (
-                <div key={regulation.id} className="p-5 hover:bg-gray-50 transition-colors">
-                  <div
-                    className="flex items-start justify-between cursor-pointer"
-                    onClick={() => toggleRegulation(regulation.id)}
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <FileText size={18} className="text-gray-400 flex-shrink-0" />
-                        <h3 className="font-medium text-gray-800">{regulation.title}</h3>
-                      </div>
-                      {isExpanded && (
-                        <div className="ml-9 mt-3 space-y-2">
-                          <p className="text-sm text-gray-600">{regulation.description}</p>
-                          <div className="flex items-center gap-4 text-xs text-gray-500">
-                            <span>Effective: {regulation.effectiveDate}</span>
-                            {regulation.sunset && <span>Sunset: {regulation.sunset}</span>}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 ml-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium border ${colors.bg} ${colors.text} ${colors.border}`}>
-                        {getStatusLabel(regulation.status)}
-                      </span>
-                      {isExpanded ? (
-                        <ChevronUp size={20} className="text-gray-400" />
-                      ) : (
-                        <ChevronDown size={20} className="text-gray-400" />
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+        {/* Error */}
+        {error && !isLoading && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-6 mb-6">
+            <div className="flex items-center gap-2 mb-1">
+              <AlertCircle size={18} className="text-red-500" />
+              <span className="font-medium text-red-700">Failed to load regulations</span>
+            </div>
+            <p className="text-sm text-red-600">{error}</p>
+            <button
+              onClick={() => selectedMarket && triggerFetch(selectedMarket.id, selectedMarket.name)}
+              className="mt-3 text-sm text-red-600 underline hover:text-red-800"
+            >
+              Retry
+            </button>
           </div>
-        </div>
+        )}
 
-        {/* Upcoming Regulatory Changes */}
-        <div className="bg-white rounded-xl shadow-sm">
-          <div className="p-6 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-800">Upcoming Regulatory Changes</h2>
+        {!selectedMarket && (
+          <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
+            <p>Add a market to get started.</p>
           </div>
-          <div className="divide-y divide-gray-200">
-            {mockUpcomingChanges.map((change) => {
-              const isExpanded = expandedChanges.has(change.id);
-              const colors = change.status === 'proposed'
-                ? { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' }
-                : { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' };
+        )}
 
-              return (
-                <div key={change.id} className="p-5 hover:bg-gray-50 transition-colors">
-                  <div
-                    className="flex items-start justify-between cursor-pointer"
-                    onClick={() => toggleChange(change.id)}
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <Clock size={18} className="text-gray-400 flex-shrink-0" />
-                        <h3 className="font-medium text-gray-800">{change.title}</h3>
-                      </div>
-                      {isExpanded && (
-                        <div className="ml-9 mt-3 space-y-2">
-                          <p className="text-sm text-gray-600">{change.description}</p>
-                          <div className="flex items-center gap-4 text-xs text-gray-500">
-                            {change.proposedDate && <span>Proposed: {change.proposedDate}</span>}
-                            {change.enactedDate && <span>Enacted: {change.enactedDate}</span>}
-                            {change.effectiveDate && <span>Effective: {change.effectiveDate}</span>}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 ml-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium border capitalize ${colors.bg} ${colors.text} ${colors.border}`}>
-                        {change.status}
-                      </span>
-                      {isExpanded ? (
-                        <ChevronUp size={20} className="text-gray-400" />
-                      ) : (
-                        <ChevronDown size={20} className="text-gray-400" />
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        {/* Jurisdiction sections */}
+        {regulations.length > 0 && selectedMarket && (
+          <>
+            {(['federal', 'state', 'local'] as RegulationJurisdiction[]).map((j) => (
+              <JurisdictionSection
+                key={j}
+                label={j.charAt(0).toUpperCase() + j.slice(1)}
+                items={byJurisdiction(j)}
+                expanded={expandedCards}
+                onToggle={toggleCard}
+                pins={activePins}
+                onPin={(item) => togglePin(selectedMarket.id, selectedMarket.name, item)}
+              />
+            ))}
+          </>
+        )}
       </div>
     </div>
   );
