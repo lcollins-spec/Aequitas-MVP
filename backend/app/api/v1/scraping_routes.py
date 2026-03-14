@@ -565,7 +565,8 @@ def extract_om():
                             '  "rentStabilized": "boolean or null",\n'
                             '  "annualRentGrowthCap": "decimal 0.0-1.0 or null"\n'
                             '}'
-                        )
+                        ),
+                        'cache_control': {'type': 'ephemeral'}
                     }
                 ]
             }]
@@ -718,7 +719,8 @@ def debug_om():
                         '  "rentStabilized": "boolean or null",\n'
                         '  "annualRentGrowthCap": "decimal 0.0-1.0 or null"\n'
                         '}'
-                    )
+                    ),
+                    'cache_control': {'type': 'ephemeral'}
                 }
             ]
         }]
