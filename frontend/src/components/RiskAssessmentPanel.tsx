@@ -22,6 +22,15 @@ interface RiskAssessmentPanelProps {
   geography?: string;
 }
 
+type ClimateScores = {
+  overall: number | null;
+  heat: number | null;
+  flood: number | null;
+  fire: number | null;
+  storm: number | null;
+  drought: number | null;
+};
+
 const RiskAssessmentPanel: React.FC<RiskAssessmentPanelProps> = ({
   dealId,
   holdingPeriod = 10,
@@ -34,9 +43,15 @@ const RiskAssessmentPanel: React.FC<RiskAssessmentPanelProps> = ({
   const [showMemoModal, setShowMemoModal] = useState<boolean>(false);
   const [showMissingFieldsModal, setShowMissingFieldsModal] = useState<boolean>(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
+  const [climateScores, setClimateScores] = useState<ClimateScores | null>(null);
+  const [climateLoading, setClimateLoading] = useState<boolean>(false);
+  const [climateError, setClimateError] = useState<string | null>(null);
 
   // Load existing assessment on mount
   useEffect(() => {
+    const saved = localStorage.getItem(`climate_risk_${dealId}`);
+    setClimateScores(saved ? JSON.parse(saved) : null);
+    setClimateError(null);
     loadExistingAssessment();
   }, [dealId]);
 
@@ -124,6 +139,26 @@ const RiskAssessmentPanel: React.FC<RiskAssessmentPanelProps> = ({
     }
   };
 
+  const handleClimateRisk = async () => {
+    try {
+      setClimateLoading(true);
+      setClimateError(null);
+      setClimateScores(null);
+      const res = await fetch(`/api/v1/deals/${dealId}/climate-risk`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Climate data unavailable');
+      }
+      const scores = json.data as ClimateScores;
+      localStorage.setItem(`climate_risk_${dealId}`, JSON.stringify(scores));
+      setClimateScores(scores);
+    } catch (err) {
+      setClimateError(err instanceof Error ? err.message : 'Climate data unavailable');
+    } finally {
+      setClimateLoading(false);
+    }
+  };
+
   const getRiskLevelColor = (level: string): string => {
     switch (level.toLowerCase()) {
       case 'low':
@@ -161,43 +196,25 @@ const RiskAssessmentPanel: React.FC<RiskAssessmentPanelProps> = ({
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Risk Assessment</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Academic research-based analysis showing low-rent properties deliver 2-4% higher returns
-            </p>
           </div>
-          <div className="flex items-center space-x-3">
-            {assessment && (
-              <button
-                onClick={() => setShowMemoModal(true)}
-                className="px-6 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors flex items-center"
-              >
-                <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                View Deal Memo
-              </button>
+          <button
+            onClick={handleClimateRisk}
+            disabled={climateLoading}
+            className={`px-6 py-3 rounded-lg font-medium transition-colors flex items-center ${
+              climateLoading
+                ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                : 'bg-emerald-600 text-white hover:bg-emerald-700'
+            }`}
+          >
+            {climateLoading ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Fetching...
+              </>
+            ) : (
+              'Climate Risk'
             )}
-            <button
-              onClick={handleCalculateAssessment}
-              disabled={calculating}
-              className={`px-6 py-3 rounded-lg font-medium transition-colors ${
-                calculating
-                  ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
-            >
-              {calculating ? (
-                <span className="flex items-center">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  Calculating...
-                </span>
-              ) : assessment ? (
-                'Recalculate Assessment'
-              ) : (
-                'Calculate Assessment'
-              )}
-            </button>
-          </div>
+          </button>
         </div>
 
         {error && (
@@ -206,6 +223,40 @@ const RiskAssessmentPanel: React.FC<RiskAssessmentPanelProps> = ({
           </div>
         )}
       </div>
+
+      {/* Climate Risk Card */}
+      {(climateScores || climateError) && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <svg className="h-5 w-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064" />
+            </svg>
+            Climate Risk
+          </h3>
+          {climateError ? (
+            <p className="text-gray-500 text-sm">Climate data unavailable</p>
+          ) : climateScores && (
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-4">
+              {(['overall', 'heat', 'flood', 'fire', 'storm', 'drought'] as const).map((key) => {
+                const score = climateScores[key];
+                const color =
+                  score === null ? 'text-gray-400' :
+                  score >= 70 ? 'text-red-600' :
+                  score >= 40 ? 'text-yellow-600' :
+                  'text-green-600';
+                return (
+                  <div key={key} className="border rounded-lg p-3 text-center">
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1 capitalize">{key}</div>
+                    <div className={`text-2xl font-bold ${color}`}>
+                      {score !== null ? score : '—'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main Assessment Display */}
       {assessment && (

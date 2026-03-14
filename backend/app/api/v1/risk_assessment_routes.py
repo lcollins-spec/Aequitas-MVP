@@ -3,6 +3,9 @@ Risk Assessment API Routes
 Provides REST endpoints for risk assessment and deal memo generation
 """
 
+import json
+import os
+import re
 from flask import Blueprint, jsonify, request
 from app.services.deal_service import DealService
 from app.services.deal_memo_service import DealMemoService
@@ -322,6 +325,108 @@ def get_market_thresholds():
             'success': False,
             'error': str(e)
         }), 500
+
+
+@risk_assessment_bp.route('/deals/<int:deal_id>/climate-risk', methods=['POST'])
+def get_climate_risk(deal_id):
+    """
+    Search ClimateCheck.com for climate risk scores for a deal's location.
+
+    POST /api/v1/deals/<deal_id>/climate-risk
+
+    Returns:
+        200: { success, data: { overall, heat, flood, fire, storm, drought } }
+        404: Deal not found
+        503: Anthropic unavailable
+    """
+    try:
+        deal = DealService.get_deal(deal_id)
+        if not deal:
+            return jsonify({'success': False, 'error': f'Deal {deal_id} not found'}), 404
+
+        location = (deal.location or '').strip()
+        if not location:
+            return jsonify({'success': False, 'error': 'Deal has no location set', 'code': 'NO_LOCATION'}), 400
+
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'success': False, 'error': 'ANTHROPIC_API_KEY not configured', 'code': 'SERVICE_UNAVAILABLE'}), 503
+
+        try:
+            from anthropic import Anthropic
+        except ImportError:
+            return jsonify({'success': False, 'error': 'Anthropic SDK not available', 'code': 'SERVICE_UNAVAILABLE'}), 503
+
+        client = Anthropic(api_key=api_key)
+
+        prompt = (
+            f'You are a climate risk analyst. Assess the climate risk for this real estate location: "{location}".\n\n'
+            f'Use web search to find current, specific risk data from these authoritative public sources:\n'
+            f'- FEMA flood maps (msc.fema.gov) — search "{location} FEMA flood zone"\n'
+            f'- NOAA climate data — search "{location} NOAA extreme heat days drought risk"\n'
+            f'- Cal Fire / state fire agency — search "{location} wildfire risk zone" (if applicable)\n'
+            f'- NOAA storm data — search "{location} hurricane tornado storm risk"\n\n'
+            f'DO NOT rely on riskfactor.com or climatecheck.com — those sites require JavaScript and cannot be read.\n\n'
+            f'After searching, synthesize scores on a 1-100 scale where:\n'
+            f'- 1-33 = low risk\n'
+            f'- 34-66 = moderate risk\n'
+            f'- 67-100 = high risk\n\n'
+            f'Use your knowledge of this location combined with whatever you find via search. '
+            f'You MUST return a number for every field — do not return null. '
+            f'Base scores on real climate characteristics of {location}: '
+            f'its geography, historical weather patterns, FEMA flood zone status, proximity to fire-prone areas, etc.\n\n'
+            f'Return ONLY a valid JSON object with no markdown, no backticks, no explanation. '
+            f'The object must have exactly these keys: '
+            f'"overall", "heat", "flood", "fire", "storm", "drought". '
+            f'Each value must be an integer from 1 to 100. '
+            f'Example: {{"overall": 45, "heat": 60, "flood": 20, "fire": 35, "storm": 15, "drought": 40}}'
+        )
+
+        message = client.messages.create(
+            model='claude-sonnet-4-6',
+            max_tokens=1024,
+            tools=[{
+                'type': 'web_search_20250305',
+                'name': 'web_search',
+                'max_uses': 4
+            }],
+            messages=[{'role': 'user', 'content': prompt}]
+        )
+
+        # Use the last text block (final answer after tool use)
+        response_text = ''
+        for block in message.content:
+            if hasattr(block, 'text') and block.text:
+                response_text = block.text.strip()
+
+        if not response_text:
+            return jsonify({'success': False, 'error': 'No response from Claude', 'code': 'PARSE_ERROR'}), 500
+
+        # Strip markdown fences if present
+        if '```' in response_text:
+            response_text = re.sub(r'```json\s*', '', response_text)
+            response_text = re.sub(r'```', '', response_text)
+            response_text = response_text.strip()
+
+        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if not json_match:
+            return jsonify({'success': False, 'error': 'No JSON object in response', 'code': 'PARSE_ERROR'}), 500
+
+        scores = json.loads(json_match.group(0))
+        return jsonify({'success': True, 'location': location, 'data': scores}), 200
+
+    except json.JSONDecodeError as e:
+        return jsonify({'success': False, 'error': f'Failed to parse response: {str(e)}', 'code': 'PARSE_ERROR'}), 500
+    except Exception as e:
+        error_msg = str(e)
+        print(f'[climate-risk] Error: {error_msg}', flush=True)
+        if 'credit balance is too low' in error_msg or 'billing' in error_msg.lower():
+            return jsonify({'success': False, 'error': 'Anthropic API credits exhausted.', 'code': 'BILLING_ERROR'}), 503
+        if 'rate_limit' in error_msg.lower() or 'rate limit' in error_msg.lower():
+            return jsonify({'success': False, 'error': 'Rate limit reached. Please try again.', 'code': 'RATE_LIMIT'}), 429
+        if 'invalid_api_key' in error_msg or 'authentication' in error_msg.lower():
+            return jsonify({'success': False, 'error': 'Anthropic API key is invalid.', 'code': 'AUTH_ERROR'}), 503
+        return jsonify({'success': False, 'error': 'Internal server error', 'code': 'SERVER_ERROR'}), 500
 
 
 @risk_assessment_bp.route('/deals/<int:deal_id>/summary', methods=['GET'])
