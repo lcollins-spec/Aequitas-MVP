@@ -9,7 +9,6 @@ import type { Deal, DealStatus } from '../types/deal';
 import { DEAL_STATUS_LABELS, getPipelineStatus, setPipelineStatus } from '../types/deal';
 import type { PipelineStatus } from '../types/deal';
 import DealsListSidebar from '../components/DealsListSidebar';
-import RiskAssessmentPanel from '../components/RiskAssessmentPanel';
 import PropertyUrlInput from '../components/PropertyUrlInput';
 import DataRoomModal from '../components/DataRoomModal';
 import LoiModal from '../components/LoiModal';
@@ -1617,10 +1616,7 @@ const Underwriting = () => {
             </div>
           </div>
 
-          {/* Risk Assessment - Academic Research-Based Analysis */}
-          {currentDealId && (
-            <RiskAssessmentPanel dealId={currentDealId} holdingPeriod={holdingPeriod} geography="US" />
-          )}
+
         </div>
         </div>
       </div>
