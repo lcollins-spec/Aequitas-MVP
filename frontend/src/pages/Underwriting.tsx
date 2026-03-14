@@ -3,8 +3,10 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { FileText, Download, ChevronDown, TrendingUp, Save, Upload, Loader2, CheckCircle, ChevronUp } from 'lucide-react';
 import { fredApi } from '../services/fredApi';
 import { rentcastApi } from '../services/rentcastApi';
+import { censusApi } from '../services/censusApi';
 import { dealApi } from '../services/dealApi';
-import type { RentEstimateData, RentalComparable } from '../types/rentcast';
+import type { RentEstimateData, RentalComparable, MarketStatistics } from '../types/rentcast';
+import type { DemographicData } from '../types/census';
 import type { Deal, DealStatus } from '../types/deal';
 import { DEAL_STATUS_LABELS, getPipelineStatus, setPipelineStatus } from '../types/deal';
 import type { PipelineStatus } from '../types/deal';
@@ -98,6 +100,131 @@ const gpPartners = [
   'Aequitas Housing',
 ];
 
+// --- MARKET ANALYSIS PANEL ---
+type MarketAnalysisPanelProps = {
+  isOpen: boolean;
+  loading: boolean;
+  error: string | null;
+  demographics: DemographicData | null;
+  marketStats: MarketStatistics | null;
+  zipCode: string;
+  cityName: string;
+  onToggle: () => void;
+};
+
+function MarketAnalysisPanelBlock({ isOpen, loading, error, demographics, marketStats, zipCode, cityName, onToggle }: MarketAnalysisPanelProps) {
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+  const amiRows: [number, number][] = demographics ? [
+    [30, demographics.income.ami_30_percent],
+    [50, demographics.income.ami_50_percent],
+    [60, demographics.income.ami_60_percent],
+    [80, demographics.income.ami_80_percent],
+  ] : [];
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <TrendingUp size={18} className="text-blue-500" />
+          <span className="text-sm font-semibold text-gray-800">Market Analysis</span>
+          {(cityName || zipCode) && (
+            <span className="text-xs text-gray-400">
+              {cityName && zipCode ? `${cityName} (${zipCode})` : cityName || zipCode}
+            </span>
+          )}
+        </div>
+        {isOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+      </button>
+
+      {isOpen && (
+        <div className="px-5 pb-5 border-t border-gray-100">
+          {loading && (
+            <div className="flex items-center gap-2 py-6 justify-center text-gray-500">
+              <Loader2 size={16} className="animate-spin" />
+              <span className="text-sm">Fetching market data…</span>
+            </div>
+          )}
+          {error && !loading && (
+            <p className="text-sm text-red-500 py-4">{error}</p>
+          )}
+          {!loading && !error && demographics && (
+            <div className="space-y-4 pt-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-blue-50 rounded-lg">
+                  <p className="text-xs text-gray-500">Population</p>
+                  <p className="text-sm font-bold text-blue-900">{demographics.population.total_population.toLocaleString()}</p>
+                </div>
+                <div className="p-3 bg-yellow-50 rounded-lg">
+                  <p className="text-xs text-gray-500">Median Income</p>
+                  <p className="text-sm font-bold text-yellow-900">{fmt(demographics.income.median_household_income)}</p>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-2">AMI Levels</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {amiRows.map(([pct, val]) => (
+                    <div key={pct} className="p-2 bg-gray-50 rounded-lg text-center">
+                      <p className="text-xs text-gray-400">{pct}%</p>
+                      <p className="text-xs font-semibold text-gray-800">{fmt(val)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-pink-50 rounded-lg">
+                  <p className="text-xs text-gray-500">Median Rent</p>
+                  <p className="text-sm font-bold text-pink-900">{fmt(demographics.housing.median_gross_rent)}</p>
+                </div>
+                <div className="p-3 bg-teal-50 rounded-lg">
+                  <p className="text-xs text-gray-500">Occupancy Rate</p>
+                  <p className="text-sm font-bold text-teal-900">{demographics.housing.occupancy_rate.toFixed(1)}%</p>
+                </div>
+              </div>
+
+              {marketStats && (
+                <div>
+                  <p className="text-xs font-medium text-gray-500 mb-2">Rental Market (RentCast)</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {marketStats.avgRentAll != null && (
+                      <div className="p-3 bg-purple-50 rounded-lg">
+                        <p className="text-xs text-gray-500">Avg Rent</p>
+                        <p className="text-sm font-bold text-purple-900">{fmt(marketStats.avgRentAll)}</p>
+                      </div>
+                    )}
+                    {marketStats.avgRent1bed != null && (
+                      <div className="p-3 bg-indigo-50 rounded-lg">
+                        <p className="text-xs text-gray-500">1 Bed</p>
+                        <p className="text-sm font-bold text-indigo-900">{fmt(marketStats.avgRent1bed)}</p>
+                      </div>
+                    )}
+                    {marketStats.avgRent2bed != null && (
+                      <div className="p-3 bg-indigo-50 rounded-lg">
+                        <p className="text-xs text-gray-500">2 Bed</p>
+                        <p className="text-sm font-bold text-indigo-900">{fmt(marketStats.avgRent2bed)}</p>
+                      </div>
+                    )}
+                    {marketStats.avgRent3bed != null && (
+                      <div className="p-3 bg-indigo-50 rounded-lg">
+                        <p className="text-xs text-gray-500">3 Bed</p>
+                        <p className="text-sm font-bold text-indigo-900">{fmt(marketStats.avgRent3bed)}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const Underwriting = () => {
   const [searchParams] = useSearchParams();
 
@@ -166,6 +293,13 @@ const Underwriting = () => {
   const [omOperatingExpenses, setOmOperatingExpenses] = useState<OmExtractedData['operatingExpenses'] | null>(null);
   const [omRentStabilized, setOmRentStabilized] = useState<boolean | null>(null);
   const [omAnnualRentGrowthCap, setOmAnnualRentGrowthCap] = useState<number | null>(null);
+
+  // Market Analysis Panel State
+  const [marketAnalysisOpen, setMarketAnalysisOpen] = useState(false);
+  const [marketAnalysisLoading, setMarketAnalysisLoading] = useState(false);
+  const [marketAnalysisDemographics, setMarketAnalysisDemographics] = useState<DemographicData | null>(null);
+  const [marketAnalysisStats, setMarketAnalysisStats] = useState<MarketStatistics | null>(null);
+  const [marketAnalysisError, setMarketAnalysisError] = useState<string | null>(null);
 
   // Fetch current mortgage rates on mount
   useEffect(() => {
@@ -331,6 +465,8 @@ const Underwriting = () => {
         if (uw.omRentStabilized != null) setOmRentStabilized(uw.omRentStabilized);
         if (uw.omAnnualRentGrowthCap != null) setOmAnnualRentGrowthCap(uw.omAnnualRentGrowthCap);
         if (uw.rentGrowthRate != null) setRentGrowthRate(uw.rentGrowthRate);
+        if (uw.marketAnalysisDemographics) setMarketAnalysisDemographics(uw.marketAnalysisDemographics);
+        if (uw.marketAnalysisStats) setMarketAnalysisStats(uw.marketAnalysisStats);
       } catch { /* ignore malformed JSON */ }
     }
   };
@@ -596,6 +732,8 @@ const Underwriting = () => {
           omRentStabilized: omRentStabilized ?? undefined,
           omAnnualRentGrowthCap: omAnnualRentGrowthCap ?? undefined,
           rentGrowthRate,
+          marketAnalysisDemographics: marketAnalysisDemographics ?? undefined,
+          marketAnalysisStats: marketAnalysisStats ?? undefined,
         }),
       });
 
@@ -611,6 +749,37 @@ const Underwriting = () => {
   /**
    * Export deal to Excel (Multifamily Underwriting Model)
    */
+  const handleToggleMarketAnalysis = async () => {
+    if (marketAnalysisOpen) {
+      setMarketAnalysisOpen(false);
+      return;
+    }
+    setMarketAnalysisOpen(true);
+    if (marketAnalysisDemographics || marketAnalysisLoading) return;
+    const zip = zipCode.trim();
+    if (!zip || zip.length !== 5) return;
+    setMarketAnalysisLoading(true);
+    setMarketAnalysisError(null);
+    try {
+      const [demoResp, statsResp] = await Promise.all([
+        censusApi.getDemographics(zip),
+        rentcastApi.getMarketStats(zip),
+      ]);
+      if (demoResp.success && demoResp.data) {
+        setMarketAnalysisDemographics(demoResp.data);
+      } else {
+        setMarketAnalysisError(demoResp.error || 'Failed to fetch demographics');
+      }
+      if (statsResp.success && statsResp.data) {
+        setMarketAnalysisStats(statsResp.data);
+      }
+    } catch {
+      setMarketAnalysisError('Failed to fetch market data');
+    } finally {
+      setMarketAnalysisLoading(false);
+    }
+  };
+
   const handleExportExcel = async () => {
     if (!currentDealId) {
       alert('No deal loaded. Please load a deal first.');
@@ -1616,6 +1785,17 @@ const Underwriting = () => {
             </div>
           </div>
 
+          {/* Market Analysis Panel */}
+          <MarketAnalysisPanelBlock
+            isOpen={marketAnalysisOpen}
+            loading={marketAnalysisLoading}
+            error={marketAnalysisError}
+            demographics={marketAnalysisDemographics}
+            marketStats={marketAnalysisStats}
+            zipCode={zipCode}
+            cityName={location}
+            onToggle={handleToggleMarketAnalysis}
+          />
 
         </div>
         </div>
