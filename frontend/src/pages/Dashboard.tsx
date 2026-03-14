@@ -15,10 +15,8 @@ import {
   Users,
   DollarSign,
   TrendingUp,
-  Sparkles,
   MapPin,
   ChevronDown,
-  Bot,
 } from 'lucide-react';
 import { dealApi } from '../services/dealApi';
 import type { Deal } from '../types/deal';
@@ -40,7 +38,6 @@ const unitsByStateData = [
 ];
 
 const Dashboard = () => {
-  const [dealDescription, setDealDescription] = useState('');
   const [metrics, setMetrics] = useState<{ total_affordable_units?: number; families_housed?: number } | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(true);
   const [recentDeals, setRecentDeals] = useState<Deal[]>([]);
@@ -147,23 +144,23 @@ const Dashboard = () => {
       </div>
 
       {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <div className="mb-6">
         <div className="bg-white rounded-xl p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Units Developed Over Time</h3>
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Units Over Time</h3>
           <div className="relative">
             <div className="absolute -left-4 top-1/2 -translate-y-1/2 -rotate-90 text-xs text-gray-500 font-medium">Units</div>
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={unitsOverTimeData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-                <XAxis 
-                  dataKey="year" 
-                  axisLine={false} 
+                <XAxis
+                  dataKey="year"
+                  axisLine={false}
                   tickLine={false}
                   tick={{ fill: '#6b7280', fontSize: 12 }}
                   dy={10}
                 />
-                <YAxis 
-                  axisLine={false} 
+                <YAxis
+                  axisLine={false}
                   tickLine={false}
                   tick={{ fill: '#6b7280', fontSize: 12 }}
                   domain={[0, 6000]}
@@ -182,36 +179,6 @@ const Dashboard = () => {
             </ResponsiveContainer>
           </div>
           <div className="text-center text-xs text-gray-500 font-medium mt-2">Year</div>
-        </div>
-
-        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <Bot size={20} color="#3b82f6" />
-            <span className="text-lg font-semibold text-gray-800">AI Deal Analysis</span>
-            <Sparkles size={16} color="#3b82f6" />
-          </div>
-          <div className="space-y-3">
-            <textarea
-              placeholder="Describe your potential deal..."
-              value={dealDescription}
-              onChange={(e) => setDealDescription(e.target.value)}
-              className="w-full h-32 p-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-            />
-            <p className="text-xs text-gray-600">
-              Example: 'Looking at a 180-unit apartment complex in Richmond, VA.
-              Purchase price $28M, built in 1995, needs some renovations. Current
-              rents around $1,100/month, targeting 60% AMI residents. Good
-              transit access and growing neighborhood.'
-            </p>
-            <button className="w-full flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2.5 px-4 rounded-lg font-medium text-sm transition-colors">
-              <Sparkles size={16} />
-              Analyze Deal
-            </button>
-          </div>
-          <div className="mt-4 flex flex-col items-center justify-center py-6 text-center">
-            <Bot size={48} color="#e5e7eb" />
-            <p className="text-sm text-gray-500 mt-2">Enter deal details above to get AI-powered analysis</p>
-          </div>
         </div>
       </div>
 

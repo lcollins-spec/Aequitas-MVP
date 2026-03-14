@@ -15,6 +15,176 @@ from app.services.deal_memo_service import DealMemoService
 class ExcelExportService:
     """Service for generating Excel financial models"""
 
+    # ------------------------------------------------------------------ #
+    #  Financial calculation helpers (mirror Underwriting.tsx logic)       #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _to_pct(val, default=0.0):
+        """Convert a stored percentage field to a decimal fraction.
+
+        Fields may be stored as a percentage (e.g. 20.0 for 20 %) or already
+        as a decimal (e.g. 0.20).  Values > 1 are assumed to be percentages
+        and are divided by 100; values <= 1 are returned as-is.
+        """
+        if val is None:
+            return default
+        v = float(val)
+        return v / 100.0 if v > 1.0 else v
+
+    @staticmethod
+    def _calculate_pmt(rate, nper, pv):
+        """Return the periodic payment needed to pay off *pv* in *nper* periods.
+
+        Mirrors the frontend ``calculatePMT`` utility:
+            if rate == 0: return pv / nper
+            pvif = (1 + rate)^nper
+            return (rate * pv * pvif) / (pvif - 1)
+        """
+        if rate == 0:
+            return pv / nper if nper else 0.0
+        pvif = (1.0 + rate) ** nper
+        return (rate * pv * pvif) / (pvif - 1.0)
+
+    @staticmethod
+    def _calculate_irr(cash_flows, guess=0.1):
+        """Newton-Raphson IRR — mirrors the frontend ``calculateIRR`` utility."""
+        rate = guess
+        for _ in range(1000):
+            npv_val = sum(cf / (1.0 + rate) ** i for i, cf in enumerate(cash_flows))
+            if abs(npv_val) < 0.00001:
+                return rate
+            deriv = sum(
+                -i * cf / (1.0 + rate) ** (i + 1)
+                for i, cf in enumerate(cash_flows)
+            )
+            if abs(deriv) < 1e-7:
+                return float('nan')
+            new_rate = rate - npv_val / deriv
+            if not (new_rate == new_rate) or abs(new_rate) == float('inf'):
+                return float('nan')
+            if abs(new_rate - rate) < 0.00001:
+                return new_rate
+            rate = new_rate
+        return rate
+
+    @staticmethod
+    def _compute_metrics(deal):
+        """Recalculate all financial metrics inline from raw assumption fields.
+
+        This deliberately avoids reading any stored computed field
+        (irr, equity_multiple, cap_rate, cash_on_cash_return, roi, npv,
+        monthly_cash_flow, total_monthly_expenses) so that the export always
+        reflects the current assumptions, not stale DB values.
+
+        Returns a dict with the following keys:
+            monthly_payment, total_monthly_income, total_monthly_expenses,
+            monthly_cash_flow, cap_rate, cash_on_cash_return, roi, npv,
+            irr, equity_multiple, annual_rent_increase, expense_growth
+        """
+        _to_pct = ExcelExportService._to_pct
+        _pmt    = ExcelExportService._calculate_pmt
+        _irr    = ExcelExportService._calculate_irr
+
+        # --- Raw assumption fields ---
+        purchase_price      = deal.purchase_price or 0.0
+        monthly_rent        = deal.monthly_rent or 0.0
+        other_income        = deal.other_monthly_income or 0.0
+        closing_costs       = deal.closing_costs or 0.0
+        loan_term_years     = deal.loan_term_years or 30
+
+        vacancy_rate        = _to_pct(deal.vacancy_rate,                 0.05)
+        annual_rent_inc     = _to_pct(deal.annual_rent_increase,         0.02)
+        down_pct            = _to_pct(deal.down_payment_percent,         0.20)
+        interest_rate       = _to_pct(deal.loan_interest_rate,           0.065)
+        maintenance_pct     = _to_pct(deal.maintenance_percent,          0.0)
+        mgmt_pct            = _to_pct(deal.property_management_percent,  0.0)
+
+        property_tax_annual = deal.property_tax_annual or 0.0
+        insurance_annual    = deal.insurance_annual or 0.0
+        hoa_monthly         = deal.hoa_monthly or 0.0
+        utilities_monthly   = deal.utilities_monthly or 0.0
+        other_exp_monthly   = deal.other_expenses_monthly or 0.0
+
+        # --- Loan ---
+        loan_amount     = purchase_price * (1.0 - down_pct)
+        down_payment    = purchase_price * down_pct
+        monthly_rate    = interest_rate / 12.0
+        nper            = loan_term_years * 12
+        monthly_payment = _pmt(monthly_rate, nper, loan_amount)
+
+        # --- Income ---
+        gross_monthly        = monthly_rent + other_income
+        vacancy_loss         = gross_monthly * vacancy_rate
+        total_monthly_income = gross_monthly - vacancy_loss
+
+        # --- Expenses (monthly) ---
+        total_monthly_expenses = (
+            property_tax_annual / 12.0
+            + insurance_annual / 12.0
+            + hoa_monthly
+            + monthly_rent * maintenance_pct
+            + monthly_rent * mgmt_pct
+            + utilities_monthly
+            + other_exp_monthly
+        )
+
+        # --- Monthly cash flow ---
+        monthly_cash_flow = total_monthly_income - total_monthly_expenses - monthly_payment
+
+        # --- Annual NOI (before debt service) ---
+        annual_noi = (total_monthly_income - total_monthly_expenses) * 12.0
+
+        # --- Cap rate ---
+        cap_rate = (annual_noi / purchase_price * 100.0) if purchase_price else 0.0
+
+        # --- Total invested equity ---
+        total_investment = down_payment + closing_costs
+
+        # --- Cash-on-cash return ---
+        annual_cash_flow    = monthly_cash_flow * 12.0
+        cash_on_cash_return = (annual_cash_flow / total_investment * 100.0) if total_investment else 0.0
+
+        # --- ROI (single-year, same basis as CoC) ---
+        roi = cash_on_cash_return
+
+        # --- 30-year IRR / NPV cash flow stream ---
+        # Income grows at annual_rent_increase; expenses grow at the same rate.
+        expense_growth = annual_rent_inc
+        irr_flows = [-total_investment]
+        for year in range(1, 31):
+            yr_income   = total_monthly_income  * 12.0 * (1.0 + annual_rent_inc) ** (year - 1)
+            yr_expenses = total_monthly_expenses * 12.0 * (1.0 + expense_growth)  ** (year - 1)
+            yr_debt     = monthly_payment * 12.0
+            irr_flows.append(yr_income - yr_expenses - yr_debt)
+
+        # NPV at 10 % discount rate
+        discount_rate = 0.10
+        npv_value = sum(cf / (1.0 + discount_rate) ** i for i, cf in enumerate(irr_flows))
+
+        # IRR (Newton-Raphson)
+        irr_raw = _irr(irr_flows)
+        irr     = irr_raw * 100.0 if irr_raw == irr_raw else 0.0  # guard NaN
+
+        # Equity multiple
+        total_returned = sum(irr_flows[1:])
+        equity_multiple = (total_returned / total_investment) if total_investment else 0.0
+
+        return {
+            'monthly_payment':        monthly_payment,
+            'total_monthly_income':   total_monthly_income,
+            'total_monthly_expenses': total_monthly_expenses,
+            'monthly_cash_flow':      monthly_cash_flow,
+            'cap_rate':               cap_rate,
+            'cash_on_cash_return':    cash_on_cash_return,
+            'roi':                    roi,
+            'npv':                    npv_value,
+            'irr':                    irr,
+            'equity_multiple':        equity_multiple,
+            'annual_rent_increase':   annual_rent_inc,
+            'expense_growth':         expense_growth,
+        }
+
     # Color scheme
     HEADER_FILL = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
     SUBHEADER_FILL = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
@@ -47,16 +217,19 @@ class ExcelExportService:
         if not deal_model:
             return None
 
+        # Compute all metrics fresh from raw assumption fields (never use stale DB values)
+        metrics = ExcelExportService._compute_metrics(deal_model)
+
         # Create workbook
         wb = Workbook()
         wb.remove(wb.active)  # Remove default sheet
 
         # Create sheets
-        ExcelExportService._create_executive_summary(wb, deal_model)
+        ExcelExportService._create_executive_summary(wb, deal_model, metrics)
         ExcelExportService._create_assumptions_sheet(wb, deal_model)
-        ExcelExportService._create_cash_flow_sheet(wb, deal_model)
+        ExcelExportService._create_cash_flow_sheet(wb, deal_model, metrics)
         ExcelExportService._create_market_data_sheet(wb, deal_model)
-        ExcelExportService._create_returns_analysis(wb, deal_model)
+        ExcelExportService._create_returns_analysis(wb, deal_model, metrics)
 
         # Add risk assessment sheets if available
         try:
@@ -75,7 +248,7 @@ class ExcelExportService:
         return excel_file
 
     @staticmethod
-    def _create_executive_summary(wb, deal):
+    def _create_executive_summary(wb, deal, metrics):
         """Create Executive Summary sheet"""
         ws = wb.create_sheet("Executive Summary")
 
@@ -123,10 +296,10 @@ class ExcelExportService:
         financial_items = [
             ("Purchase Price:", deal.purchase_price, "currency"),
             ("Monthly Rent:", deal.monthly_rent, "currency"),
-            ("Monthly Cash Flow:", deal.monthly_cash_flow, "currency"),
-            ("Cash-on-Cash Return:", deal.cash_on_cash_return, "percent"),
-            ("Cap Rate:", deal.cap_rate, "percent"),
-            ("ROI:", deal.roi, "percent"),
+            ("Monthly Cash Flow:", metrics['monthly_cash_flow'], "currency"),
+            ("Cash-on-Cash Return:", metrics['cash_on_cash_return'], "percent"),
+            ("Cap Rate:", metrics['cap_rate'], "percent"),
+            ("ROI:", metrics['roi'], "percent"),
         ]
 
         for label, value, format_type in financial_items:
@@ -240,7 +413,7 @@ class ExcelExportService:
         ws.column_dimensions['B'].width = 20
 
     @staticmethod
-    def _create_cash_flow_sheet(wb, deal):
+    def _create_cash_flow_sheet(wb, deal, metrics):
         """Create Cash Flow Analysis sheet with chart"""
         ws = wb.create_sheet("Cash Flow")
 
@@ -258,21 +431,21 @@ class ExcelExportService:
             cell.fill = ExcelExportService.HEADER_FILL
             cell.alignment = Alignment(horizontal='center')
 
-        # Calculate cash flow for 30 years
-        monthly_rent = deal.monthly_rent or 0
-        other_income = deal.other_monthly_income or 0
-        monthly_payment = deal.monthly_payment or 0
-        total_expenses = deal.total_monthly_expenses or 0
-        annual_rent_increase = (deal.annual_rent_increase or 0) / 100
+        # Calculate cash flow for 30 years using freshly computed metrics
+        monthly_payment = metrics['monthly_payment']
+        total_monthly_income    = metrics['total_monthly_income']
+        total_monthly_expenses  = metrics['total_monthly_expenses']
+        annual_rent_increase    = metrics['annual_rent_increase']   # decimal, e.g. 0.03
+        expense_growth          = metrics['expense_growth']         # decimal, matches income rate
 
         for year in range(1, 31):
             row = year + 3
 
-            # Income with annual increase
-            annual_income = (monthly_rent + other_income) * 12 * (1 + annual_rent_increase) ** (year - 1)
+            # Income with annual increase (vacancy already baked into total_monthly_income)
+            annual_income = total_monthly_income * 12 * (1 + annual_rent_increase) ** (year - 1)
 
-            # Expenses (assuming 2% annual increase)
-            annual_expenses = total_expenses * 12 * (1.02) ** (year - 1)
+            # Expenses with the actual growth rate from deal assumptions (not hardcoded 2%)
+            annual_expenses = total_monthly_expenses * 12 * (1 + expense_growth) ** (year - 1)
 
             # Debt service (constant)
             annual_debt_service = monthly_payment * 12
@@ -374,7 +547,7 @@ class ExcelExportService:
         ws.column_dimensions['B'].width = 40
 
     @staticmethod
-    def _create_returns_analysis(wb, deal):
+    def _create_returns_analysis(wb, deal, metrics):
         """Create Returns Analysis sheet"""
         ws = wb.create_sheet("Returns Analysis")
 
@@ -392,15 +565,16 @@ class ExcelExportService:
         ws.merge_cells(f'A{row}:C{row}')
         row += 1
 
-        metrics = [
-            ("Cash-on-Cash Return", deal.cash_on_cash_return, '0.00"%"'),
-            ("Cap Rate", deal.cap_rate, '0.00"%"'),
-            ("Return on Investment (ROI)", deal.roi, '0.00"%"'),
-            ("Net Present Value (NPV)", deal.npv, '"$"#,##0.00'),
-            ("Internal Rate of Return (IRR)", deal.irr, '0.00"%"'),
+        computed_metrics = [
+            ("Cash-on-Cash Return", metrics['cash_on_cash_return'], '0.00"%"'),
+            ("Cap Rate", metrics['cap_rate'], '0.00"%"'),
+            ("Return on Investment (ROI)", metrics['roi'], '0.00"%"'),
+            ("Net Present Value (NPV)", metrics['npv'], '"$"#,##0.00'),
+            ("Internal Rate of Return (IRR)", metrics['irr'], '0.00"%"'),
+            ("Equity Multiple (EM)", metrics['equity_multiple'], '0.00"x"'),
         ]
 
-        for label, value, number_format in metrics:
+        for label, value, number_format in computed_metrics:
             ws[f'A{row}'] = label
             ws[f'A{row}'].font = ExcelExportService.BOLD_FONT
 
@@ -428,10 +602,10 @@ class ExcelExportService:
         row += 1
 
         monthly_items = [
-            ("Total Monthly Income", deal.total_monthly_income, '"$"#,##0.00'),
-            ("Total Monthly Expenses", deal.total_monthly_expenses, '"$"#,##0.00'),
-            ("Monthly Debt Service", deal.monthly_payment, '"$"#,##0.00'),
-            ("Monthly Cash Flow", deal.monthly_cash_flow, '"$"#,##0.00'),
+            ("Total Monthly Income",   metrics['total_monthly_income'],   '"$"#,##0.00'),
+            ("Total Monthly Expenses", metrics['total_monthly_expenses'], '"$"#,##0.00'),
+            ("Monthly Debt Service",   metrics['monthly_payment'],        '"$"#,##0.00'),
+            ("Monthly Cash Flow",      metrics['monthly_cash_flow'],      '"$"#,##0.00'),
         ]
 
         for label, value, number_format in monthly_items:

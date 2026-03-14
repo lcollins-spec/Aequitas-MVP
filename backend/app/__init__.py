@@ -5,6 +5,7 @@ from flask import Flask, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 from app.database import db
+from flask_migrate import Migrate
 
 # Configure logging to ensure output is visible
 logging.basicConfig(
@@ -74,6 +75,20 @@ def create_app(test_config=None):
     except Exception as e:
         logger.warning(f"DB create_all error (continuing anyway): {e}")
         # Continue even if table creation fails - tables may already exist
+
+    # Auto-migrate: add new columns that db.create_all() won't touch on existing tables
+    try:
+        with app.app_context():
+            from sqlalchemy import text
+            with db.engine.connect() as conn:
+                result = conn.execute(text("PRAGMA table_info(deals)"))
+                existing_cols = {row[1] for row in result.fetchall()}
+                if 'underwriting_json' not in existing_cols:
+                    conn.execute(text("ALTER TABLE deals ADD COLUMN underwriting_json TEXT"))
+                    conn.commit()
+                    logger.info("Migration: added underwriting_json column to deals table")
+    except Exception as e:
+        logger.warning(f"Auto-migration warning (non-fatal): {e}")
 
     # Enable CORS for frontend communication (only in development)
     # In production (Docker), CORS not needed as same-origin

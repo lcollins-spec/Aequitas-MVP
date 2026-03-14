@@ -108,3 +108,31 @@ export interface ListImportsResponse {
   error?: string;
   code?: string;
 }
+
+export interface UnitMixEntry {
+  unitType: string;
+  count: number;
+  sqft?: number | null;
+  askingRent: number;
+}
+
+export interface OmExtractedData {
+  propertyName?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipcode?: string | null;
+  numUnits?: number | null;
+  askingPrice?: number | null;
+  unitMix: UnitMixEntry[];
+  laundryIncome?: number | null;
+  operatingExpenses?: {
+    utilitiesAnnual?: number | null;
+    insuranceAnnual?: number | null;
+    propertyTaxAnnual?: number | null;
+    repairsMaintenanceAnnual?: number | null;
+    managementFeePct?: number | null;
+  } | null;
+  rentStabilized?: boolean | null;
+  annualRentGrowthCap?: number | null;
+}

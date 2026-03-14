@@ -11,22 +11,34 @@ import {
   Menu,
   X,
   BarChart3,
+  Briefcase,
 } from 'lucide-react';
 import { useState } from 'react';
+import { getAllDealExecutions } from '../types/dealExecution';
 
-const navItems = [
-  { to: '/', icon: Home, label: 'Dashboard' },
-  { to: '/fund-returns', icon: TrendingUp, label: 'Fund Returns' },
-  { to: '/underwriting', icon: FileText, label: 'Underwriting' },
-  { to: '/map', icon: Map, label: 'Map' },
-  { to: '/market-analysis', icon: BarChart3, label: 'Market Analysis' },
-  { to: '/gp-portfolio', icon: Users, label: 'GP Portfolio' },
-  { to: '/regulations', icon: FileCheck, label: 'Regulations' },
-  { to: '/grants', icon: Gift, label: 'Grants' },
-];
+const getNavItems = () => {
+  const executions = getAllDealExecutions();
+  const mostRecent = executions.sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  )[0];
+  const dealExecTo = mostRecent ? `/deal-execution/${mostRecent.dealId}` : null;
+
+  return [
+    { to: '/', icon: Home, label: 'Dashboard' },
+    { to: '/fund-returns', icon: TrendingUp, label: 'Fund Returns' },
+    { to: '/underwriting', icon: FileText, label: 'Underwriting' },
+    dealExecTo ? { to: dealExecTo, icon: Briefcase, label: 'Deal Execution' } : null,
+    { to: '/map', icon: Map, label: 'Map' },
+    { to: '/market-analysis', icon: BarChart3, label: 'Market Analysis' },
+    { to: '/gp-portfolio', icon: Users, label: 'GP Portfolio' },
+    { to: '/regulations', icon: FileCheck, label: 'Regulations' },
+    { to: '/grants', icon: Gift, label: 'Grants' },
+  ].filter(Boolean) as { to: string; icon: React.ElementType; label: string }[];
+};
 
 const Sidebar = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const navItems = getNavItems();
 
   return (
     <>

@@ -172,7 +172,7 @@ Return ONLY a valid JSON object with these fields. Use null for any fields that 
 Do not include any explanation or additional text."""
 
             message = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-sonnet-4-6",
                 max_tokens=2048,
                 messages=[{
                     "role": "user",

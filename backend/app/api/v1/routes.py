@@ -661,6 +661,13 @@ def get_rentcast_rent_estimate():
             }), 400
 
         rentcast_service = get_rentcast_service()
+        if not rentcast_service.configured:
+            return jsonify({
+                'success': False,
+                'error': 'RentCast API key is not configured',
+                'code': 'SERVICE_UNAVAILABLE'
+            }), 503
+
         rent_estimate = rentcast_service.get_rent_estimate(
             address=address,
             zipcode=zipcode,
@@ -739,6 +746,13 @@ def get_rentcast_comparables():
             }), 400
 
         rentcast_service = get_rentcast_service()
+        if not rentcast_service.configured:
+            return jsonify({
+                'success': False,
+                'error': 'RentCast API key is not configured',
+                'code': 'SERVICE_UNAVAILABLE'
+            }), 503
+
         comparables = rentcast_service.get_rental_comparables(
             address=address,
             zipcode=zipcode,
@@ -809,6 +823,13 @@ def get_rentcast_market_stats():
             }), 400
 
         rentcast_service = get_rentcast_service()
+        if not rentcast_service.configured:
+            return jsonify({
+                'success': False,
+                'error': 'RentCast API key is not configured',
+                'code': 'SERVICE_UNAVAILABLE'
+            }), 503
+
         market_stats = rentcast_service.get_market_statistics(
             zipcode=zipcode,
             data_type=data_type
@@ -884,6 +905,13 @@ def get_rentcast_market_trends():
             }), 400
 
         rentcast_service = get_rentcast_service()
+        if not rentcast_service.configured:
+            return jsonify({
+                'success': False,
+                'error': 'RentCast API key is not configured',
+                'code': 'SERVICE_UNAVAILABLE'
+            }), 503
+
         market_trends = rentcast_service.get_market_trends(
             zipcode=zipcode,
             months=months,
@@ -950,6 +978,13 @@ def get_rentcast_property_valuation():
             }), 400
 
         rentcast_service = get_rentcast_service()
+        if not rentcast_service.configured:
+            return jsonify({
+                'success': False,
+                'error': 'RentCast API key is not configured',
+                'code': 'SERVICE_UNAVAILABLE'
+            }), 503
+
         valuation = rentcast_service.get_property_valuation(
             address=address,
             zipcode=zipcode,

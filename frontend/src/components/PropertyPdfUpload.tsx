@@ -27,8 +27,8 @@ const PropertyPdfUpload = ({ onDataExtracted, onError }: PropertyPdfUploadProps)
       }
 
       // Validate file size (max 10MB)
-      if (file.size > 10 * 1024 * 1024) {
-        setError('File size must be less than 10MB');
+      if (file.size > 20 * 1024 * 1024) {
+        setError('File size must be less than 20MB');
         setSelectedFile(null);
         return;
       }
@@ -105,8 +105,8 @@ const PropertyPdfUpload = ({ onDataExtracted, onError }: PropertyPdfUploadProps)
         return;
       }
 
-      if (file.size > 10 * 1024 * 1024) {
-        setError('File size must be less than 10MB');
+      if (file.size > 20 * 1024 * 1024) {
+        setError('File size must be less than 20MB');
         return;
       }
 
@@ -191,7 +191,7 @@ const PropertyPdfUpload = ({ onDataExtracted, onError }: PropertyPdfUploadProps)
               <p className="text-xs text-gray-500">
                 Supports property listing PDFs from LoopNet, Crexi, and other brokers
               </p>
-              <p className="text-xs text-gray-500 mt-1">Maximum file size: 10MB</p>
+              <p className="text-xs text-gray-500 mt-1">Maximum file size: 20MB</p>
             </div>
           )}
         </div>

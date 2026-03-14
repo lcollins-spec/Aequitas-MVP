@@ -8,6 +8,7 @@ import GPPortfolio from './pages/GPPortfolio';
 import Regulations from './pages/Regulations';
 import Grants from './pages/Grants';
 import MarketAnalysis from './pages/MarketAnalysis';
+import DealExecution from './pages/DealExecution';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
             <Route path="/gp-portfolio" element={<GPPortfolio />} />
             <Route path="/regulations" element={<Regulations />} />
             <Route path="/grants" element={<Grants />} />
+            <Route path="/deal-execution/:dealId" element={<DealExecution />} />
           </Routes>
         </main>
       </div>

@@ -63,6 +63,7 @@ class Deal:
     # Market Data Snapshots (JSON strings)
     rentcast_data: Optional[str] = None
     fred_data: Optional[str] = None
+    underwriting_json: Optional[str] = None
 
     # Calculated Metrics
     monthly_payment: Optional[float] = None
@@ -74,6 +75,7 @@ class Deal:
     roi: Optional[float] = None
     npv: Optional[float] = None
     irr: Optional[float] = None
+    equity_multiple: Optional[float] = None
 
     def to_dict(self):
         """Convert to dictionary for JSON serialization"""
@@ -122,6 +124,7 @@ class Deal:
             # Market Data
             'rentcastData': self.rentcast_data,
             'fredData': self.fred_data,
+            'underwritingJson': self.underwriting_json,
 
             # Calculated Metrics
             'monthlyPayment': self.monthly_payment,
@@ -132,7 +135,8 @@ class Deal:
             'capRate': self.cap_rate,
             'roi': self.roi,
             'npv': self.npv,
-            'irr': self.irr
+            'irr': self.irr,
+            'equityMultiple': self.equity_multiple
         }
 
     @staticmethod
@@ -198,6 +202,7 @@ class Deal:
             # Market Data
             rentcast_data=data.get('rentcastData'),
             fred_data=data.get('fredData'),
+            underwriting_json=data.get('underwritingJson'),
 
             # Calculated Metrics
             monthly_payment=data.get('monthlyPayment'),
@@ -208,5 +213,6 @@ class Deal:
             cap_rate=data.get('capRate'),
             roi=data.get('roi'),
             npv=data.get('npv'),
-            irr=data.get('irr')
+            irr=data.get('irr'),
+            equity_multiple=data.get('equityMultiple')
         )

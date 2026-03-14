@@ -64,6 +64,14 @@ class DealModel(db.Model):
     rentcast_data = Column(Text)
     fred_data = Column(Text)
 
+    # Multifamily underwriting assumptions blob (JSON).
+    # Stores fields that have no dedicated DB column:
+    # totalUnits, ltv, vacancyRate, badDebtRate, operatingExpenseRatio,
+    # exitCapRate, holdingPeriod, constructionCostPct, constructionCost,
+    # county, zipCode, yearBuilt, buildingType, numberOfBuildings,
+    # amiTarget, gpPartner.
+    underwriting_json = Column(Text)
+
     # Calculated Metrics (cached for performance)
     monthly_payment = Column(Float)
     total_monthly_income = Column(Float)
@@ -74,6 +82,7 @@ class DealModel(db.Model):
     roi = Column(Float)
     npv = Column(Float)
     irr = Column(Float)
+    equity_multiple = Column(Float)
 
     def __repr__(self):
         return f'<Deal {self.id}: {self.deal_name} ({self.status})>'
@@ -125,6 +134,7 @@ class DealModel(db.Model):
             # Market Data
             'rentcastData': self.rentcast_data,
             'fredData': self.fred_data,
+            'underwritingJson': self.underwriting_json,
 
             # Calculated Metrics
             'monthlyPayment': self.monthly_payment,
@@ -135,7 +145,8 @@ class DealModel(db.Model):
             'capRate': self.cap_rate,
             'roi': self.roi,
             'npv': self.npv,
-            'irr': self.irr
+            'irr': self.irr,
+            'equityMultiple': self.equity_multiple
         }
 
     @staticmethod
@@ -183,6 +194,7 @@ class DealModel(db.Model):
             # Market Data
             rentcast_data=data.get('rentcastData'),
             fred_data=data.get('fredData'),
+            underwriting_json=data.get('underwritingJson'),
 
             # Calculated Metrics
             monthly_payment=data.get('monthlyPayment'),
@@ -193,7 +205,8 @@ class DealModel(db.Model):
             cap_rate=data.get('capRate'),
             roi=data.get('roi'),
             npv=data.get('npv'),
-            irr=data.get('irr')
+            irr=data.get('irr'),
+            equity_multiple=data.get('equityMultiple')
         )
 
     def update_from_dict(self, data):
@@ -269,6 +282,8 @@ class DealModel(db.Model):
             self.rentcast_data = data['rentcastData']
         if 'fredData' in data:
             self.fred_data = data['fredData']
+        if 'underwritingJson' in data:
+            self.underwriting_json = data['underwritingJson']
 
         # Calculated Metrics
         if 'monthlyPayment' in data:
@@ -289,6 +304,8 @@ class DealModel(db.Model):
             self.npv = data['npv']
         if 'irr' in data:
             self.irr = data['irr']
+        if 'equityMultiple' in data:
+            self.equity_multiple = data['equityMultiple']
 
         # Update timestamp
         self.updated_at = datetime.utcnow()

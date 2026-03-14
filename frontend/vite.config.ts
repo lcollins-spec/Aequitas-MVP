@@ -15,7 +15,7 @@ export default defineConfig(() => {
           // Allow overriding backend URL with BACKEND_URL env var for local
           // development. Default to port 5002 which the backend is commonly
           // started with in this workspace (see backend/run.py invocation).
-          target: process.env.BACKEND_URL || 'http://localhost:5002',
+          target: process.env.BACKEND_URL || 'http://localhost:5001',
           changeOrigin: true,
           secure: false,
         },

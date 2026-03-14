@@ -2,8 +2,10 @@
 Property scraping API routes
 Provides REST endpoints for extracting property data from listing URLs and PDFs
 """
+import base64
 import json
 import os
+import re
 import tempfile
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
@@ -466,6 +468,260 @@ def update_import(import_id):
             'error': 'Internal server error',
             'code': 'SERVER_ERROR'
         }), 500
+
+
+@scraping_bp.route('/scraping/extract-om', methods=['POST'])
+def extract_om():
+    """
+    Extract Offering Memorandum data from uploaded PDF using Claude's native document API.
+    Extracts: property name, address, unit count, unit mix, and asking rents by unit type.
+    Does not use any PDF parsing library — sends PDF directly to Claude as a base64 document block.
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided', 'code': 'INVALID_INPUT'}), 400
+
+        file = request.files['file']
+
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected', 'code': 'INVALID_INPUT'}), 400
+
+        if not file.filename.lower().endswith('.pdf'):
+            return jsonify({'success': False, 'error': 'File must be a PDF', 'code': 'INVALID_FILE_TYPE'}), 400
+
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'success': False, 'error': 'ANTHROPIC_API_KEY not configured', 'code': 'SERVICE_UNAVAILABLE'}), 503
+
+        try:
+            from anthropic import Anthropic
+        except ImportError:
+            return jsonify({'success': False, 'error': 'Anthropic SDK not available', 'code': 'SERVICE_UNAVAILABLE'}), 503
+
+        pdf_bytes = file.read()
+        pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+
+        client = Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model='claude-sonnet-4-6',
+            max_tokens=4096,
+            messages=[{
+                'role': 'user',
+                'content': [
+                    {
+                        'type': 'document',
+                        'source': {
+                            'type': 'base64',
+                            'media_type': 'application/pdf',
+                            'data': pdf_base64
+                        }
+                    },
+                    {
+                        'type': 'text',
+                        'text': (
+                            'Respond with raw JSON only. No markdown, no backticks, no explanation, no preamble. '
+                            'Your entire response must be valid JSON starting with { and ending with }.\n\n'
+                            'This is a multifamily real estate Offering Memorandum (OM). '
+                            'Extract the following fields and return ONLY a valid JSON object with no extra text or markdown.\n\n'
+                            'UNIT MIX RULES:\n'
+                            '- Count units from the individual rent roll rows, NOT from summary tables.\n'
+                            '- "count" = total units of that type including vacant (VACANT, V, empty rent) rows.\n'
+                            '- "askingRent" = average monthly rent using ONLY occupied (non-vacant) rows for that type.\n'
+                            '- Use unitType labels like: "Studio", "1BR/1BA", "2BR/1BA", "2BR/2BA", "3BR/2BA".\n'
+                            '- Each entry in unitMix must represent ONE bedroom type.\n\n'
+                            'OPERATING EXPENSES RULES:\n'
+                            '- Pull annual totals from the operating expense summary table.\n'
+                            '- If only a monthly figure is shown, multiply by 12 for annual.\n'
+                            '- managementFeePct: express as a decimal between 0 and 1 (e.g., 0.06 for 6%).\n\n'
+                            'RENT STABILIZATION RULES:\n'
+                            '- Set rentStabilized to true if the document mentions rent stabilization, rent control, COLA caps, or CPI-linked rent increases.\n'
+                            '- annualRentGrowthCap: the maximum allowed annual rent increase as a decimal (e.g., 0.022 for 2.2%).\n\n'
+                            'Return this exact JSON structure (use null for any field not found):\n'
+                            '{\n'
+                            '  "propertyName": "string or null",\n'
+                            '  "address": "full street address or null",\n'
+                            '  "city": "string or null",\n'
+                            '  "state": "2-letter state code or null",\n'
+                            '  "zipcode": "string or null",\n'
+                            '  "numUnits": integer or null,\n'
+                            '  "askingPrice": number or null,\n'
+                            '  "unitMix": [\n'
+                            '    {"unitType": "e.g. 1BR/1BA", "count": integer, "sqft": integer or null, "askingRent": number or null}\n'
+                            '  ],\n'
+                            '  "laundryIncome": "annual laundry/vending/other income as number or null",\n'
+                            '  "operatingExpenses": {\n'
+                            '    "utilitiesAnnual": "number or null",\n'
+                            '    "insuranceAnnual": "number or null",\n'
+                            '    "propertyTaxAnnual": "number or null",\n'
+                            '    "repairsMaintenanceAnnual": "number or null",\n'
+                            '    "managementFeePct": "decimal 0.0-1.0 or null"\n'
+                            '  },\n'
+                            '  "rentStabilized": "boolean or null",\n'
+                            '  "annualRentGrowthCap": "decimal 0.0-1.0 or null"\n'
+                            '}'
+                        )
+                    }
+                ]
+            }]
+        )
+
+        print(f'[extract-om] stop_reason={message.stop_reason}, content blocks={len(message.content)}', flush=True)
+        for i, block in enumerate(message.content):
+            block_type = getattr(block, 'type', type(block).__name__)
+            block_text = getattr(block, 'text', None)
+            print(f'[extract-om] block[{i}] type={block_type} text_len={len(block_text) if block_text else "N/A"} preview={repr((block_text or "")[:200])}', flush=True)
+
+        response_text = ''
+        for block in message.content:
+            if hasattr(block, 'text') and block.text:
+                response_text = block.text.strip()
+                break
+
+        if not response_text:
+            print(f'[extract-om] no text content in response', flush=True)
+            return jsonify({'success': False, 'error': 'Claude returned an empty response', 'code': 'PARSE_ERROR'}), 500
+
+        # Strip markdown fences if present
+        if '```' in response_text:
+            response_text = re.sub(r'^```json\s*', '', response_text)
+            response_text = re.sub(r'^```\s*', '', response_text)
+            response_text = re.sub(r'```$', '', response_text)
+            response_text = response_text.strip()
+
+        # Extract JSON object even if Claude prepended chain-of-thought text
+        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if not json_match:
+            print(f'[extract-om] no JSON object found in response: {repr(response_text[:300])}', flush=True)
+            return jsonify({'success': False, 'error': 'No JSON object found in Claude response', 'code': 'PARSE_ERROR'}), 500
+        response_text = json_match.group(0)
+
+        print(f'[extract-om] parsing JSON ({len(response_text)} chars): {repr(response_text[:300])}', flush=True)
+        data = json.loads(response_text)
+        print(f'[extract-om] extracted payload: {json.dumps(data, indent=2)}', flush=True)
+        return jsonify({'success': True, 'data': data}), 200
+
+    except json.JSONDecodeError as e:
+        print(f'OM extraction JSON parse error: {str(e)}', flush=True)
+        print(f'RAW CLAUDE RESPONSE: {repr(response_text)}', flush=True)
+        try:
+            with open('/tmp/claude_om_response.txt', 'w') as f:
+                f.write(response_text)
+            print('[extract-om] raw response written to /tmp/claude_om_response.txt', flush=True)
+        except Exception:
+            pass
+        return jsonify({'success': False, 'error': f'Failed to parse Claude response as JSON: {str(e)}', 'code': 'PARSE_ERROR'}), 500
+    except Exception as e:
+        error_msg = str(e)
+        print(f'Error in extract_om: {error_msg}', flush=True)
+        # Surface Anthropic API errors (billing, rate limits, etc.) directly
+        if 'credit balance is too low' in error_msg or 'billing' in error_msg.lower():
+            return jsonify({'success': False, 'error': 'Anthropic API credits exhausted. Please add credits at console.anthropic.com/settings/billing.', 'code': 'BILLING_ERROR'}), 503
+        if 'rate_limit' in error_msg.lower() or 'rate limit' in error_msg.lower():
+            return jsonify({'success': False, 'error': 'Anthropic API rate limit reached. Please try again in a moment.', 'code': 'RATE_LIMIT'}), 429
+        if 'invalid_api_key' in error_msg or 'authentication' in error_msg.lower():
+            return jsonify({'success': False, 'error': 'Anthropic API key is invalid.', 'code': 'AUTH_ERROR'}), 503
+        return jsonify({'success': False, 'error': 'Internal server error', 'code': 'SERVER_ERROR'}), 500
+
+
+@scraping_bp.route('/scraping/debug-om', methods=['POST'])
+def debug_om():
+    """
+    Debug route: same as /extract-om but returns the raw Claude response as plain text.
+    Remove this route once the JSON parsing issue is resolved.
+    """
+    if 'file' not in request.files:
+        return 'No file provided', 400
+
+    file = request.files['file']
+    if not file.filename.lower().endswith('.pdf'):
+        return 'File must be a PDF', 400
+
+    api_key = os.getenv('ANTHROPIC_API_KEY')
+    if not api_key:
+        return 'ANTHROPIC_API_KEY not configured', 503
+
+    try:
+        from anthropic import Anthropic
+    except ImportError:
+        return 'Anthropic SDK not available', 503
+
+    pdf_bytes = file.read()
+    pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+
+    client = Anthropic(api_key=api_key)
+    message = client.messages.create(
+        model='claude-sonnet-4-6',
+        max_tokens=4096,
+        messages=[{
+            'role': 'user',
+            'content': [
+                {
+                    'type': 'document',
+                    'source': {
+                        'type': 'base64',
+                        'media_type': 'application/pdf',
+                        'data': pdf_base64
+                    }
+                },
+                {
+                    'type': 'text',
+                    'text': (
+                        'Respond with raw JSON only. No markdown, no backticks, no explanation, no preamble. '
+                        'Your entire response must be valid JSON starting with { and ending with }.\n\n'
+                        'This is a multifamily real estate Offering Memorandum (OM). '
+                        'Extract the following fields and return ONLY a valid JSON object with no extra text or markdown.\n\n'
+                        'UNIT MIX RULES:\n'
+                        '- Count units from the individual rent roll rows, NOT from summary tables.\n'
+                        '- Exclude any rows marked as VACANT, vacant, or empty/V from counts.\n'
+                        '- Group occupied units by bedroom type and calculate the average monthly asking/market rent for each type.\n'
+                        '- Use unitType labels like: "Studio", "1BR/1BA", "2BR/1BA", "2BR/2BA", "3BR/2BA".\n'
+                        '- Each entry in unitMix must represent ONE bedroom type with the total occupied count and average rent.\n\n'
+                        'OPERATING EXPENSES RULES:\n'
+                        '- Pull annual totals from the operating expense summary table.\n'
+                        '- If only a monthly figure is shown, multiply by 12 for annual.\n'
+                        '- managementFeePct: express as a decimal between 0 and 1 (e.g., 0.06 for 6%).\n\n'
+                        'RENT STABILIZATION RULES:\n'
+                        '- Set rentStabilized to true if the document mentions rent stabilization, rent control, COLA caps, or CPI-linked rent increases.\n'
+                        '- annualRentGrowthCap: the maximum allowed annual rent increase as a decimal (e.g., 0.022 for 2.2%).\n\n'
+                        'Return this exact JSON structure (use null for any field not found):\n'
+                        '{\n'
+                        '  "propertyName": "string or null",\n'
+                        '  "address": "full street address or null",\n'
+                        '  "city": "string or null",\n'
+                        '  "state": "2-letter state code or null",\n'
+                        '  "zipcode": "string or null",\n'
+                        '  "numUnits": integer or null,\n'
+                        '  "askingPrice": number or null,\n'
+                        '  "unitMix": [\n'
+                        '    {"unitType": "e.g. 1BR/1BA", "count": integer, "sqft": integer or null, "askingRent": number or null}\n'
+                        '  ],\n'
+                        '  "laundryIncome": "annual laundry/vending/other income as number or null",\n'
+                        '  "operatingExpenses": {\n'
+                        '    "utilitiesAnnual": "number or null",\n'
+                        '    "insuranceAnnual": "number or null",\n'
+                        '    "propertyTaxAnnual": "number or null",\n'
+                        '    "repairsMaintenanceAnnual": "number or null",\n'
+                        '    "managementFeePct": "decimal 0.0-1.0 or null"\n'
+                        '  },\n'
+                        '  "rentStabilized": "boolean or null",\n'
+                        '  "annualRentGrowthCap": "decimal 0.0-1.0 or null"\n'
+                        '}'
+                    )
+                }
+            ]
+        }]
+    )
+
+    raw_text = ''
+    for block in message.content:
+        if hasattr(block, 'text') and block.text:
+            raw_text = block.text
+            break
+
+    with open('/tmp/claude_om_response.txt', 'w') as f:
+        f.write(raw_text)
+
+    return raw_text, 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
 
 # Error handlers

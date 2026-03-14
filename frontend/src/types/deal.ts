@@ -4,6 +4,55 @@
 
 export type DealStatus = 'potential' | 'ongoing' | 'completed' | 'rejected';
 
+// Pipeline status — stored in localStorage, separate from DB deal status
+export type PipelineStatus =
+  | 'Analyzing'
+  | 'Data Room Received'
+  | 'LOI Executed'
+  | 'Under Contract'
+  | 'Closed'
+  | 'Exited';
+
+export const PIPELINE_STATUSES: PipelineStatus[] = [
+  'Analyzing',
+  'Data Room Received',
+  'LOI Executed',
+  'Under Contract',
+  'Closed',
+  'Exited',
+];
+
+export const PIPELINE_STATUS_STYLES: Record<PipelineStatus, string> = {
+  'Analyzing':          'bg-gray-100 text-gray-600 border-gray-200',
+  'Data Room Received': 'bg-blue-100 text-blue-700 border-blue-200',
+  'LOI Executed':       'bg-purple-100 text-purple-700 border-purple-200',
+  'Under Contract':     'bg-amber-100 text-amber-700 border-amber-200',
+  'Closed':             'bg-green-100 text-green-700 border-green-200',
+  'Exited':             'bg-teal-100 text-teal-700 border-teal-200',
+};
+
+const PIPELINE_STATUS_LS_KEY = 'aequitas_pipeline_statuses';
+
+export const getPipelineStatus = (dealId: number): PipelineStatus => {
+  try {
+    const raw = localStorage.getItem(PIPELINE_STATUS_LS_KEY);
+    if (raw) {
+      const map = JSON.parse(raw) as Record<string, PipelineStatus>;
+      return map[String(dealId)] ?? 'Analyzing';
+    }
+  } catch { /* ignore */ }
+  return 'Analyzing';
+};
+
+export const setPipelineStatus = (dealId: number, status: PipelineStatus): void => {
+  try {
+    const raw = localStorage.getItem(PIPELINE_STATUS_LS_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, PipelineStatus>) : {};
+    map[String(dealId)] = status;
+    localStorage.setItem(PIPELINE_STATUS_LS_KEY, JSON.stringify(map));
+  } catch { /* ignore */ }
+};
+
 export interface Deal {
   // Primary Key
   id?: number;
@@ -52,6 +101,7 @@ export interface Deal {
   // Market Data Snapshots (JSON strings)
   rentcastData?: string;
   fredData?: string;
+  underwritingJson?: string;
 
   // Calculated Metrics
   monthlyPayment?: number;
@@ -63,6 +113,7 @@ export interface Deal {
   roi?: number;
   npv?: number;
   irr?: number;
+  equityMultiple?: number;
 }
 
 export interface DealFormData {

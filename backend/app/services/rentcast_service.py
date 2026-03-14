@@ -1,8 +1,11 @@
 """RentCast API client service for rental market intelligence."""
 
+import logging
 import requests
 from typing import Optional, List
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 from app.models.rentcast_models import (
     RentEstimateData,
     RentalComparable,
@@ -58,12 +61,13 @@ class RentCastService:
             cache_ttl: Cache time-to-live in seconds (default 7 days)
         """
         if not api_key:
-            raise ValueError(
-                "RentCast API key is required. "
-                "Get one at https://app.rentcast.io/app/api-settings"
+            logger.warning(
+                "RENTCAST_API_KEY is not set — RentCast features will be unavailable. "
+                "Get a key at https://app.rentcast.io/app/api-settings"
             )
 
         self.api_key = api_key
+        self.configured = bool(api_key)
         self.cache_ttl = cache_ttl
         self.cache = RentCastCache()
 
@@ -409,6 +413,9 @@ class RentCastService:
         Returns:
             JSON response data or None if error
         """
+        if not self.api_key:
+            return None
+
         try:
             headers = {
                 'X-Api-Key': self.api_key,

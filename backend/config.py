@@ -47,6 +47,9 @@ class Config:
         SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', f'sqlite:///{db_path}')
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # Maximum upload size: 20MB
+    MAX_CONTENT_LENGTH = 20 * 1024 * 1024
     SQLALCHEMY_ECHO = DEBUG
 
     # Database-agnostic engine options
