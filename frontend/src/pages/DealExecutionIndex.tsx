@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Briefcase, MapPin, DollarSign, Calendar, ArrowRight } from 'lucide-react';
 import {
-  getAllDealExecutions,
+  getAllDealExecutions, loadAllExecutionsFromBackend,
   type DealExecutionRecord,
 } from '../types/dealExecution';
 import {
-  getPipelineStatus,
+  getPipelineStatus, syncPipelineStatusesFromBackend,
   type PipelineStatus,
   PIPELINE_STATUS_STYLES,
 } from '../types/deal';
@@ -30,16 +30,22 @@ interface CardData extends DealExecutionRecord {
 const DealExecutionIndex = () => {
   const [cards, setCards] = useState<CardData[]>([]);
 
-  useEffect(() => {
+  const buildCards = () => {
     const records = getAllDealExecutions().sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-    setCards(
-      records.map(r => ({
-        ...r,
-        pipelineStatus: getPipelineStatus(r.dealId),
-      }))
-    );
+    setCards(records.map(r => ({ ...r, pipelineStatus: getPipelineStatus(r.dealId) })));
+  };
+
+  useEffect(() => {
+    buildCards();
+    // Background: hydrate from backend then re-render
+    loadAllExecutionsFromBackend().then(records => {
+      const ids = records.map(r => r.dealId);
+      if (ids.length > 0) {
+        syncPipelineStatusesFromBackend(ids).then(buildCards);
+      }
+    });
   }, []);
 
   return (

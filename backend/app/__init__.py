@@ -95,6 +95,29 @@ def create_app(test_config=None):
                     conn.execute(text("ALTER TABLE deals ADD COLUMN regulations_json TEXT"))
                     conn.commit()
                     logger.info("Migration: added regulations_json column to deals table")
+            # deal_meta table
+            result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='deal_meta'"))
+            if not result.fetchone():
+                conn.execute(text(
+                    "CREATE TABLE deal_meta ("
+                    "deal_id INTEGER PRIMARY KEY, "
+                    "pipeline_status TEXT NOT NULL DEFAULT 'Analyzing', "
+                    "execution_data TEXT, "
+                    "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
+                ))
+                conn.commit()
+                logger.info("Migration: created deal_meta table")
+            # app_data table
+            result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='app_data'"))
+            if not result.fetchone():
+                conn.execute(text(
+                    "CREATE TABLE app_data ("
+                    "key TEXT PRIMARY KEY, "
+                    "value TEXT, "
+                    "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
+                ))
+                conn.commit()
+                logger.info("Migration: created app_data table")
     except Exception as e:
         logger.warning(f"Auto-migration warning (non-fatal): {e}")
 
@@ -252,6 +275,10 @@ def create_app(test_config=None):
     # Sourcing import API
     from .api.v1.sourcing_routes import sourcing_bp
     app.register_blueprint(sourcing_bp, url_prefix='/api/v1')
+
+    # Generic app-data key-value store (sourcing, fund settings, op performance)
+    from .api.v1.app_data_routes import app_data_bp
+    app.register_blueprint(app_data_bp, url_prefix='/api/v1')
 
     # Serve frontend (only in production/Docker)
     if in_docker:

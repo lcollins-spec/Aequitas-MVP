@@ -96,9 +96,7 @@ const amiOptions = [
   '80% AMI - $64,000/year',
 ];
 
-const gpPartners = [
-  'Aequitas Housing',
-];
+const GP_PARTNERS_FALLBACK = ['Aequitas Housing'];
 
 // --- MARKET ANALYSIS PANEL ---
 type MarketAnalysisPanelProps = {
@@ -273,6 +271,7 @@ const Underwriting = () => {
   const [cashFlowTab, setCashFlowTab] = useState<'noi' | 'levered'>('noi');
   const [amiTarget, setAmiTarget] = useState('60% AMI - $48,000/year');
   const [gpPartner, setGpPartner] = useState('Aequitas Housing');
+  const [gpPartners, setGpPartners] = useState<string[]>(GP_PARTNERS_FALLBACK);
 
   // FRED API State
   const [currentMortgageRate, setCurrentMortgageRate] = useState<number | null>(null);
@@ -312,6 +311,18 @@ const Underwriting = () => {
   const [marketAnalysisError, setMarketAnalysisError] = useState<string | null>(null);
 
   // Fetch current mortgage rates on mount
+  useEffect(() => {
+    fetch('/api/v1/gps')
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { id: number; name: string }[] | null) => {
+        if (data && data.length > 0) {
+          setGpPartners(data.map(g => g.name));
+          setGpPartner(prev => data.some(g => g.name === prev) ? prev : data[0].name);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     async function fetchCurrentRates() {
       try {

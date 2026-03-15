@@ -1520,3 +1520,28 @@ class ApiRateLimit(db.Model):
         rate_limit.request_count += 1
         db.session.commit()
         return True
+
+
+class DealMetaModel(db.Model):
+    """
+    Per-deal metadata that the frontend manages: pipeline status and execution record JSON.
+    Keyed by deal_id (matches DealModel.id). Created on first write, upserted on update.
+    """
+    __tablename__ = 'deal_meta'
+
+    deal_id = Column(Integer, primary_key=True)
+    pipeline_status = Column(String(100), nullable=False, default='Analyzing')
+    # Full DealExecutionRecord stored as JSON text
+    execution_data = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class AppDataModel(db.Model):
+    """
+    Generic key-value store for app-level JSON blobs (sourcing data, fund settings, etc.).
+    """
+    __tablename__ = 'app_data'
+
+    key = Column(String(255), primary_key=True)
+    value = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)

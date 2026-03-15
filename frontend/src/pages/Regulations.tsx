@@ -56,7 +56,10 @@ function loadMarkets(): MarketEntry[] {
   } catch {}
   return DEFAULT_MARKETS;
 }
-function saveMarkets(m: MarketEntry[]) { localStorage.setItem(LS_MARKETS, JSON.stringify(m)); }
+function saveMarkets(m: MarketEntry[]) {
+  localStorage.setItem(LS_MARKETS, JSON.stringify(m));
+  fetch('/api/v1/app-data/reg_markets', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: m }) }).catch(() => {});
+}
 
 function loadTopics(): string[] {
   try {
@@ -65,7 +68,10 @@ function loadTopics(): string[] {
   } catch {}
   return DEFAULT_TOPICS;
 }
-function saveTopics(t: string[]) { localStorage.setItem(LS_TOPICS, JSON.stringify(t)); }
+function saveTopics(t: string[]) {
+  localStorage.setItem(LS_TOPICS, JSON.stringify(t));
+  fetch('/api/v1/app-data/reg_topics', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: t }) }).catch(() => {});
+}
 
 function loadMarketData(id: string): MarketData | null {
   try {
@@ -83,7 +89,11 @@ function loadFeatured(): Set<string> {
   } catch {}
   return new Set();
 }
-function saveFeatured(ids: Set<string>) { localStorage.setItem(LS_FEATURED, JSON.stringify([...ids])); }
+function saveFeatured(ids: Set<string>) {
+  const arr = [...ids];
+  localStorage.setItem(LS_FEATURED, JSON.stringify(arr));
+  fetch('/api/v1/app-data/reg_featured', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: arr }) }).catch(() => {});
+}
 
 function loadPins(): Record<string, PinnedItem[]> {
   try {
@@ -92,7 +102,10 @@ function loadPins(): Record<string, PinnedItem[]> {
   } catch {}
   return {};
 }
-function savePins(p: Record<string, PinnedItem[]>) { localStorage.setItem(LS_PINS, JSON.stringify(p)); }
+function savePins(p: Record<string, PinnedItem[]>) {
+  localStorage.setItem(LS_PINS, JSON.stringify(p));
+  fetch('/api/v1/app-data/reg_pins', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: p }) }).catch(() => {});
+}
 
 function isStale(lastChecked: string): boolean {
   return Date.now() - new Date(lastChecked).getTime() > AUTO_REFRESH_MS;
@@ -388,9 +401,38 @@ const Regulations = () => {
   useEffect(() => {
     const featured = loadFeatured();
     const mktList = loadMarkets();
-    // Default selection: first featured market, else first market
     const firstFeatured = mktList.find((m) => featured.has(m.id));
     setSelectedMarket(firstFeatured ?? mktList[0] ?? null);
+
+    // Background: hydrate from backend
+    const syncKey = async (key: string, lsKey: string, apply: (v: any) => void) => {
+      try {
+        const r = await fetch(`/api/v1/app-data/${key}`);
+        if (!r.ok) return;
+        const json = await r.json();
+        if (json?.value == null) return;
+        localStorage.setItem(lsKey, JSON.stringify(json.value));
+        apply(json.value);
+      } catch { /* ignore */ }
+    };
+
+    syncKey('reg_markets', LS_MARKETS, (v: MarketEntry[]) => {
+      if (Array.isArray(v) && v.length > 0) {
+        setMarkets(v);
+        const feat = loadFeatured();
+        const first = v.find(m => feat.has(m.id)) ?? v[0] ?? null;
+        setSelectedMarket(first);
+      }
+    });
+    syncKey('reg_topics', LS_TOPICS, (v: string[]) => {
+      if (Array.isArray(v) && v.length > 0) setTopics(v);
+    });
+    syncKey('reg_featured', LS_FEATURED, (v: string[]) => {
+      if (Array.isArray(v)) setFeaturedIds(new Set(v));
+    });
+    syncKey('reg_pins', LS_PINS, (v: Record<string, PinnedItem[]>) => {
+      if (v && typeof v === 'object') setPins(v);
+    });
   }, []);
 
   useEffect(() => {

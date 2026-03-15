@@ -41,4 +41,25 @@ export const saveFundSettings = (s: FundSettings): void => {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(s));
   } catch { /* ignore */ }
+  // Fire-and-forget backend sync
+  fetch('/api/v1/app-data/fund_settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value: s }),
+  }).catch(() => {});
+};
+
+/** Load fund settings from backend and merge into localStorage. */
+export const loadFundSettingsFromBackend = async (): Promise<FundSettings | null> => {
+  try {
+    const res = await fetch('/api/v1/app-data/fund_settings');
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json.value) return null;
+    const merged = { ...DEFAULT_FUND_SETTINGS, ...json.value } as FundSettings;
+    localStorage.setItem(LS_KEY, JSON.stringify(merged));
+    return merged;
+  } catch {
+    return null;
+  }
 };

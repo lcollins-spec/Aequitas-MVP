@@ -51,6 +51,30 @@ export const setPipelineStatus = (dealId: number, status: PipelineStatus): void 
     map[String(dealId)] = status;
     localStorage.setItem(PIPELINE_STATUS_LS_KEY, JSON.stringify(map));
   } catch { /* ignore */ }
+  // Fire-and-forget sync to backend
+  fetch(`/api/v1/deals/${dealId}/pipeline-status`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pipelineStatus: status }),
+  }).catch(() => {});
+};
+
+/** On app init, load pipeline statuses from backend and merge into localStorage cache. */
+export const syncPipelineStatusesFromBackend = async (dealIds: number[]): Promise<void> => {
+  try {
+    const raw = localStorage.getItem(PIPELINE_STATUS_LS_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, PipelineStatus>) : {};
+    await Promise.all(dealIds.map(async (id) => {
+      try {
+        const res = await fetch(`/api/v1/deals/${id}/pipeline-status`);
+        if (res.ok) {
+          const json = await res.json();
+          map[String(id)] = json.pipelineStatus ?? 'Analyzing';
+        }
+      } catch { /* ignore */ }
+    }));
+    localStorage.setItem(PIPELINE_STATUS_LS_KEY, JSON.stringify(map));
+  } catch { /* ignore */ }
 };
 
 export interface Deal {

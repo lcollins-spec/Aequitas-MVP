@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DollarSign, TrendingUp, ArrowUp, PieChart, Activity, BarChart2, Settings } from 'lucide-react';
 import {
@@ -13,8 +13,8 @@ import {
   Tooltip,
   Legend,
 } from 'recharts';
-import { getAllDealExecutions } from '../types/dealExecution';
-import { getFundSettings, saveFundSettings, type FundSettings } from '../types/fundSettings';
+import { getAllDealExecutions, loadAllExecutionsFromBackend, type DealExecutionRecord } from '../types/dealExecution';
+import { getFundSettings, saveFundSettings, loadFundSettingsFromBackend, type FundSettings } from '../types/fundSettings';
 import { getPipelineStatus, PIPELINE_STATUS_STYLES, type PipelineStatus } from '../types/deal';
 import FundSettingsModal from '../components/FundSettingsModal';
 
@@ -78,8 +78,18 @@ const fmtX = (v: number) => `${v.toFixed(2)}x`;
 const FundReturns = () => {
   const [settings, setSettings] = useState<FundSettings>(() => getFundSettings());
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [executions, setExecutions] = useState<DealExecutionRecord[]>(() => getAllDealExecutions());
   const navigate = useNavigate();
-  const executions = useMemo(() => getAllDealExecutions(), []);
+
+  // Hydrate from backend on mount
+  useEffect(() => {
+    loadFundSettingsFromBackend().then(backendSettings => {
+      if (backendSettings) setSettings(backendSettings);
+    });
+    loadAllExecutionsFromBackend().then(() => {
+      setExecutions(getAllDealExecutions());
+    });
+  }, []);
 
   const handleSaveSettings = useCallback((updated: FundSettings) => {
     saveFundSettings(updated);

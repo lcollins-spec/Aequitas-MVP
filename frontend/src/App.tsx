@@ -10,6 +10,7 @@ import Regulations from './pages/Regulations';
 import MarketAnalysis from './pages/MarketAnalysis';
 import DealExecution from './pages/DealExecution';
 import DealExecutionIndex from './pages/DealExecutionIndex';
+import AssetManagement from './pages/AssetManagement';
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
             <Route path="/regulations" element={<Regulations />} />
             <Route path="/deal-execution" element={<DealExecutionIndex />} />
             <Route path="/deal-execution/:dealId" element={<DealExecution />} />
+            <Route path="/asset-management" element={<AssetManagement />} />
           </Routes>
         </main>
       </div>

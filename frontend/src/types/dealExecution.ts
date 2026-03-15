@@ -133,6 +133,54 @@ export interface DealExecutionRecord {
 
 const DEAL_EXEC_LS_KEY = 'aequitas_deal_executions';
 
+// ─── Backend sync helpers (fire-and-forget) ───────────────────────────────────
+
+const _syncRecordToBackend = (record: DealExecutionRecord): void => {
+  fetch(`/api/v1/deals/${record.dealId}/execution-data`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data: record }),
+  }).catch(() => {});
+};
+
+/** Fetch a single deal's execution record from the backend and merge into localStorage. */
+export const loadExecutionFromBackend = async (dealId: number): Promise<DealExecutionRecord | null> => {
+  try {
+    const res = await fetch(`/api/v1/deals/${dealId}/execution-data`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json.data) return null;
+    // Persist to localStorage so synchronous reads work immediately after
+    const raw = localStorage.getItem(DEAL_EXEC_LS_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, DealExecutionRecord>) : {};
+    map[String(dealId)] = json.data;
+    localStorage.setItem(DEAL_EXEC_LS_KEY, JSON.stringify(map));
+    return json.data as DealExecutionRecord;
+  } catch {
+    return null;
+  }
+};
+
+/** Fetch all execution records from the backend and merge into localStorage. */
+export const loadAllExecutionsFromBackend = async (): Promise<DealExecutionRecord[]> => {
+  try {
+    const res = await fetch('/api/v1/deals/all-execution-data');
+    if (!res.ok) return [];
+    const json = await res.json();
+    const records: DealExecutionRecord[] = json.records ?? [];
+    if (records.length === 0) return [];
+    const raw = localStorage.getItem(DEAL_EXEC_LS_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, DealExecutionRecord>) : {};
+    for (const r of records) {
+      map[String(r.dealId)] = r;
+    }
+    localStorage.setItem(DEAL_EXEC_LS_KEY, JSON.stringify(map));
+    return records;
+  } catch {
+    return [];
+  }
+};
+
 export const getDealExecution = (dealId: number): DealExecutionRecord | null => {
   try {
     const raw = localStorage.getItem(DEAL_EXEC_LS_KEY);
@@ -151,18 +199,25 @@ export const saveDealExecution = (record: DealExecutionRecord): void => {
     map[String(record.dealId)] = record;
     localStorage.setItem(DEAL_EXEC_LS_KEY, JSON.stringify(map));
   } catch { /* ignore */ }
+  _syncRecordToBackend(record);
 };
 
-/** Merge partial updates into an existing record without overwriting other fields */
+/** Merge partial updates into an existing record without overwriting other fields.
+ *  If no record exists yet, creates a minimal one so the patch is never silently dropped. */
 export const patchDealExecution = (dealId: number, patch: Partial<DealExecutionRecord>): void => {
   try {
     const raw = localStorage.getItem(DEAL_EXEC_LS_KEY);
     const map = raw ? (JSON.parse(raw) as Record<string, DealExecutionRecord>) : {};
-    const existing = map[String(dealId)];
-    if (existing) {
-      map[String(dealId)] = { ...existing, ...patch };
-      localStorage.setItem(DEAL_EXEC_LS_KEY, JSON.stringify(map));
-    }
+    const existing = map[String(dealId)] ?? {
+      dealId,
+      dealName: '',
+      createdAt: new Date().toISOString(),
+      documents: [],
+    } as DealExecutionRecord;
+    const merged = { ...existing, ...patch };
+    map[String(dealId)] = merged;
+    localStorage.setItem(DEAL_EXEC_LS_KEY, JSON.stringify(map));
+    _syncRecordToBackend(merged);
   } catch { /* ignore */ }
 };
 

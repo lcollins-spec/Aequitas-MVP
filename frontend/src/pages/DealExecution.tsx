@@ -7,13 +7,14 @@ import {
 } from 'lucide-react';
 import {
   getDealExecution, patchDealExecution, getAllDealExecutions,
+  loadExecutionFromBackend,
   type DealExecutionRecord, type CapexItem, type DealDocument,
   type DDItemStatus, type DealStage,
   DATA_ROOM_ITEMS, CLOSING_ITEMS,
 } from '../types/dealExecution';
 import DocumentsPanel from '../components/DocumentsPanel';
 import {
-  getPipelineStatus, setPipelineStatus,
+  getPipelineStatus, setPipelineStatus, syncPipelineStatusesFromBackend,
   type PipelineStatus, PIPELINE_STATUSES, PIPELINE_STATUS_STYLES,
 } from '../types/deal';
 import { getFundSettings } from '../types/fundSettings';
@@ -276,50 +277,56 @@ const DealExecution = () => {
   const [memoLoading, setMemoLoading] = useState(false);
   const [memoError, setMemoError]     = useState('');
 
-  // ── Load record on mount
+  // ── Helper: apply a loaded record to component state
+  const applyRecord = useCallback((rec: DealExecutionRecord) => {
+    setRecord(rec);
+    setStage(rec.stage ?? 1);
+    const loi = rec.loiData ?? {};
+    setPurchasePrice(loi.purchasePrice ? String(loi.purchasePrice) : rec.purchasePrice ? String(rec.purchasePrice) : '');
+    setEarnestMoney(loi.earnestMoneyDeposit ? String(loi.earnestMoneyDeposit) : '');
+    setDdDeadline(loi.dueDiligenceDeadline ?? '');
+    setFinancingContingency(loi.financingContingency ?? '');
+    setTargetClose(loi.targetCloseDate ?? '');
+    setLoanAmount(loi.loanAmount ? String(loi.loanAmount) : '');
+    setInterestRate(loi.interestRate ? String((loi.interestRate * 100).toFixed(3)) : '');
+    setLoanTermMonths(loi.loanTermMonths ? String(loi.loanTermMonths) : '');
+    const ms = rec.milestones ?? {};
+    setUnderContractTarget(ms.underContractTarget ?? '');
+    setClosedTarget(ms.closedTarget ?? '');
+    setExitedTarget(ms.exitedTarget ?? '');
+    const pf = rec.proForma ?? {};
+    setStrategy(pf.strategy ?? 'Acquisition');
+    setAequitasEquity(pf.aequitasEquity ? String(pf.aequitasEquity) : '');
+    setProjExitValue(pf.projectedExitValue ? String(pf.projectedExitValue) : '');
+    setProjLpNetIrr(pf.projectedLpNetIrr ? String(pf.projectedLpNetIrr) : '');
+    setProjEquityMultiple(pf.projectedEquityMultiple ? String(pf.projectedEquityMultiple) : '');
+    setDocuments(rec.documents ?? []);
+    setCapexItems(rec.capexItems ?? []);
+    setDdChecklist(rec.ddChecklist ?? {});
+    setDdUploads(rec.ddUploads ?? {});
+    setDataRoomChecklist(rec.dataRoomChecklist ?? {});
+    setDataRoomUploads(rec.dataRoomUploads ?? {});
+    setClosingChecklist(rec.closingChecklist ?? {});
+  }, []);
+
+  // ── Load record on mount (localStorage first for instant render, then backend hydration)
   useEffect(() => {
     const rec = getDealExecution(numericId);
-    if (rec) {
-      setRecord(rec);
-      setStage(rec.stage ?? 1);
-      const loi = rec.loiData ?? {};
-      setPurchasePrice(loi.purchasePrice ? String(loi.purchasePrice) : rec.purchasePrice ? String(rec.purchasePrice) : '');
-      setEarnestMoney(loi.earnestMoneyDeposit ? String(loi.earnestMoneyDeposit) : '');
-      setDdDeadline(loi.dueDiligenceDeadline ?? '');
-      setFinancingContingency(loi.financingContingency ?? '');
-      setTargetClose(loi.targetCloseDate ?? '');
-      setLoanAmount(loi.loanAmount ? String(loi.loanAmount) : '');
-      setInterestRate(loi.interestRate ? String((loi.interestRate * 100).toFixed(3)) : '');
-      setLoanTermMonths(loi.loanTermMonths ? String(loi.loanTermMonths) : '');
-
-      const ms = rec.milestones ?? {};
-      setUnderContractTarget(ms.underContractTarget ?? '');
-      setClosedTarget(ms.closedTarget ?? '');
-      setExitedTarget(ms.exitedTarget ?? '');
-
-      const pf = rec.proForma ?? {};
-      setStrategy(pf.strategy ?? 'Acquisition');
-      setAequitasEquity(pf.aequitasEquity ? String(pf.aequitasEquity) : '');
-      setProjExitValue(pf.projectedExitValue ? String(pf.projectedExitValue) : '');
-      setProjLpNetIrr(pf.projectedLpNetIrr ? String(pf.projectedLpNetIrr) : '');
-      setProjEquityMultiple(pf.projectedEquityMultiple ? String(pf.projectedEquityMultiple) : '');
-
-      setDocuments(rec.documents ?? []);
-      setCapexItems(rec.capexItems ?? []);
-
-      setDdChecklist(rec.ddChecklist ?? {});
-      setDdUploads(rec.ddUploads ?? {});
-      setDataRoomChecklist(rec.dataRoomChecklist ?? {});
-      setDataRoomUploads(rec.dataRoomUploads ?? {});
-      setClosingChecklist(rec.closingChecklist ?? {});
-    }
+    if (rec) applyRecord(rec);
     setPipelineStatusState(getPipelineStatus(numericId));
     setAllDeals(
       getAllDealExecutions().sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       )
     );
-  }, [numericId]);
+    // Hydrate from backend in background — overwrites localStorage cache with server truth
+    loadExecutionFromBackend(numericId).then(backendRec => {
+      if (backendRec) applyRecord(backendRec);
+    });
+    syncPipelineStatusesFromBackend([numericId]).then(() => {
+      setPipelineStatusState(getPipelineStatus(numericId));
+    });
+  }, [numericId, applyRecord]);
 
   // ── Live calculations
   const ppNum = parseNum(purchasePrice);

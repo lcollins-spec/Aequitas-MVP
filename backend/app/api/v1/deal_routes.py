@@ -2,8 +2,10 @@
 Deal management API routes
 Provides REST endpoints for CRUD operations on deals
 """
+import json
 from flask import Blueprint, request, jsonify, send_file
 from app.services.deal_service import DealService
+from app.database import db, DealMetaModel
 
 deals_bp = Blueprint('deals', __name__)
 
@@ -212,6 +214,82 @@ def export_deal(deal_id):
         return jsonify({
             'error': str(e)
         }), 500
+
+
+# ── Deal Meta endpoints (pipeline status + execution data) ────────────────────
+
+def _get_or_create_meta(deal_id: int) -> DealMetaModel:
+    meta = DealMetaModel.query.get(deal_id)
+    if not meta:
+        meta = DealMetaModel(deal_id=deal_id)
+        db.session.add(meta)
+        db.session.flush()
+    return meta
+
+
+@deals_bp.route('/deals/<int:deal_id>/pipeline-status', methods=['GET'])
+def get_pipeline_status(deal_id):
+    try:
+        meta = DealMetaModel.query.get(deal_id)
+        status = meta.pipeline_status if meta else 'Analyzing'
+        return jsonify({'pipelineStatus': status}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@deals_bp.route('/deals/<int:deal_id>/pipeline-status', methods=['PUT'])
+def set_pipeline_status(deal_id):
+    try:
+        data = request.get_json() or {}
+        status = data.get('pipelineStatus', 'Analyzing')
+        meta = _get_or_create_meta(deal_id)
+        meta.pipeline_status = status
+        db.session.commit()
+        return jsonify({'pipelineStatus': meta.pipeline_status}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@deals_bp.route('/deals/<int:deal_id>/execution-data', methods=['GET'])
+def get_execution_data(deal_id):
+    try:
+        meta = DealMetaModel.query.get(deal_id)
+        if not meta or not meta.execution_data:
+            return jsonify({'data': None}), 200
+        return jsonify({'data': json.loads(meta.execution_data)}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@deals_bp.route('/deals/<int:deal_id>/execution-data', methods=['PUT'])
+def set_execution_data(deal_id):
+    try:
+        data = request.get_json() or {}
+        record = data.get('data')
+        meta = _get_or_create_meta(deal_id)
+        meta.execution_data = json.dumps(record) if record is not None else None
+        db.session.commit()
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@deals_bp.route('/deals/all-execution-data', methods=['GET'])
+def get_all_execution_data():
+    """Returns all deal execution records for fund-level aggregation."""
+    try:
+        metas = DealMetaModel.query.filter(DealMetaModel.execution_data.isnot(None)).all()
+        records = []
+        for m in metas:
+            try:
+                records.append(json.loads(m.execution_data))
+            except Exception:
+                pass
+        return jsonify({'records': records}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @deals_bp.route('/deals/grouped', methods=['GET'])

@@ -87,7 +87,14 @@ function loadMarkets(): MarketEntry[] {
   } catch {}
   return DEFAULT_MARKETS;
 }
-function saveMarkets(m: MarketEntry[]) { localStorage.setItem(LS_MARKETS, JSON.stringify(m)); }
+function saveMarkets(m: MarketEntry[]) {
+  localStorage.setItem(LS_MARKETS, JSON.stringify(m));
+  fetch('/api/v1/app-data/sourcing_markets', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value: m }),
+  }).catch(() => {});
+}
 
 function loadData(): SourcingData {
   try {
@@ -103,7 +110,14 @@ function loadData(): SourcingData {
   } catch {}
   return EMPTY_DATA;
 }
-function saveData(d: SourcingData) { localStorage.setItem(LS_DATA, JSON.stringify(d)); }
+function saveData(d: SourcingData) {
+  localStorage.setItem(LS_DATA, JSON.stringify(d));
+  fetch('/api/v1/app-data/sourcing_data', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value: d }),
+  }).catch(() => {});
+}
 
 // ── Status constants ─────────────────────────────────────────────────────────
 
@@ -1161,10 +1175,38 @@ const Sourcing = () => {
   const [showAddMarket, setShowAddMarket] = useState(false);
   const [newMarketInput, setNewMarketInput] = useState('');
 
-  // Init: select first market
+  // Init: select first market + hydrate from backend
   useEffect(() => {
     const mkts = loadMarkets();
     setSelectedMarket(mkts[0] ?? null);
+
+    // Background: load sourcing data from backend (overwrites localStorage if backend has data)
+    fetch('/api/v1/app-data/sourcing_data')
+      .then(r => r.ok ? r.json() : null)
+      .then(json => {
+        if (json?.value) {
+          const d: SourcingData = {
+            properties: json.value.properties || [],
+            brokers: json.value.brokers || [],
+            operators: json.value.operators || [],
+          };
+          localStorage.setItem(LS_DATA, JSON.stringify(d));
+          setData(d);
+        }
+      })
+      .catch(() => {});
+
+    fetch('/api/v1/app-data/sourcing_markets')
+      .then(r => r.ok ? r.json() : null)
+      .then(json => {
+        if (json?.value && Array.isArray(json.value) && json.value.length > 0) {
+          const m: MarketEntry[] = json.value;
+          localStorage.setItem(LS_MARKETS, JSON.stringify(m));
+          setMarkets(m);
+          setSelectedMarket(prev => prev ?? m[0] ?? null);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // ── Data helpers ──────────────────────────────────────────────────────────
