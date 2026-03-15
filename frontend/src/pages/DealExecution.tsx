@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, ChevronDown, Plus, Trash2, CheckCircle2, Clock,
   ChevronRight, Upload, FileText, Loader2, Download, AlertTriangle,
-  TrendingUp, TrendingDown,
+  TrendingDown,
 } from 'lucide-react';
 import {
   getDealExecution, patchDealExecution, getAllDealExecutions,
