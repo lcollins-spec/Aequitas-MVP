@@ -31,7 +31,7 @@ interface DealsListSidebarProps {
 
 // Badge with dropdown for status changes
 const PipelineBadge = ({
-  dealId,
+  dealId: _dealId,
   status,
   onChange,
 }: {

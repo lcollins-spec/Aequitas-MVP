@@ -613,25 +613,6 @@ const DealExecution = () => {
     return Math.abs((curr - orig) / orig) > 0.1;
   };
 
-  const metricCell = (label: string, orig?: number, curr?: number, suffix = '') => {
-    const flagged = isFlagged(orig, curr);
-    return (
-      <div key={label} className="text-center">
-        <p className="text-xs text-gray-400 mb-1">{label}</p>
-        <p className="text-xs font-semibold text-gray-500">{orig != null ? `${orig.toFixed(1)}${suffix}` : '—'}</p>
-        <p className={`text-xs font-bold ${flagged ? 'text-red-600' : 'text-gray-800'}`}>
-          {curr != null ? (
-            <span className="flex items-center justify-center gap-0.5">
-              {flagged && curr < (orig ?? 0) ? <TrendingDown size={10} className="text-red-500" /> : null}
-              {flagged && curr > (orig ?? 0) ? <TrendingUp size={10} className="text-red-500" /> : null}
-              {curr.toFixed(1)}{suffix}
-            </span>
-          ) : '—'}
-        </p>
-      </div>
-    );
-  };
-
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="p-4 md:p-6 lg:p-8 bg-gray-50 min-h-screen">

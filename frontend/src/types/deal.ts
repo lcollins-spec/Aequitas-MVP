@@ -126,6 +126,7 @@ export interface Deal {
   rentcastData?: string;
   fredData?: string;
   underwritingJson?: string;
+  dscrJson?: string;
 
   // Calculated Metrics
   monthlyPayment?: number;
