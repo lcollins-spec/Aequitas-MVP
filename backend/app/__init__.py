@@ -147,6 +147,10 @@ def create_app(test_config=None):
     from .api.v1.memo_routes import memo_bp
     app.register_blueprint(memo_bp, url_prefix='/api/v1')
 
+    # Sourcing import API
+    from .api.v1.sourcing_routes import sourcing_bp
+    app.register_blueprint(sourcing_bp, url_prefix='/api/v1')
+
     # Serve frontend (only in production/Docker)
     if in_docker:
         logger.info("=" * 60)

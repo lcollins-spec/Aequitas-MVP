@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import FundReturns from './pages/FundReturns';
 import Underwriting from './pages/Underwriting';
 import MapPage from './pages/MapPage';
+import Sourcing from './pages/Sourcing';
 import GPPortfolio from './pages/GPPortfolio';
 import Regulations from './pages/Regulations';
 import MarketAnalysis from './pages/MarketAnalysis';
@@ -20,6 +21,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/fund-returns" element={<FundReturns />} />
             <Route path="/underwriting" element={<Underwriting />} />
+            <Route path="/sourcing" element={<Sourcing />} />
             <Route path="/map" element={<MapPage />} />
             <Route path="/market-analysis" element={<MarketAnalysis />} />
             <Route path="/gp-portfolio" element={<GPPortfolio />} />
