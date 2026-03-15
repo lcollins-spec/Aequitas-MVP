@@ -738,6 +738,271 @@ def debug_om():
     return raw_text, 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
 
+def _build_claude_content(file, prompt_text):
+    """
+    Build Claude message content blocks for a PDF or Excel/CSV file.
+    - PDF: sent as a native base64 document block + a cached text prompt.
+    - Excel/CSV: converted to plain-text via openpyxl/csv then sent as a text block.
+    """
+    filename_lower = file.filename.lower()
+
+    if filename_lower.endswith('.pdf'):
+        file_bytes = file.read()
+        pdf_base64 = base64.b64encode(file_bytes).decode('utf-8')
+        return [
+            {
+                'type': 'document',
+                'source': {
+                    'type': 'base64',
+                    'media_type': 'application/pdf',
+                    'data': pdf_base64,
+                },
+            },
+            {
+                'type': 'text',
+                'text': prompt_text,
+                'cache_control': {'type': 'ephemeral'},
+            },
+        ]
+    else:
+        # Excel / CSV: convert to tab-separated text
+        import io
+        import openpyxl
+
+        file_bytes = file.read()
+        text_parts = []
+
+        if filename_lower.endswith('.csv'):
+            import csv
+            reader = csv.reader(io.StringIO(file_bytes.decode('utf-8', errors='replace')))
+            for row in reader:
+                line = '\t'.join(str(c) for c in row)
+                if line.strip():
+                    text_parts.append(line)
+        else:
+            wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+            for sheet_name in wb.sheetnames:
+                ws = wb[sheet_name]
+                text_parts.append(f'=== Sheet: {sheet_name} ===')
+                for row in ws.iter_rows(values_only=True):
+                    cells = [str(c) if c is not None else '' for c in row]
+                    if any(c.strip() for c in cells):
+                        text_parts.append('\t'.join(cells))
+
+        doc_text = '\n'.join(text_parts)[:30000]
+        return [
+            {
+                'type': 'text',
+                'text': f'Document content:\n\n{doc_text}\n\n---\n\n{prompt_text}',
+            },
+        ]
+
+
+def _call_claude_for_extraction(content, api_key):
+    """Send content to Claude and return the parsed JSON dict."""
+    from anthropic import Anthropic
+    client = Anthropic(api_key=api_key)
+    message = client.messages.create(
+        model='claude-sonnet-4-6',
+        max_tokens=4096,
+        messages=[{'role': 'user', 'content': content}],
+    )
+    response_text = ''
+    for block in message.content:
+        if hasattr(block, 'text') and block.text:
+            response_text = block.text.strip()
+            break
+
+    if not response_text:
+        raise ValueError('Claude returned an empty response')
+
+    if '```' in response_text:
+        response_text = re.sub(r'^```json\s*', '', response_text)
+        response_text = re.sub(r'^```\s*', '', response_text)
+        response_text = re.sub(r'```$', '', response_text)
+        response_text = response_text.strip()
+
+    json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+    if not json_match:
+        raise ValueError('No JSON object found in Claude response')
+
+    return json.loads(json_match.group(0))
+
+
+_VALID_DOC_EXTENSIONS = ('.pdf', '.xlsx', '.xls', '.csv')
+
+_RENT_ROLL_PROMPT = (
+    'Respond with raw JSON only. No markdown, no backticks, no explanation, no preamble. '
+    'Your entire response must be valid JSON starting with { and ending with }.\n\n'
+    'This is a multifamily real estate Rent Roll document. '
+    'Extract unit mix and rental data and return ONLY a valid JSON object with no extra text or markdown.\n\n'
+    'UNIT MIX RULES:\n'
+    '- Count ALL units of each bedroom type, including vacant ones.\n'
+    '- "count" = total units of that type (including vacant rows).\n'
+    '- "askingRent" = average monthly rent using ONLY occupied (non-vacant) rows for that type.\n'
+    '- Use unitType labels like: "Studio", "1BR/1BA", "2BR/1BA", "2BR/2BA", "3BR/2BA".\n'
+    '- Each entry in unitMix must represent ONE bedroom type.\n\n'
+    'VACANCY RULES:\n'
+    '- vacancyRate: total vacant units / total units as a decimal (e.g. 0.05 for 5%).\n'
+    '- badDebtRate: look for "bad debt", "credit loss", "collection loss" as a decimal.\n\n'
+    'RENT STABILIZATION RULES:\n'
+    '- Set rentStabilized to true if the document mentions rent stabilization, rent control, COLA caps, or CPI-linked rent increases.\n'
+    '- annualRentGrowthCap: the maximum allowed annual rent increase as a decimal (e.g., 0.022 for 2.2%).\n\n'
+    'Return this exact JSON structure (use null for any field not found):\n'
+    '{\n'
+    '  "propertyName": "string or null",\n'
+    '  "address": "full street address or null",\n'
+    '  "city": "string or null",\n'
+    '  "state": "2-letter state code or null",\n'
+    '  "zipcode": "string or null",\n'
+    '  "numUnits": integer or null,\n'
+    '  "askingPrice": null,\n'
+    '  "unitMix": [\n'
+    '    {"unitType": "e.g. 1BR/1BA", "count": integer, "sqft": integer or null, "askingRent": number or null}\n'
+    '  ],\n'
+    '  "laundryIncome": null,\n'
+    '  "vacancyRate": "vacancy rate as decimal 0.0-1.0 or null",\n'
+    '  "badDebtRate": "credit loss / bad debt as decimal 0.0-1.0 or null",\n'
+    '  "operatingExpenses": null,\n'
+    '  "rentStabilized": "boolean or null",\n'
+    '  "annualRentGrowthCap": "decimal 0.0-1.0 or null"\n'
+    '}'
+)
+
+_T12_PROMPT = (
+    'Respond with raw JSON only. No markdown, no backticks, no explanation, no preamble. '
+    'Your entire response must be valid JSON starting with { and ending with }.\n\n'
+    'This is a multifamily real estate Trailing 12-Month (T12) Operating Statement. '
+    'Extract operating income and expense data and return ONLY a valid JSON object.\n\n'
+    'INCOME RULES:\n'
+    '- laundryIncome: total annual laundry, vending, parking, or other miscellaneous income (number or null).\n'
+    '- vacancyRate: annual vacancy loss as a decimal of GPR (e.g. 0.05 for 5%).\n'
+    '- badDebtRate: bad debt / collection loss as a decimal of GPR (e.g. 0.02 for 2%).\n'
+    '- If only a dollar amount is shown, divide by GPR to compute the rate.\n\n'
+    'OPERATING EXPENSE RULES:\n'
+    '- Pull annual totals. If only monthly figures are shown, multiply by 12.\n'
+    '- managementFeePct: express as a decimal between 0 and 1 (e.g. 0.06 for 6%).\n\n'
+    'RENT STABILIZATION RULES:\n'
+    '- Set rentStabilized to true if the document mentions rent stabilization, rent control, COLA caps, or CPI-linked increases.\n'
+    '- annualRentGrowthCap: the maximum allowed annual rent increase as a decimal (e.g., 0.022 for 2.2%).\n\n'
+    'Return this exact JSON structure (use null for any field not found):\n'
+    '{\n'
+    '  "propertyName": "string or null",\n'
+    '  "address": "full street address or null",\n'
+    '  "city": "string or null",\n'
+    '  "state": "2-letter state code or null",\n'
+    '  "zipcode": "string or null",\n'
+    '  "numUnits": integer or null,\n'
+    '  "askingPrice": null,\n'
+    '  "unitMix": [],\n'
+    '  "laundryIncome": "annual miscellaneous/other income as number or null",\n'
+    '  "vacancyRate": "vacancy loss as decimal 0.0-1.0 or null",\n'
+    '  "badDebtRate": "credit loss / bad debt as decimal 0.0-1.0 or null",\n'
+    '  "operatingExpenses": {\n'
+    '    "utilitiesAnnual": "number or null",\n'
+    '    "insuranceAnnual": "number or null",\n'
+    '    "propertyTaxAnnual": "number or null",\n'
+    '    "repairsMaintenanceAnnual": "number or null",\n'
+    '    "managementFeePct": "decimal 0.0-1.0 or null"\n'
+    '  },\n'
+    '  "rentStabilized": "boolean or null",\n'
+    '  "annualRentGrowthCap": "decimal 0.0-1.0 or null"\n'
+    '}'
+)
+
+
+@scraping_bp.route('/scraping/extract-rent-roll', methods=['POST'])
+def extract_rent_roll():
+    """
+    Extract unit mix and rent data from a Rent Roll PDF or Excel file.
+    Accepts .pdf, .xlsx, .xls, .csv. Returns OmExtractedData-compatible JSON.
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided', 'code': 'INVALID_INPUT'}), 400
+
+        file = request.files['file']
+
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected', 'code': 'INVALID_INPUT'}), 400
+
+        if not any(file.filename.lower().endswith(ext) for ext in _VALID_DOC_EXTENSIONS):
+            return jsonify({'success': False, 'error': 'File must be a PDF, Excel, or CSV file', 'code': 'INVALID_FILE_TYPE'}), 400
+
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'success': False, 'error': 'ANTHROPIC_API_KEY not configured', 'code': 'SERVICE_UNAVAILABLE'}), 503
+
+        try:
+            from anthropic import Anthropic  # noqa: F401 — verify SDK available
+        except ImportError:
+            return jsonify({'success': False, 'error': 'Anthropic SDK not available', 'code': 'SERVICE_UNAVAILABLE'}), 503
+
+        content = _build_claude_content(file, _RENT_ROLL_PROMPT)
+        data = _call_claude_for_extraction(content, api_key)
+        print(f'[extract-rent-roll] extracted: {json.dumps(data, indent=2)}', flush=True)
+        return jsonify({'success': True, 'data': data}), 200
+
+    except json.JSONDecodeError as e:
+        return jsonify({'success': False, 'error': f'Failed to parse Claude response as JSON: {str(e)}', 'code': 'PARSE_ERROR'}), 500
+    except Exception as e:
+        error_msg = str(e)
+        print(f'Error in extract_rent_roll: {error_msg}', flush=True)
+        if 'credit balance is too low' in error_msg or 'billing' in error_msg.lower():
+            return jsonify({'success': False, 'error': 'Anthropic API credits exhausted. Please add credits at console.anthropic.com/settings/billing.', 'code': 'BILLING_ERROR'}), 503
+        if 'rate_limit' in error_msg.lower() or 'rate limit' in error_msg.lower():
+            return jsonify({'success': False, 'error': 'Anthropic API rate limit reached. Please try again in a moment.', 'code': 'RATE_LIMIT'}), 429
+        if 'invalid_api_key' in error_msg or 'authentication' in error_msg.lower():
+            return jsonify({'success': False, 'error': 'Anthropic API key is invalid.', 'code': 'AUTH_ERROR'}), 503
+        return jsonify({'success': False, 'error': 'Internal server error', 'code': 'SERVER_ERROR'}), 500
+
+
+@scraping_bp.route('/scraping/extract-t12', methods=['POST'])
+def extract_t12():
+    """
+    Extract operating income and expenses from a T12 Operating Statement PDF or Excel file.
+    Accepts .pdf, .xlsx, .xls, .csv. Returns OmExtractedData-compatible JSON.
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided', 'code': 'INVALID_INPUT'}), 400
+
+        file = request.files['file']
+
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected', 'code': 'INVALID_INPUT'}), 400
+
+        if not any(file.filename.lower().endswith(ext) for ext in _VALID_DOC_EXTENSIONS):
+            return jsonify({'success': False, 'error': 'File must be a PDF, Excel, or CSV file', 'code': 'INVALID_FILE_TYPE'}), 400
+
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'success': False, 'error': 'ANTHROPIC_API_KEY not configured', 'code': 'SERVICE_UNAVAILABLE'}), 503
+
+        try:
+            from anthropic import Anthropic  # noqa: F401 — verify SDK available
+        except ImportError:
+            return jsonify({'success': False, 'error': 'Anthropic SDK not available', 'code': 'SERVICE_UNAVAILABLE'}), 503
+
+        content = _build_claude_content(file, _T12_PROMPT)
+        data = _call_claude_for_extraction(content, api_key)
+        print(f'[extract-t12] extracted: {json.dumps(data, indent=2)}', flush=True)
+        return jsonify({'success': True, 'data': data}), 200
+
+    except json.JSONDecodeError as e:
+        return jsonify({'success': False, 'error': f'Failed to parse Claude response as JSON: {str(e)}', 'code': 'PARSE_ERROR'}), 500
+    except Exception as e:
+        error_msg = str(e)
+        print(f'Error in extract_t12: {error_msg}', flush=True)
+        if 'credit balance is too low' in error_msg or 'billing' in error_msg.lower():
+            return jsonify({'success': False, 'error': 'Anthropic API credits exhausted. Please add credits at console.anthropic.com/settings/billing.', 'code': 'BILLING_ERROR'}), 503
+        if 'rate_limit' in error_msg.lower() or 'rate limit' in error_msg.lower():
+            return jsonify({'success': False, 'error': 'Anthropic API rate limit reached. Please try again in a moment.', 'code': 'RATE_LIMIT'}), 429
+        if 'invalid_api_key' in error_msg or 'authentication' in error_msg.lower():
+            return jsonify({'success': False, 'error': 'Anthropic API key is invalid.', 'code': 'AUTH_ERROR'}), 503
+        return jsonify({'success': False, 'error': 'Internal server error', 'code': 'SERVER_ERROR'}), 500
+
+
 # Error handlers
 @scraping_bp.errorhandler(404)
 def not_found(error):

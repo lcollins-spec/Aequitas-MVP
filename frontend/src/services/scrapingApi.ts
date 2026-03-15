@@ -103,6 +103,48 @@ class ScrapingApiClient {
   }
 
   /**
+   * Extract unit mix and rent data from a Rent Roll PDF or Excel file
+   */
+  async extractRentRollFromFile(file: File): Promise<OmExtractedData> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_BASE_URL}/scraping/extract-rent-roll`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Failed to extract Rent Roll data');
+    }
+
+    return data.data as OmExtractedData;
+  }
+
+  /**
+   * Extract operating income and expenses from a T12 Operating Statement PDF or Excel file
+   */
+  async extractT12FromFile(file: File): Promise<OmExtractedData> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_BASE_URL}/scraping/extract-t12`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Failed to extract T12 data');
+    }
+
+    return data.data as OmExtractedData;
+  }
+
+  /**
    * Get a property import by ID
    */
   async getImport(importId: number): Promise<PropertyImport> {

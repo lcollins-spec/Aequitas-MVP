@@ -294,6 +294,16 @@ const Underwriting = () => {
   const [omRentStabilized, setOmRentStabilized] = useState<boolean | null>(null);
   const [omAnnualRentGrowthCap, setOmAnnualRentGrowthCap] = useState<number | null>(null);
 
+  // Rent Roll upload state
+  const [rrUploading, setRrUploading] = useState(false);
+  const [rrError, setRrError] = useState<string | null>(null);
+  const [rrSuccess, setRrSuccess] = useState(false);
+
+  // T12 Operating Statement upload state
+  const [t12Uploading, setT12Uploading] = useState(false);
+  const [t12Error, setT12Error] = useState<string | null>(null);
+  const [t12Success, setT12Success] = useState(false);
+
   // Market Analysis Panel State
   const [marketAnalysisOpen, setMarketAnalysisOpen] = useState(false);
   const [marketAnalysisLoading, setMarketAnalysisLoading] = useState(false);
@@ -665,6 +675,67 @@ const Underwriting = () => {
       setOmError(err instanceof Error ? err.message : 'Failed to extract data from OM');
     } finally {
       setOmUploading(false);
+    }
+  };
+
+  /**
+   * Handle Rent Roll upload — extracts unit mix and vacancy via Claude document API
+   */
+  const handleRentRollUpload = async (file: File) => {
+    setRrUploading(true);
+    setRrError(null);
+    setRrSuccess(false);
+    try {
+      const data = await scrapingApi.extractRentRollFromFile(file);
+      console.log('[Rent Roll extraction result]', JSON.stringify(data, null, 2));
+
+      if (data.numUnits) setTotalUnits(data.numUnits);
+      if (data.unitMix && data.unitMix.length > 0) {
+        setUnitMix(data.unitMix);
+        const totalUnitsInMix = data.unitMix.reduce((sum, u) => sum + u.count, 0);
+        if (totalUnitsInMix > 0) {
+          const weightedRent = data.unitMix.reduce((sum, u) => sum + u.askingRent * u.count, 0) / totalUnitsInMix;
+          setAvgMonthlyRent(Math.round(weightedRent));
+        }
+      }
+      if (data.vacancyRate != null) setVacancyRate(data.vacancyRate);
+      if (data.badDebtRate != null) setBadDebtRate(data.badDebtRate);
+      if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
+      if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
+      if (data.city && data.state) setLocation(`${data.city}, ${data.state}`);
+      if (data.zipcode) setZipCode(data.zipcode);
+
+      setRrSuccess(true);
+    } catch (err) {
+      setRrError(err instanceof Error ? err.message : 'Failed to extract data from Rent Roll');
+    } finally {
+      setRrUploading(false);
+    }
+  };
+
+  /**
+   * Handle T12 Operating Statement upload — extracts expenses and income via Claude document API
+   */
+  const handleT12Upload = async (file: File) => {
+    setT12Uploading(true);
+    setT12Error(null);
+    setT12Success(false);
+    try {
+      const data = await scrapingApi.extractT12FromFile(file);
+      console.log('[T12 extraction result]', JSON.stringify(data, null, 2));
+
+      if (data.laundryIncome != null) setOmLaundryIncome(data.laundryIncome);
+      if (data.operatingExpenses != null) setOmOperatingExpenses(data.operatingExpenses);
+      if (data.vacancyRate != null) setVacancyRate(data.vacancyRate);
+      if (data.badDebtRate != null) setBadDebtRate(data.badDebtRate);
+      if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
+      if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
+
+      setT12Success(true);
+    } catch (err) {
+      setT12Error(err instanceof Error ? err.message : 'Failed to extract data from T12');
+    } finally {
+      setT12Uploading(false);
     }
   };
 
@@ -1258,6 +1329,91 @@ const Underwriting = () => {
               )}
 
               {omError && <p className="text-xs text-red-600 mt-2">{omError}</p>}
+            </div>
+
+            {/* ── Supporting document uploads: Rent Roll + T12 ── */}
+            <div className="grid grid-cols-2 gap-2">
+
+              {/* Rent Roll */}
+              <div>
+                {!rrUploading && !rrSuccess && (
+                  <label className="flex flex-col items-center justify-center gap-1.5 w-full h-24 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 hover:border-gray-400 transition-colors px-2 py-3 text-center">
+                    <Upload size={18} className="text-gray-400" />
+                    <span className="text-xs font-medium text-gray-600">Rent Roll</span>
+                    <span className="text-[10px] text-gray-400">PDF or Excel</span>
+                    <input
+                      type="file"
+                      accept=".pdf,.xlsx,.xls,.csv"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) { handleRentRollUpload(file); e.target.value = ''; }
+                      }}
+                    />
+                  </label>
+                )}
+                {rrUploading && (
+                  <div className="flex flex-col items-center justify-center gap-1.5 w-full h-24 border-2 border-dashed border-gray-300 rounded-lg px-2 py-3 text-center">
+                    <Loader2 size={18} className="text-gray-500 animate-spin" />
+                    <span className="text-xs text-gray-500">Analyzing…</span>
+                  </div>
+                )}
+                {!rrUploading && rrSuccess && (
+                  <div className="flex flex-col items-center justify-center gap-1 w-full h-24 border border-green-200 bg-green-50 rounded-lg px-2 py-3 text-center">
+                    <CheckCircle size={18} className="text-green-600" />
+                    <span className="text-xs font-semibold text-green-800">Rent Roll</span>
+                    <span className="text-[10px] text-green-600">Parsed</span>
+                    <button
+                      onClick={() => setRrSuccess(false)}
+                      className="text-[10px] text-green-600 hover:text-red-500 transition-colors"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+                {rrError && <p className="text-[10px] text-red-600 mt-1 leading-tight">{rrError}</p>}
+              </div>
+
+              {/* T12 Operating Statement */}
+              <div>
+                {!t12Uploading && !t12Success && (
+                  <label className="flex flex-col items-center justify-center gap-1.5 w-full h-24 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 hover:border-gray-400 transition-colors px-2 py-3 text-center">
+                    <Upload size={18} className="text-gray-400" />
+                    <span className="text-xs font-medium text-gray-600">T12 Operating</span>
+                    <span className="text-[10px] text-gray-400">PDF or Excel</span>
+                    <input
+                      type="file"
+                      accept=".pdf,.xlsx,.xls,.csv"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) { handleT12Upload(file); e.target.value = ''; }
+                      }}
+                    />
+                  </label>
+                )}
+                {t12Uploading && (
+                  <div className="flex flex-col items-center justify-center gap-1.5 w-full h-24 border-2 border-dashed border-gray-300 rounded-lg px-2 py-3 text-center">
+                    <Loader2 size={18} className="text-gray-500 animate-spin" />
+                    <span className="text-xs text-gray-500">Analyzing…</span>
+                  </div>
+                )}
+                {!t12Uploading && t12Success && (
+                  <div className="flex flex-col items-center justify-center gap-1 w-full h-24 border border-green-200 bg-green-50 rounded-lg px-2 py-3 text-center">
+                    <CheckCircle size={18} className="text-green-600" />
+                    <span className="text-xs font-semibold text-green-800">T12 Statement</span>
+                    <span className="text-[10px] text-green-600">Parsed</span>
+                    <button
+                      onClick={() => setT12Success(false)}
+                      className="text-[10px] text-green-600 hover:text-red-500 transition-colors"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+                {t12Error && <p className="text-[10px] text-red-600 mt-1 leading-tight">{t12Error}</p>}
+              </div>
+
             </div>
 
             {/* ── OR divider + Link to URL ── */}
