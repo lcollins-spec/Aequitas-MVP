@@ -28,7 +28,7 @@ def create_app(test_config=None):
     # Detect if running in production (Docker/Render)
     # Check for /.dockerenv OR Render-specific env vars OR RENDER env var
     in_docker = (
-        os.path.exists('/.dockerenv') or 
+        os.path.exists('/.dockerenv') or
         os.environ.get('RENDER') == 'true' or
         os.environ.get('RENDER_SERVICE_NAME') is not None
     )
@@ -36,21 +36,19 @@ def create_app(test_config=None):
     logger.info(f"RENDER env var: {os.environ.get('RENDER')}")
     logger.info(f"RENDER_SERVICE_NAME: {os.environ.get('RENDER_SERVICE_NAME')}")
 
-    # Set static folder to frontend dist if in production
-    if in_docker:
-        static_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'frontend', 'dist'))
-        logger.info(f"Static folder set to: {static_folder}")
-        logger.info(f"Static folder exists: {os.path.exists(static_folder)}")
-        if os.path.exists(static_folder):
-            files = os.listdir(static_folder)
-            logger.info(f"Files in static folder: {files}")
-            logger.info(f"index.html in static folder: {'index.html' in files}")
-        app = Flask(__name__,
-                    instance_relative_config=True,
-                    static_folder=static_folder,
-                    static_url_path='')
-    else:
-        app = Flask(__name__, instance_relative_config=True)
+    # Set static folder to frontend dist if the build exists (covers Docker/Render and
+    # any local production-preview scenario where the dist was built manually).
+    _candidate_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'frontend', 'dist'))
+    serve_spa = in_docker or os.path.exists(os.path.join(_candidate_dist, 'index.html'))
+    # Do NOT pass static_folder to Flask. If we do, Flask registers its own
+    # /<path:filename> route (before our catch-all) and returns 404 for any
+    # SPA path that doesn't map to a real file — the catch-all never fires.
+    # Instead we handle all static-file serving inside serve_frontend() below.
+    _index_html = os.path.join(_candidate_dist, 'index.html')
+    logger.info(f"SPA candidate dist : {_candidate_dist}")
+    logger.info(f"SPA index.html     : {_index_html} (exists: {os.path.exists(_index_html)})")
+    logger.info(f"serve_spa          : {serve_spa}")
+    app = Flask(__name__, instance_relative_config=True)
 
     # Load default config
     app.config.from_object('config.Config')
@@ -238,26 +236,15 @@ def create_app(test_config=None):
     from .api.v1.app_data_routes import app_data_bp
     app.register_blueprint(app_data_bp, url_prefix='/api/v1')
 
-    # Serve frontend (only in production/Docker)
-    if in_docker:
-        logger.info("=" * 60)
-        logger.info(f"Registering frontend catch-all route")
-        logger.info(f"app.static_folder = {app.static_folder}")
-        logger.info("=" * 60)
-        
+    # Serve frontend (production/Docker, or any env where the dist was built)
+    if serve_spa:
         @app.route('/', defaults={'path': ''})
         @app.route('/<path:path>')
         def serve_frontend(path):
-            """Serve React frontend, fallback to index.html for client-side routing"""
-            logger.info(f"Frontend route called with path: '{path}'")
-            if path and os.path.exists(os.path.join(app.static_folder, path)):
-                logger.info(f"Serving file: {path}")
-                return send_from_directory(app.static_folder, path)
-            else:
-                logger.info(f"Serving index.html for path: '{path}'")
-                index_path = os.path.join(app.static_folder, 'index.html')
-                logger.info(f"Index.html path: {index_path}, exists: {os.path.exists(index_path)}")
-                return send_from_directory(app.static_folder, 'index.html')
+            """Serve React frontend; fall back to index.html for all SPA routes."""
+            if path and os.path.exists(os.path.join(_candidate_dist, path)):
+                return send_from_directory(_candidate_dist, path)
+            return send_from_directory(_candidate_dist, 'index.html')
 
     logger.info("CREATE_APP COMPLETED SUCCESSFULLY")
     return app
