@@ -5,7 +5,7 @@ Provides REST endpoints for CRUD operations on deals
 import json
 from flask import Blueprint, request, jsonify, send_file
 from app.services.deal_service import DealService
-from app.database import db, DealMetaModel
+from app.database import db, DealMetaModel, DealOpPerformanceModel
 
 deals_bp = Blueprint('deals', __name__)
 
@@ -290,6 +290,68 @@ def get_all_execution_data():
         return jsonify({'records': records}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ── Operating Performance endpoints ──────────────────────────────────────────
+
+@deals_bp.route('/deals/<int:deal_id>/op-performance', methods=['GET'])
+def get_op_performance(deal_id):
+    rows = DealOpPerformanceModel.query.filter_by(deal_id=deal_id).order_by(DealOpPerformanceModel.created_at).all()
+    return jsonify({'rows': [r.to_dict() for r in rows]}), 200
+
+
+@deals_bp.route('/deals/<int:deal_id>/op-performance', methods=['POST'])
+def create_op_performance(deal_id):
+    data = request.get_json() or {}
+    import time
+    row_id = data.get('id') or f'{int(time.time() * 1000)}'
+    row = DealOpPerformanceModel(
+        id=row_id,
+        deal_id=deal_id,
+        year=data.get('year', ''),
+        projected_noi=float(data.get('projectedNoi') or 0),
+        actual_noi=float(data.get('actualNoi') or 0),
+    )
+    db.session.add(row)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({'error': 'Row already exists'}), 409
+    return jsonify({'row': row.to_dict()}), 201
+
+
+@deals_bp.route('/deals/<int:deal_id>/op-performance/bulk', methods=['POST'])
+def bulk_create_op_performance(deal_id):
+    """Migrate localStorage data to DB: insert all rows, skip existing."""
+    items = request.get_json() or []
+    created = 0
+    for data in items:
+        import time
+        row_id = data.get('id') or f'{int(time.time() * 1000)}-{created}'
+        if DealOpPerformanceModel.query.get(row_id):
+            continue
+        row = DealOpPerformanceModel(
+            id=row_id,
+            deal_id=deal_id,
+            year=data.get('year', ''),
+            projected_noi=float(data.get('projectedNoi') or 0),
+            actual_noi=float(data.get('actualNoi') or 0),
+        )
+        db.session.add(row)
+        created += 1
+    db.session.commit()
+    return jsonify({'created': created}), 201
+
+
+@deals_bp.route('/deals/<int:deal_id>/op-performance/<row_id>', methods=['DELETE'])
+def delete_op_performance(deal_id, row_id):
+    row = DealOpPerformanceModel.query.filter_by(id=row_id, deal_id=deal_id).first()
+    if not row:
+        return jsonify({'error': 'Not found'}), 404
+    db.session.delete(row)
+    db.session.commit()
+    return jsonify({'success': True}), 200
 
 
 @deals_bp.route('/deals/grouped', methods=['GET'])

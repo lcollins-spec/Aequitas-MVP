@@ -26,8 +26,8 @@ const SectionHeader = ({ label, sub }: { label: string; sub?: string }) => (
   </div>
 );
 
-// ─── Operating Performance localStorage ──────────────────────────────────────
-const OP_PERF_LS_KEY = 'aequitas_op_performance';
+// ─── Operating Performance API helpers ───────────────────────────────────────
+const OP_PERF_LS_KEY = 'aequitas_op_performance';  // legacy key — migrated on first load
 
 interface OpPerfRow {
   id: string;
@@ -36,31 +36,34 @@ interface OpPerfRow {
   actualNoi: number;
 }
 
-const getOpPerf = (dealId: number): OpPerfRow[] => {
+async function fetchOpPerf(dealId: number): Promise<OpPerfRow[]> {
   try {
-    const raw = localStorage.getItem(OP_PERF_LS_KEY);
-    if (raw) {
-      const map = JSON.parse(raw) as Record<string, OpPerfRow[]>;
-      return map[String(dealId)] ?? [];
-    }
-  } catch { /* ignore */ }
-  return [];
-};
+    const r = await fetch(`/api/v1/deals/${dealId}/op-performance`);
+    if (!r.ok) return [];
+    const j = await r.json();
+    return (j.rows ?? []) as OpPerfRow[];
+  } catch { return []; }
+}
 
-const saveOpPerf = (dealId: number, rows: OpPerfRow[]): void => {
-  try {
-    const raw = localStorage.getItem(OP_PERF_LS_KEY);
-    const map = raw ? (JSON.parse(raw) as Record<string, OpPerfRow[]>) : {};
-    map[String(dealId)] = rows;
-    localStorage.setItem(OP_PERF_LS_KEY, JSON.stringify(map));
-    // Sync full map to backend
-    fetch('/api/v1/app-data/op_performance', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value: map }),
-    }).catch(() => {});
-  } catch { /* ignore */ }
-};
+async function createOpPerfRow(dealId: number, row: OpPerfRow): Promise<void> {
+  await fetch(`/api/v1/deals/${dealId}/op-performance`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(row),
+  });
+}
+
+async function deleteOpPerfRow(dealId: number, rowId: string): Promise<void> {
+  await fetch(`/api/v1/deals/${dealId}/op-performance/${rowId}`, { method: 'DELETE' });
+}
+
+async function bulkMigrateOpPerf(dealId: number, rows: OpPerfRow[]): Promise<void> {
+  await fetch(`/api/v1/deals/${dealId}/op-performance/bulk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(rows),
+  });
+}
 
 // ─── Types from backend ───────────────────────────────────────────────────────
 interface BackendDeal {
@@ -106,19 +109,11 @@ const AssetManagement = () => {
   useEffect(() => {
     const fetchDeals = async () => {
       try {
-        // Hydrate op performance from backend before rendering selected deal
-        const opRes = await fetch('/api/v1/app-data/op_performance').catch(() => null);
-        if (opRes?.ok) {
-          const opJson = await opRes.json().catch(() => null);
-          if (opJson?.value) localStorage.setItem(OP_PERF_LS_KEY, JSON.stringify(opJson.value));
-        }
-
         const res = await fetch('/api/v1/deals');
         if (res.ok) {
           const json = await res.json();
           const allDeals: BackendDeal[] = json.deals ?? [];
           const ids = allDeals.map(d => d.id).filter((id): id is number => id != null);
-          // Sync pipeline statuses from backend before filtering
           await syncPipelineStatusesFromBackend(ids);
           const closed = allDeals.filter(d => d.id != null && getPipelineStatus(d.id) === 'Closed');
           setDeals(closed);
@@ -131,27 +126,59 @@ const AssetManagement = () => {
     fetchDeals();
   }, []);
 
-  // ── Load deal data when selected deal changes (localStorage first, then backend)
+  // ── Load deal data when selected deal changes
   useEffect(() => {
     if (selectedDealId == null) return;
-    // Immediate: load from localStorage
-    const record = getDealExecution(selectedDealId);
-    setCapitalCalls(record?.capitalCalls ?? []);
-    setDistributions(record?.distributions ?? []);
-    setCapexItems(record?.capexItems ?? []);
-    setOpPerfRows(getOpPerf(selectedDealId));
     // Reset forms
     setNewCCDate(''); setNewCCAmtCalled(''); setNewCCAmtReceived('');
     setNewCCPurpose(''); setNewCCStatus('Pending');
     setNewDistDate(''); setNewDistAmt(''); setNewDistType('Operating');
     setNewCapexDesc(''); setNewCapexAmt('');
     setNewOpYear(''); setNewOpProjNoi(''); setNewOpActualNoi('');
-    // Background: hydrate from backend (overwrites if backend is newer)
+
+    // Load execution data (capital calls, distributions, capex) from backend
     loadExecutionFromBackend(selectedDealId).then(backendRec => {
       if (backendRec) {
         setCapitalCalls(backendRec.capitalCalls ?? []);
         setDistributions(backendRec.distributions ?? []);
         setCapexItems(backendRec.capexItems ?? []);
+      } else {
+        // Fall back to localStorage for execution data
+        const record = getDealExecution(selectedDealId);
+        setCapitalCalls(record?.capitalCalls ?? []);
+        setDistributions(record?.distributions ?? []);
+        setCapexItems(record?.capexItems ?? []);
+      }
+    });
+
+    // Load op performance from DB, then migrate localStorage if DB is empty
+    fetchOpPerf(selectedDealId).then(async (rows) => {
+      if (rows.length > 0) {
+        setOpPerfRows(rows);
+      } else {
+        // One-time migration from localStorage
+        try {
+          const raw = localStorage.getItem(OP_PERF_LS_KEY);
+          if (raw) {
+            const map = JSON.parse(raw) as Record<string, OpPerfRow[]>;
+            const lsRows = map[String(selectedDealId)] ?? [];
+            if (lsRows.length > 0) {
+              await bulkMigrateOpPerf(selectedDealId, lsRows);
+              setOpPerfRows(lsRows);
+              // Remove this deal's data from localStorage map
+              delete map[String(selectedDealId)];
+              if (Object.keys(map).length === 0) {
+                localStorage.removeItem(OP_PERF_LS_KEY);
+              } else {
+                localStorage.setItem(OP_PERF_LS_KEY, JSON.stringify(map));
+              }
+            } else {
+              setOpPerfRows([]);
+            }
+          } else {
+            setOpPerfRows([]);
+          }
+        } catch { setOpPerfRows([]); }
       }
     });
   }, [selectedDealId]);
@@ -237,16 +264,14 @@ const AssetManagement = () => {
       projectedNoi: parseNum(newOpProjNoi),
       actualNoi: parseNum(newOpActualNoi),
     };
-    const updated = [...opPerfRows, row];
-    setOpPerfRows(updated);
-    if (selectedDealId != null) saveOpPerf(selectedDealId, updated);
+    setOpPerfRows(prev => [...prev, row]);
+    if (selectedDealId != null) createOpPerfRow(selectedDealId, row).catch(() => {});
     setNewOpYear(''); setNewOpProjNoi(''); setNewOpActualNoi('');
   };
 
   const removeOpPerfRow = (id: string) => {
-    const updated = opPerfRows.filter(r => r.id !== id);
-    setOpPerfRows(updated);
-    if (selectedDealId != null) saveOpPerf(selectedDealId, updated);
+    setOpPerfRows(prev => prev.filter(r => r.id !== id));
+    if (selectedDealId != null) deleteOpPerfRow(selectedDealId, id).catch(() => {});
   };
 
   // ─── Render ───────────────────────────────────────────────────────────────────

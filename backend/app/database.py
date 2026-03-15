@@ -1545,3 +1545,126 @@ class AppDataModel(db.Model):
     key = Column(String(255), primary_key=True)
     value = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+
+# ── Sourcing tables ───────────────────────────────────────────────────────────
+
+class SourcingMarketModel(db.Model):
+    """Markets tracked in the sourcing pipeline."""
+    __tablename__ = 'sourcing_markets'
+
+    id = Column(String(64), primary_key=True)
+    name = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+
+class SourcingPropertyModel(db.Model):
+    """Properties tracked in the sourcing pipeline."""
+    __tablename__ = 'sourcing_properties'
+
+    id = Column(String(64), primary_key=True)
+    market = Column(String(255), nullable=False, index=True)
+    address = Column(String(500), nullable=False, default='')
+    units = Column(Integer, nullable=False, default=0)
+    owner_name = Column(String(255), nullable=False, default='')
+    status = Column(String(50), nullable=False, default='not_contacted')
+    last_contact_date = Column(String(20), nullable=False, default='')
+    next_followup_date = Column(String(20), nullable=False, default='')
+    notes = Column(Text, nullable=False, default='')
+    deal_id = Column(Integer, nullable=True)
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'market': self.market,
+            'address': self.address,
+            'units': self.units,
+            'owner_name': self.owner_name,
+            'status': self.status,
+            'last_contact_date': self.last_contact_date,
+            'next_followup_date': self.next_followup_date,
+            'notes': self.notes,
+            'deal_id': self.deal_id,
+            'lat': self.lat,
+            'lng': self.lng,
+        }
+
+
+class SourcingBrokerModel(db.Model):
+    """Brokers tracked in the sourcing pipeline."""
+    __tablename__ = 'sourcing_brokers'
+
+    id = Column(String(64), primary_key=True)
+    market = Column(String(255), nullable=False, index=True)
+    name = Column(String(255), nullable=False, default='')
+    firm = Column(String(255), nullable=False, default='')
+    status = Column(String(50), nullable=False, default='cold')
+    last_contact_date = Column(String(20), nullable=False, default='')
+    last_deal_sent = Column(String(255), nullable=False, default='')
+    notes = Column(Text, nullable=False, default='')
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'market': self.market,
+            'name': self.name,
+            'firm': self.firm,
+            'status': self.status,
+            'last_contact_date': self.last_contact_date,
+            'last_deal_sent': self.last_deal_sent,
+            'notes': self.notes,
+        }
+
+
+class SourcingOperatorModel(db.Model):
+    """Operators tracked in the sourcing pipeline."""
+    __tablename__ = 'sourcing_operators'
+
+    id = Column(String(64), primary_key=True)
+    market = Column(String(255), nullable=False, index=True)
+    name = Column(String(255), nullable=False, default='')
+    firm = Column(String(255), nullable=False, default='')
+    status = Column(String(50), nullable=False, default='prospecting')
+    properties_managed = Column(String(255), nullable=False, default='')
+    last_contact_date = Column(String(20), nullable=False, default='')
+    notes = Column(Text, nullable=False, default='')
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'market': self.market,
+            'name': self.name,
+            'firm': self.firm,
+            'status': self.status,
+            'properties_managed': self.properties_managed,
+            'last_contact_date': self.last_contact_date,
+            'notes': self.notes,
+        }
+
+
+# ── Operating Performance table ───────────────────────────────────────────────
+
+class DealOpPerformanceModel(db.Model):
+    """Per-deal operating performance rows (projected vs actual NOI by year)."""
+    __tablename__ = 'deal_op_performance'
+
+    id = Column(String(64), primary_key=True)
+    deal_id = Column(Integer, nullable=False, index=True)
+    year = Column(String(20), nullable=False)
+    projected_noi = Column(Float, nullable=False, default=0.0)
+    actual_noi = Column(Float, nullable=False, default=0.0)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'deal_id': self.deal_id,
+            'year': self.year,
+            'projectedNoi': self.projected_noi,
+            'actualNoi': self.actual_noi,
+        }

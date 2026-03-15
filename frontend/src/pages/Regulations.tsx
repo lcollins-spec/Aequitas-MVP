@@ -24,10 +24,10 @@ import type {
 } from '../types/regulation';
 import { fetchMarketRegulations } from '../services/regulationsApi';
 
-// ── localStorage keys ──────────────────────────────────────────────────────
+// ── localStorage keys (settings only — cache is in DB) ─────────────────────
 const LS_MARKETS = 'aequitas_reg_markets';
 const LS_TOPICS = 'aequitas_reg_topics';
-const LS_DATA_PREFIX = 'aequitas_reg_data_';
+const LS_DATA_PREFIX = 'aequitas_reg_data_';  // legacy — migrated on first load
 const LS_FEATURED = 'aequitas_reg_featured';
 const LS_PINS = 'aequitas_reg_pins';
 const AUTO_REFRESH_MS = 24 * 60 * 60 * 1000;
@@ -73,14 +73,26 @@ function saveTopics(t: string[]) {
   fetch('/api/v1/app-data/reg_topics', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: t }) }).catch(() => {});
 }
 
-function loadMarketData(id: string): MarketData | null {
+async function loadMarketData(id: string): Promise<MarketData | null> {
   try {
-    const raw = localStorage.getItem(LS_DATA_PREFIX + id);
-    if (raw) return JSON.parse(raw);
+    const r = await fetch(`/api/v1/app-data/reg_cache_${id}`);
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (j?.value) return j.value as MarketData;
   } catch {}
   return null;
 }
-function saveMarketData(id: string, d: MarketData) { localStorage.setItem(LS_DATA_PREFIX + id, JSON.stringify(d)); }
+
+function saveMarketData(id: string, d: MarketData) {
+  // Persist to DB (fire-and-forget); also migrate away from localStorage
+  fetch(`/api/v1/app-data/reg_cache_${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value: d }),
+  }).catch(() => {});
+  // Remove legacy localStorage key
+  localStorage.removeItem(LS_DATA_PREFIX + id);
+}
 
 function loadFeatured(): Set<string> {
   try {
@@ -433,23 +445,47 @@ const Regulations = () => {
     syncKey('reg_pins', LS_PINS, (v: Record<string, PinnedItem[]>) => {
       if (v && typeof v === 'object') setPins(v);
     });
+
+    // One-time migration: move any legacy localStorage reg cache entries to DB
+    const lsKeys = Object.keys(localStorage).filter(k => k.startsWith(LS_DATA_PREFIX));
+    lsKeys.forEach(k => {
+      const marketId = k.slice(LS_DATA_PREFIX.length);
+      try {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const data = JSON.parse(raw) as MarketData;
+          fetch(`/api/v1/app-data/reg_cache_${marketId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: data }),
+          }).catch(() => {});
+        }
+      } catch { /* ignore */ }
+      localStorage.removeItem(k);
+    });
   }, []);
 
   useEffect(() => {
-    const cache: Record<string, MarketData> = {};
-    for (const m of markets) {
-      const d = loadMarketData(m.id);
-      if (d) cache[m.id] = d;
-    }
-    setMarketDataCache(cache);
+    const loadAll = async () => {
+      const cache: Record<string, MarketData> = {};
+      await Promise.all(markets.map(async (m) => {
+        const d = await loadMarketData(m.id);
+        if (d) cache[m.id] = d;
+      }));
+      setMarketDataCache(cache);
+    };
+    loadAll();
   }, [markets]);
 
   // Auto-refresh stale markets
   useEffect(() => {
-    for (const m of markets) {
-      const d = loadMarketData(m.id);
-      if (!d || isStale(d.lastChecked)) triggerFetch(m.id, m.name);
-    }
+    const checkStale = async () => {
+      for (const m of markets) {
+        const d = await loadMarketData(m.id);
+        if (!d || isStale(d.lastChecked)) triggerFetch(m.id, m.name);
+      }
+    };
+    checkStale();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

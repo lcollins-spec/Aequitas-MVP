@@ -11,13 +11,10 @@ import {
   AlertCircle,
   MapPin,
 } from 'lucide-react';
+import * as sourcingApi from '../services/sourcingApi';
+import type { MarketEntry, SourcingProperty, SourcingBroker, SourcingOperator } from '../services/sourcingApi';
 
 // ── Types ───────────────────────────────────────────────────────────────────
-
-interface MarketEntry {
-  id: string;
-  name: string;
-}
 
 type PropertyStatus = 'not_contacted' | 'outreach_sent' | 'in_conversation' | 'passed' | 'active_deal';
 type BrokerStatus = 'cold' | 'introduced' | 'active' | 'strong';
@@ -25,99 +22,20 @@ type OperatorStatus = 'prospecting' | 'intro_made' | 'meeting_held' | 'partnersh
 type Tab = 'properties' | 'brokers' | 'operators';
 type SortDir = 'asc' | 'desc';
 
-interface SourcingProperty {
-  id: string;
-  market: string;
-  address: string;
-  units: number;
-  owner_name: string;
-  status: PropertyStatus;
-  last_contact_date: string;
-  next_followup_date: string;
-  notes: string;
-  deal_id: number | null;
-  lat?: number;
-  lng?: number;
-}
-
-interface SourcingBroker {
-  id: string;
-  market: string;
-  name: string;
-  firm: string;
-  status: BrokerStatus;
-  last_contact_date: string;
-  last_deal_sent: string;
-  notes: string;
-}
-
-interface SourcingOperator {
-  id: string;
-  market: string;
-  name: string;
-  firm: string;
-  status: OperatorStatus;
-  properties_managed: string;
-  last_contact_date: string;
-  notes: string;
-}
-
 interface SourcingData {
   properties: SourcingProperty[];
   brokers: SourcingBroker[];
   operators: SourcingOperator[];
 }
 
-// ── localStorage ─────────────────────────────────────────────────────────────
-
-const LS_DATA = 'sourcing_data';
-const LS_MARKETS = 'sourcing_markets';
-
 const DEFAULT_MARKETS: MarketEntry[] = [
   { id: '1', name: 'Austin, TX' },
   { id: '2', name: 'Phoenix, AZ' },
 ];
 
-const EMPTY_DATA: SourcingData = { properties: [], brokers: [], operators: [] };
-
-function loadMarkets(): MarketEntry[] {
-  try {
-    const raw = localStorage.getItem(LS_MARKETS);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return DEFAULT_MARKETS;
-}
-function saveMarkets(m: MarketEntry[]) {
-  localStorage.setItem(LS_MARKETS, JSON.stringify(m));
-  fetch('/api/v1/app-data/sourcing_markets', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ value: m }),
-  }).catch(() => {});
-}
-
-function loadData(): SourcingData {
-  try {
-    const raw = localStorage.getItem(LS_DATA);
-    if (raw) {
-      const p = JSON.parse(raw);
-      return {
-        properties: p.properties || [],
-        brokers: p.brokers || [],
-        operators: p.operators || [],
-      };
-    }
-  } catch {}
-  return EMPTY_DATA;
-}
-function saveData(d: SourcingData) {
-  localStorage.setItem(LS_DATA, JSON.stringify(d));
-  fetch('/api/v1/app-data/sourcing_data', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ value: d }),
-  }).catch(() => {});
-}
+// ── localStorage migration keys (read-once, then cleared) ────────────────────
+const LS_DATA = 'sourcing_data';
+const LS_MARKETS = 'sourcing_markets';
 
 // ── Status constants ─────────────────────────────────────────────────────────
 
@@ -144,9 +62,9 @@ const OPERATOR_STATUSES: { value: OperatorStatus; label: string; cls: string }[]
   { value: 'active_partner',         label: 'Active Partner',         cls: 'bg-green-50 text-green-700 border-green-200'     },
 ];
 
-function propStatus(s: PropertyStatus) { return PROP_STATUSES.find(x => x.value === s) || PROP_STATUSES[0]; }
-function brokerStatus(s: BrokerStatus) { return BROKER_STATUSES.find(x => x.value === s) || BROKER_STATUSES[0]; }
-function operatorStatus(s: OperatorStatus) { return OPERATOR_STATUSES.find(x => x.value === s) || OPERATOR_STATUSES[0]; }
+function propStatus(s: string) { return PROP_STATUSES.find(x => x.value === s) || PROP_STATUSES[0]; }
+function brokerStatus(s: string) { return BROKER_STATUSES.find(x => x.value === s) || BROKER_STATUSES[0]; }
+function operatorStatus(s: string) { return OPERATOR_STATUSES.find(x => x.value === s) || OPERATOR_STATUSES[0]; }
 
 function isOverdue(date?: string): boolean {
   if (!date) return false;
@@ -179,7 +97,6 @@ const SourcingMap = ({ properties, selectedMarket, onGeocode }: SourcingMapProps
 
   const apiKey = (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
-  // Load Google Maps script
   useEffect(() => {
     if (!apiKey) return;
     if ((window as any).google?.maps) { setMapsReady(true); return; }
@@ -199,7 +116,6 @@ const SourcingMap = ({ properties, selectedMarket, onGeocode }: SourcingMapProps
     document.head.appendChild(s);
   }, [apiKey]);
 
-  // Initialize map once
   useEffect(() => {
     if (!mapsReady || !containerRef.current || mapRef.current) return;
     mapRef.current = new window.google.maps.Map(containerRef.current, {
@@ -244,7 +160,6 @@ const SourcingMap = ({ properties, selectedMarket, onGeocode }: SourcingMapProps
     markersRef.current.push(marker);
   }, []);
 
-  // Re-plot whenever properties or market changes
   useEffect(() => {
     if (!mapsReady || !mapRef.current) return;
 
@@ -261,7 +176,6 @@ const SourcingMap = ({ properties, selectedMarket, onGeocode }: SourcingMapProps
       else if (p.address) { toGeocode.push(p); }
     });
 
-    // Serial geocoding with small delay to avoid rate limits
     if (toGeocode.length > 0 && window.google?.maps?.Geocoder) {
       const geocoder = new window.google.maps.Geocoder();
       const next = (i: number) => {
@@ -280,7 +194,6 @@ const SourcingMap = ({ properties, selectedMarket, onGeocode }: SourcingMapProps
       next(0);
     }
 
-    // Also plot existing platform deals that have coordinates
     fetch('/api/v1/deals')
       .then(r => r.json())
       .then((resp: any) => {
@@ -316,7 +229,6 @@ const SourcingMap = ({ properties, selectedMarket, onGeocode }: SourcingMapProps
       })
       .catch(() => {});
 
-    // Fit bounds if we already have geocoded properties
     const geocoded = visible.filter(p => p.lat && p.lng);
     if (geocoded.length > 1 && mapRef.current) {
       const bounds = new window.google.maps.LatLngBounds();
@@ -348,7 +260,6 @@ const SourcingMap = ({ properties, selectedMarket, onGeocode }: SourcingMapProps
           </div>
         )}
       </div>
-      {/* Legend */}
       <div className="px-6 py-3 border-t border-gray-100 flex flex-wrap items-center gap-5">
         <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Legend</span>
         {PROP_STATUSES.map(({ label, pin }) => (
@@ -773,7 +684,6 @@ const ImportModal = ({ tab, market, onImport, onClose }: ImportModalProps) => {
         </div>
 
         <div className="p-6 flex-1 overflow-y-auto space-y-5">
-          {/* File picker */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-2">Select file (.xlsx or .csv)</label>
             <div className="flex items-center gap-3">
@@ -1059,7 +969,6 @@ const OperatorsTable = ({ operators, onEdit, onDelete }: OperatorsTableProps) =>
 };
 
 // ── PropertiesTable ───────────────────────────────────────────────────────────
-// Shown below the map as a compact list
 
 interface PropertiesTableProps {
   properties: SourcingProperty[];
@@ -1157,10 +1066,11 @@ const PropertiesTable = ({ properties, onEdit, onDelete }: PropertiesTableProps)
 // ── Main Sourcing component ───────────────────────────────────────────────────
 
 const Sourcing = () => {
-  const [markets, setMarkets] = useState<MarketEntry[]>(loadMarkets);
+  const [markets, setMarkets] = useState<MarketEntry[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<MarketEntry | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('properties');
-  const [data, setData] = useState<SourcingData>(loadData);
+  const [data, setData] = useState<SourcingData>({ properties: [], brokers: [], operators: [] });
+  const [loading, setLoading] = useState(true);
 
   // Modal state
   const [showAddProp, setShowAddProp] = useState(false);
@@ -1175,143 +1085,192 @@ const Sourcing = () => {
   const [showAddMarket, setShowAddMarket] = useState(false);
   const [newMarketInput, setNewMarketInput] = useState('');
 
-  // Init: select first market + hydrate from backend
+  // ── On mount: load from API, migrate localStorage if DB is empty ───────────
   useEffect(() => {
-    const mkts = loadMarkets();
-    setSelectedMarket(mkts[0] ?? null);
+    const init = async () => {
+      try {
+        const [dbMarkets, dbProps, dbBrokers, dbOps] = await Promise.all([
+          sourcingApi.fetchMarkets(),
+          sourcingApi.fetchProperties(),
+          sourcingApi.fetchBrokers(),
+          sourcingApi.fetchOperators(),
+        ]);
 
-    // Background: load sourcing data from backend (overwrites localStorage if backend has data)
-    fetch('/api/v1/app-data/sourcing_data')
-      .then(r => r.ok ? r.json() : null)
-      .then(json => {
-        if (json?.value) {
-          const d: SourcingData = {
-            properties: json.value.properties || [],
-            brokers: json.value.brokers || [],
-            operators: json.value.operators || [],
-          };
-          localStorage.setItem(LS_DATA, JSON.stringify(d));
-          setData(d);
-        }
-      })
-      .catch(() => {});
+        const dbIsEmpty = dbMarkets.length === 0 && dbProps.length === 0 &&
+          dbBrokers.length === 0 && dbOps.length === 0;
 
-    fetch('/api/v1/app-data/sourcing_markets')
-      .then(r => r.ok ? r.json() : null)
-      .then(json => {
-        if (json?.value && Array.isArray(json.value) && json.value.length > 0) {
-          const m: MarketEntry[] = json.value;
-          localStorage.setItem(LS_MARKETS, JSON.stringify(m));
-          setMarkets(m);
-          setSelectedMarket(prev => prev ?? m[0] ?? null);
+        if (dbIsEmpty) {
+          // One-time migration from localStorage
+          const lsMarketsRaw = localStorage.getItem(LS_MARKETS);
+          const lsDataRaw = localStorage.getItem(LS_DATA);
+
+          let migratedMarkets = dbMarkets;
+          let migratedProps = dbProps;
+          let migratedBrokers = dbBrokers;
+          let migratedOps = dbOps;
+
+          if (lsMarketsRaw) {
+            try {
+              const lsMarkets: MarketEntry[] = JSON.parse(lsMarketsRaw);
+              if (lsMarkets.length > 0) {
+                await Promise.all(lsMarkets.map(m => sourcingApi.createMarket(m)));
+                migratedMarkets = lsMarkets;
+              }
+            } catch { /* ignore */ }
+            localStorage.removeItem(LS_MARKETS);
+          }
+
+          if (lsDataRaw) {
+            try {
+              const lsData = JSON.parse(lsDataRaw);
+              const props: SourcingProperty[] = lsData.properties || [];
+              const brokers: SourcingBroker[] = lsData.brokers || [];
+              const ops: SourcingOperator[] = lsData.operators || [];
+
+              if (props.length > 0) {
+                await sourcingApi.bulkCreateProperties(props);
+                migratedProps = props;
+              }
+              if (brokers.length > 0) {
+                await sourcingApi.bulkCreateBrokers(brokers);
+                migratedBrokers = brokers;
+              }
+              if (ops.length > 0) {
+                await sourcingApi.bulkCreateOperators(ops);
+                migratedOps = ops;
+              }
+            } catch { /* ignore */ }
+            localStorage.removeItem(LS_DATA);
+          }
+
+          // If still nothing (fresh install), seed default markets
+          if (migratedMarkets.length === 0) {
+            await Promise.all(DEFAULT_MARKETS.map(m => sourcingApi.createMarket(m)));
+            migratedMarkets = DEFAULT_MARKETS;
+          }
+
+          setMarkets(migratedMarkets);
+          setData({ properties: migratedProps, brokers: migratedBrokers, operators: migratedOps });
+          setSelectedMarket(migratedMarkets[0] ?? null);
+        } else {
+          // Also clear any stale localStorage keys if DB already has data
+          localStorage.removeItem(LS_MARKETS);
+          localStorage.removeItem(LS_DATA);
+
+          setMarkets(dbMarkets);
+          setData({ properties: dbProps, brokers: dbBrokers, operators: dbOps });
+          setSelectedMarket(dbMarkets[0] ?? null);
         }
-      })
-      .catch(() => {});
+      } catch { /* network error — still show empty state */ }
+      setLoading(false);
+    };
+    init();
   }, []);
 
-  // ── Data helpers ──────────────────────────────────────────────────────────
-
-  const updateData = (updated: SourcingData) => {
-    setData(updated);
-    saveData(updated);
-  };
-
-  // Geocode cache update (from SourcingMap)
+  // ── Geocode cache update (from SourcingMap) ────────────────────────────────
   const handleGeocode = useCallback((id: string, lat: number, lng: number) => {
-    setData(prev => {
-      const updated = {
-        ...prev,
-        properties: prev.properties.map(p => p.id === id ? { ...p, lat, lng } : p),
-      };
-      saveData(updated);
-      return updated;
-    });
+    setData(prev => ({
+      ...prev,
+      properties: prev.properties.map(p => p.id === id ? { ...p, lat, lng } : p),
+    }));
+    sourcingApi.updateProperty(id, { lat, lng }).catch(() => {});
   }, []);
 
-  // ── Property CRUD ─────────────────────────────────────────────────────────
-
-  const saveProp = (p: SourcingProperty) => {
+  // ── Property CRUD ──────────────────────────────────────────────────────────
+  const saveProp = async (p: SourcingProperty) => {
     const exists = data.properties.some(x => x.id === p.id);
-    const updated = exists
-      ? data.properties.map(x => x.id === p.id ? p : x)
-      : [...data.properties, p];
-    updateData({ ...data, properties: updated });
+    if (exists) {
+      setData(prev => ({ ...prev, properties: prev.properties.map(x => x.id === p.id ? p : x) }));
+      sourcingApi.updateProperty(p.id, p).catch(() => {});
+    } else {
+      setData(prev => ({ ...prev, properties: [...prev.properties, p] }));
+      sourcingApi.createProperty(p).catch(() => {});
+    }
     setShowAddProp(false);
     setEditProp(null);
   };
 
   const deleteProp = (id: string) => {
-    updateData({ ...data, properties: data.properties.filter(p => p.id !== id) });
+    setData(prev => ({ ...prev, properties: prev.properties.filter(p => p.id !== id) }));
+    sourcingApi.deleteProperty(id).catch(() => {});
   };
 
-  // ── Broker CRUD ───────────────────────────────────────────────────────────
-
-  const saveBroker = (b: SourcingBroker) => {
+  // ── Broker CRUD ────────────────────────────────────────────────────────────
+  const saveBroker = async (b: SourcingBroker) => {
     const exists = data.brokers.some(x => x.id === b.id);
-    const updated = exists
-      ? data.brokers.map(x => x.id === b.id ? b : x)
-      : [...data.brokers, b];
-    updateData({ ...data, brokers: updated });
+    if (exists) {
+      setData(prev => ({ ...prev, brokers: prev.brokers.map(x => x.id === b.id ? b : x) }));
+      sourcingApi.updateBroker(b.id, b).catch(() => {});
+    } else {
+      setData(prev => ({ ...prev, brokers: [...prev.brokers, b] }));
+      sourcingApi.createBroker(b).catch(() => {});
+    }
     setShowAddBroker(false);
     setEditBroker(null);
   };
 
   const deleteBroker = (id: string) => {
-    updateData({ ...data, brokers: data.brokers.filter(b => b.id !== id) });
+    setData(prev => ({ ...prev, brokers: prev.brokers.filter(b => b.id !== id) }));
+    sourcingApi.deleteBroker(id).catch(() => {});
   };
 
-  // ── Operator CRUD ─────────────────────────────────────────────────────────
-
-  const saveOperator = (o: SourcingOperator) => {
+  // ── Operator CRUD ──────────────────────────────────────────────────────────
+  const saveOperator = async (o: SourcingOperator) => {
     const exists = data.operators.some(x => x.id === o.id);
-    const updated = exists
-      ? data.operators.map(x => x.id === o.id ? o : x)
-      : [...data.operators, o];
-    updateData({ ...data, operators: updated });
+    if (exists) {
+      setData(prev => ({ ...prev, operators: prev.operators.map(x => x.id === o.id ? o : x) }));
+      sourcingApi.updateOperator(o.id, o).catch(() => {});
+    } else {
+      setData(prev => ({ ...prev, operators: [...prev.operators, o] }));
+      sourcingApi.createOperator(o).catch(() => {});
+    }
     setShowAddOperator(false);
     setEditOperator(null);
   };
 
   const deleteOperator = (id: string) => {
-    updateData({ ...data, operators: data.operators.filter(o => o.id !== id) });
+    setData(prev => ({ ...prev, operators: prev.operators.filter(o => o.id !== id) }));
+    sourcingApi.deleteOperator(id).catch(() => {});
   };
 
-  // ── Import ────────────────────────────────────────────────────────────────
-
+  // ── Import ─────────────────────────────────────────────────────────────────
   const handleImport = (items: any[]) => {
     if (activeTab === 'properties') {
-      updateData({ ...data, properties: [...data.properties, ...items] });
+      const typed = items as SourcingProperty[];
+      setData(prev => ({ ...prev, properties: [...prev.properties, ...typed] }));
+      sourcingApi.bulkCreateProperties(typed).catch(() => {});
     } else if (activeTab === 'brokers') {
-      updateData({ ...data, brokers: [...data.brokers, ...items] });
+      const typed = items as SourcingBroker[];
+      setData(prev => ({ ...prev, brokers: [...prev.brokers, ...typed] }));
+      sourcingApi.bulkCreateBrokers(typed).catch(() => {});
     } else {
-      updateData({ ...data, operators: [...data.operators, ...items] });
+      const typed = items as SourcingOperator[];
+      setData(prev => ({ ...prev, operators: [...prev.operators, ...typed] }));
+      sourcingApi.bulkCreateOperators(typed).catch(() => {});
     }
     setShowImport(false);
   };
 
-  // ── Market CRUD ───────────────────────────────────────────────────────────
-
-  const addMarket = () => {
+  // ── Market CRUD ────────────────────────────────────────────────────────────
+  const addMarket = async () => {
     const name = newMarketInput.trim();
     if (!name) return;
     const entry: MarketEntry = { id: Date.now().toString(), name };
-    const updated = [...markets, entry];
-    setMarkets(updated);
-    saveMarkets(updated);
+    setMarkets(prev => [...prev, entry]);
     setNewMarketInput('');
     setShowAddMarket(false);
     setSelectedMarket(entry);
+    sourcingApi.createMarket(entry).catch(() => {});
   };
 
   const removeMarket = (id: string) => {
     const updated = markets.filter(m => m.id !== id);
     setMarkets(updated);
-    saveMarkets(updated);
     if (selectedMarket?.id === id) setSelectedMarket(updated[0] ?? null);
+    sourcingApi.deleteMarket(id).catch(() => {});
   };
 
-  // ── Derived ───────────────────────────────────────────────────────────────
-
+  // ── Derived ────────────────────────────────────────────────────────────────
   const filterByMarket = <T extends { market: string }>(items: T[]) =>
     selectedMarket ? items.filter(i => i.market === selectedMarket.name) : items;
 
@@ -1334,8 +1293,7 @@ const Sourcing = () => {
     else setShowAddOperator(true);
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex min-h-screen bg-gray-50">
 
@@ -1369,23 +1327,27 @@ const Sourcing = () => {
         )}
 
         <div className="space-y-1 flex-1">
-          {markets.map(m => (
-            <div
-              key={m.id}
-              onClick={() => setSelectedMarket(m)}
-              className={`flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-colors group ${
-                selectedMarket?.id === m.id ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50'
-              }`}
-            >
-              <span className="text-sm font-medium text-gray-800 truncate flex-1">{m.name}</span>
-              <button
-                onClick={e => { e.stopPropagation(); removeMarket(m.id); }}
-                className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-opacity flex-shrink-0"
+          {loading ? (
+            <p className="text-xs text-gray-400 px-1 py-2">Loading…</p>
+          ) : (
+            markets.map(m => (
+              <div
+                key={m.id}
+                onClick={() => setSelectedMarket(m)}
+                className={`flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-colors group ${
+                  selectedMarket?.id === m.id ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50'
+                }`}
               >
-                <X size={12} />
-              </button>
-            </div>
-          ))}
+                <span className="text-sm font-medium text-gray-800 truncate flex-1">{m.name}</span>
+                <button
+                  onClick={e => { e.stopPropagation(); removeMarket(m.id); }}
+                  className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-opacity flex-shrink-0"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))
+          )}
         </div>
       </div>
 

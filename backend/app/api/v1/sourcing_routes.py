@@ -1,6 +1,9 @@
 """
 Sourcing API routes
-Parses uploaded Excel/CSV files and maps columns to the sourcing data model using Claude.
+
+Handles:
+  1. Excel/CSV import parsing (existing)
+  2. Full CRUD for sourcing markets, properties, brokers, operators
 """
 import json
 import os
@@ -8,9 +11,18 @@ import io
 import csv
 import re
 from flask import Blueprint, request, jsonify
+from app.database import (
+    db,
+    SourcingMarketModel,
+    SourcingPropertyModel,
+    SourcingBrokerModel,
+    SourcingOperatorModel,
+)
 
 sourcing_bp = Blueprint('sourcing', __name__)
 
+
+# ── Import parsing (unchanged) ────────────────────────────────────────────────
 
 @sourcing_bp.route('/sourcing/parse-import', methods=['POST'])
 def parse_import():
@@ -66,7 +78,6 @@ def parse_import():
         if not rows:
             return jsonify({'success': False, 'error': 'No data rows found in file'}), 400
 
-        # Target schemas per type
         schemas = {
             'properties': {
                 'fields': ['address', 'units', 'owner_name', 'status', 'last_contact_date',
@@ -123,7 +134,6 @@ def parse_import():
 
         response_text = message.content[0].text.strip()
 
-        # Strip markdown fences if present
         if '```' in response_text:
             response_text = re.sub(r'```json\s*', '', response_text)
             response_text = re.sub(r'```', '', response_text)
@@ -154,3 +164,286 @@ def parse_import():
         if 'rate_limit' in error_msg.lower():
             return jsonify({'success': False, 'error': 'Rate limit reached. Please try again.'}), 429
         return jsonify({'success': False, 'error': error_msg}), 500
+
+
+# ── Markets ───────────────────────────────────────────────────────────────────
+
+@sourcing_bp.route('/sourcing/markets', methods=['GET'])
+def list_markets():
+    markets = SourcingMarketModel.query.order_by(SourcingMarketModel.created_at).all()
+    return jsonify({'markets': [{'id': m.id, 'name': m.name} for m in markets]}), 200
+
+
+@sourcing_bp.route('/sourcing/markets', methods=['POST'])
+def create_market():
+    data = request.get_json() or {}
+    m_id = data.get('id') or str(int(__import__('time').time() * 1000))
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name is required'}), 400
+    existing = SourcingMarketModel.query.get(m_id)
+    if existing:
+        return jsonify({'market': {'id': existing.id, 'name': existing.name}}), 200
+    market = SourcingMarketModel(id=m_id, name=name)
+    db.session.add(market)
+    db.session.commit()
+    return jsonify({'market': {'id': market.id, 'name': market.name}}), 201
+
+
+@sourcing_bp.route('/sourcing/markets/<market_id>', methods=['DELETE'])
+def delete_market(market_id):
+    market = SourcingMarketModel.query.get(market_id)
+    if not market:
+        return jsonify({'error': 'Not found'}), 404
+    db.session.delete(market)
+    db.session.commit()
+    return jsonify({'success': True}), 200
+
+
+# ── Properties ────────────────────────────────────────────────────────────────
+
+@sourcing_bp.route('/sourcing/properties', methods=['GET'])
+def list_properties():
+    market = request.args.get('market')
+    q = SourcingPropertyModel.query
+    if market:
+        q = q.filter_by(market=market)
+    props = q.all()
+    return jsonify({'properties': [p.to_dict() for p in props]}), 200
+
+
+@sourcing_bp.route('/sourcing/properties', methods=['POST'])
+def create_property():
+    data = request.get_json() or {}
+    p_id = data.get('id') or str(int(__import__('time').time() * 1000))
+    prop = SourcingPropertyModel(
+        id=p_id,
+        market=data.get('market', ''),
+        address=data.get('address', ''),
+        units=int(data.get('units') or 0),
+        owner_name=data.get('owner_name', ''),
+        status=data.get('status', 'not_contacted'),
+        last_contact_date=data.get('last_contact_date', ''),
+        next_followup_date=data.get('next_followup_date', ''),
+        notes=data.get('notes', ''),
+        deal_id=data.get('deal_id'),
+        lat=data.get('lat'),
+        lng=data.get('lng'),
+    )
+    db.session.add(prop)
+    db.session.commit()
+    return jsonify({'property': prop.to_dict()}), 201
+
+
+@sourcing_bp.route('/sourcing/properties/bulk', methods=['POST'])
+def bulk_create_properties():
+    items = request.get_json() or []
+    created = []
+    for data in items:
+        p_id = data.get('id') or str(int(__import__('time').time() * 1000))
+        if SourcingPropertyModel.query.get(p_id):
+            continue
+        prop = SourcingPropertyModel(
+            id=p_id,
+            market=data.get('market', ''),
+            address=data.get('address', ''),
+            units=int(data.get('units') or 0),
+            owner_name=data.get('owner_name', ''),
+            status=data.get('status', 'not_contacted'),
+            last_contact_date=data.get('last_contact_date', ''),
+            next_followup_date=data.get('next_followup_date', ''),
+            notes=data.get('notes', ''),
+            deal_id=data.get('deal_id'),
+            lat=data.get('lat'),
+            lng=data.get('lng'),
+        )
+        db.session.add(prop)
+        created.append(prop)
+    db.session.commit()
+    return jsonify({'created': len(created)}), 201
+
+
+@sourcing_bp.route('/sourcing/properties/<prop_id>', methods=['PATCH'])
+def update_property(prop_id):
+    prop = SourcingPropertyModel.query.get(prop_id)
+    if not prop:
+        return jsonify({'error': 'Not found'}), 404
+    data = request.get_json() or {}
+    for field in ['market', 'address', 'owner_name', 'status', 'last_contact_date',
+                  'next_followup_date', 'notes']:
+        if field in data:
+            setattr(prop, field, data[field])
+    if 'units' in data:
+        prop.units = int(data['units'] or 0)
+    if 'deal_id' in data:
+        prop.deal_id = data['deal_id']
+    if 'lat' in data:
+        prop.lat = data['lat']
+    if 'lng' in data:
+        prop.lng = data['lng']
+    db.session.commit()
+    return jsonify({'property': prop.to_dict()}), 200
+
+
+@sourcing_bp.route('/sourcing/properties/<prop_id>', methods=['DELETE'])
+def delete_property(prop_id):
+    prop = SourcingPropertyModel.query.get(prop_id)
+    if not prop:
+        return jsonify({'error': 'Not found'}), 404
+    db.session.delete(prop)
+    db.session.commit()
+    return jsonify({'success': True}), 200
+
+
+# ── Brokers ───────────────────────────────────────────────────────────────────
+
+@sourcing_bp.route('/sourcing/brokers', methods=['GET'])
+def list_brokers():
+    market = request.args.get('market')
+    q = SourcingBrokerModel.query
+    if market:
+        q = q.filter_by(market=market)
+    return jsonify({'brokers': [b.to_dict() for b in q.all()]}), 200
+
+
+@sourcing_bp.route('/sourcing/brokers', methods=['POST'])
+def create_broker():
+    data = request.get_json() or {}
+    b_id = data.get('id') or str(int(__import__('time').time() * 1000))
+    broker = SourcingBrokerModel(
+        id=b_id,
+        market=data.get('market', ''),
+        name=data.get('name', ''),
+        firm=data.get('firm', ''),
+        status=data.get('status', 'cold'),
+        last_contact_date=data.get('last_contact_date', ''),
+        last_deal_sent=data.get('last_deal_sent', ''),
+        notes=data.get('notes', ''),
+    )
+    db.session.add(broker)
+    db.session.commit()
+    return jsonify({'broker': broker.to_dict()}), 201
+
+
+@sourcing_bp.route('/sourcing/brokers/bulk', methods=['POST'])
+def bulk_create_brokers():
+    items = request.get_json() or []
+    created = []
+    for data in items:
+        b_id = data.get('id') or str(int(__import__('time').time() * 1000))
+        if SourcingBrokerModel.query.get(b_id):
+            continue
+        broker = SourcingBrokerModel(
+            id=b_id,
+            market=data.get('market', ''),
+            name=data.get('name', ''),
+            firm=data.get('firm', ''),
+            status=data.get('status', 'cold'),
+            last_contact_date=data.get('last_contact_date', ''),
+            last_deal_sent=data.get('last_deal_sent', ''),
+            notes=data.get('notes', ''),
+        )
+        db.session.add(broker)
+        created.append(broker)
+    db.session.commit()
+    return jsonify({'created': len(created)}), 201
+
+
+@sourcing_bp.route('/sourcing/brokers/<broker_id>', methods=['PATCH'])
+def update_broker(broker_id):
+    broker = SourcingBrokerModel.query.get(broker_id)
+    if not broker:
+        return jsonify({'error': 'Not found'}), 404
+    data = request.get_json() or {}
+    for field in ['market', 'name', 'firm', 'status', 'last_contact_date', 'last_deal_sent', 'notes']:
+        if field in data:
+            setattr(broker, field, data[field])
+    db.session.commit()
+    return jsonify({'broker': broker.to_dict()}), 200
+
+
+@sourcing_bp.route('/sourcing/brokers/<broker_id>', methods=['DELETE'])
+def delete_broker(broker_id):
+    broker = SourcingBrokerModel.query.get(broker_id)
+    if not broker:
+        return jsonify({'error': 'Not found'}), 404
+    db.session.delete(broker)
+    db.session.commit()
+    return jsonify({'success': True}), 200
+
+
+# ── Operators ─────────────────────────────────────────────────────────────────
+
+@sourcing_bp.route('/sourcing/operators', methods=['GET'])
+def list_operators():
+    market = request.args.get('market')
+    q = SourcingOperatorModel.query
+    if market:
+        q = q.filter_by(market=market)
+    return jsonify({'operators': [o.to_dict() for o in q.all()]}), 200
+
+
+@sourcing_bp.route('/sourcing/operators', methods=['POST'])
+def create_operator():
+    data = request.get_json() or {}
+    o_id = data.get('id') or str(int(__import__('time').time() * 1000))
+    op = SourcingOperatorModel(
+        id=o_id,
+        market=data.get('market', ''),
+        name=data.get('name', ''),
+        firm=data.get('firm', ''),
+        status=data.get('status', 'prospecting'),
+        properties_managed=data.get('properties_managed', ''),
+        last_contact_date=data.get('last_contact_date', ''),
+        notes=data.get('notes', ''),
+    )
+    db.session.add(op)
+    db.session.commit()
+    return jsonify({'operator': op.to_dict()}), 201
+
+
+@sourcing_bp.route('/sourcing/operators/bulk', methods=['POST'])
+def bulk_create_operators():
+    items = request.get_json() or []
+    created = []
+    for data in items:
+        o_id = data.get('id') or str(int(__import__('time').time() * 1000))
+        if SourcingOperatorModel.query.get(o_id):
+            continue
+        op = SourcingOperatorModel(
+            id=o_id,
+            market=data.get('market', ''),
+            name=data.get('name', ''),
+            firm=data.get('firm', ''),
+            status=data.get('status', 'prospecting'),
+            properties_managed=data.get('properties_managed', ''),
+            last_contact_date=data.get('last_contact_date', ''),
+            notes=data.get('notes', ''),
+        )
+        db.session.add(op)
+        created.append(op)
+    db.session.commit()
+    return jsonify({'created': len(created)}), 201
+
+
+@sourcing_bp.route('/sourcing/operators/<operator_id>', methods=['PATCH'])
+def update_operator(operator_id):
+    op = SourcingOperatorModel.query.get(operator_id)
+    if not op:
+        return jsonify({'error': 'Not found'}), 404
+    data = request.get_json() or {}
+    for field in ['market', 'name', 'firm', 'status', 'properties_managed', 'last_contact_date', 'notes']:
+        if field in data:
+            setattr(op, field, data[field])
+    db.session.commit()
+    return jsonify({'operator': op.to_dict()}), 200
+
+
+@sourcing_bp.route('/sourcing/operators/<operator_id>', methods=['DELETE'])
+def delete_operator(operator_id):
+    op = SourcingOperatorModel.query.get(operator_id)
+    if not op:
+        return jsonify({'error': 'Not found'}), 404
+    db.session.delete(op)
+    db.session.commit()
+    return jsonify({'success': True}), 200
