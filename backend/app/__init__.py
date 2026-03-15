@@ -1,7 +1,7 @@
 import os
 import sys
 import logging
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, session, request, redirect, url_for, make_response
 from flask_cors import CORS
 from dotenv import load_dotenv
 from app.database import db
@@ -106,6 +106,108 @@ def create_app(test_config=None):
                 "origins": app.config.get('FRONTEND_URL', 'http://localhost:5173')
             }
         })
+
+    # ── Password protection ──────────────────────────────────────────────────
+    APP_PASSWORD = os.environ.get('APP_PASSWORD', '')
+
+    LOGIN_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aequitas — Sign In</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0f172a;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #e2e8f0;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 2.5rem;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.4);
+    }
+    h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.25rem; }
+    p  { font-size: 0.875rem; color: #94a3b8; margin-bottom: 1.75rem; }
+    label { display: block; font-size: 0.8rem; font-weight: 600;
+            letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 0.4rem; }
+    input[type=password] {
+      width: 100%; padding: 0.65rem 0.85rem;
+      background: #0f172a; border: 1px solid #334155;
+      border-radius: 8px; color: #e2e8f0; font-size: 1rem;
+      outline: none; margin-bottom: 1.25rem;
+      transition: border-color 0.15s;
+    }
+    input[type=password]:focus { border-color: #6366f1; }
+    button {
+      width: 100%; padding: 0.7rem;
+      background: #6366f1; border: none; border-radius: 8px;
+      color: #fff; font-size: 1rem; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
+    }
+    button:hover { background: #4f46e5; }
+    .error {
+      background: #450a0a; border: 1px solid #7f1d1d;
+      color: #fca5a5; border-radius: 8px;
+      padding: 0.65rem 0.85rem; font-size: 0.875rem;
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Aequitas</h1>
+    <p>Enter your password to continue</p>
+    {error}
+    <form method="POST" action="/__auth__/login">
+      <input type="hidden" name="next" value="{next}">
+      <label for="pw">Password</label>
+      <input type="password" id="pw" name="password" autofocus autocomplete="current-password">
+      <button type="submit">Sign In</button>
+    </form>
+  </div>
+</body>
+</html>"""
+
+    @app.route('/__auth__/login', methods=['GET', 'POST'])
+    def _auth_login():
+        next_url = request.args.get('next') or request.form.get('next') or '/'
+        if request.method == 'POST':
+            if request.form.get('password') == APP_PASSWORD:
+                session['authenticated'] = True
+                return redirect(next_url)
+            html = LOGIN_HTML.replace('{error}', '<div class="error">Incorrect password — try again.</div>')
+            html = html.replace('{next}', next_url)
+            return make_response(html, 401)
+        html = LOGIN_HTML.replace('{error}', '')
+        html = html.replace('{next}', next_url)
+        return html
+
+    @app.route('/__auth__/logout')
+    def _auth_logout():
+        session.pop('authenticated', None)
+        return redirect('/')
+
+    @app.before_request
+    def _require_auth():
+        # Skip auth check for the login/logout routes themselves
+        if request.path.startswith('/__auth__/'):
+            return
+        # If no password is set, allow everything through
+        if not APP_PASSWORD:
+            return
+        if not session.get('authenticated'):
+            return redirect(f'/__auth__/login?next={request.path}')
+    # ─────────────────────────────────────────────────────────────────────────
 
     # Simple route
     from .routes import main_bp

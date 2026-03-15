@@ -618,16 +618,10 @@ const Regulations = () => {
         <h3 className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
           {featured.length > 0 ? 'My Markets' : 'Markets'}
         </h3>
-        <div className="space-y-1 flex-1">
-          {unfeatured.map((m) => <MarketItem key={m.id} market={m} />)}
-          {unfeatured.length === 0 && featured.length > 0 && (
-            <p className="text-xs text-gray-400 italic px-1">All markets featured</p>
-          )}
-        </div>
 
         {/* Add Market */}
         {showAddMarket ? (
-          <div className="mt-3">
+          <div className="mb-3">
             <input
               autoFocus
               type="text"
@@ -638,18 +632,25 @@ const Regulations = () => {
               className="w-full text-sm px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
             />
             <div className="flex gap-1 mt-1.5">
-              <button onClick={addMarket} className="flex-1 text-xs py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">Add</button>
-              <button onClick={() => setShowAddMarket(false)} className="flex-1 text-xs py-1 border border-gray-300 text-gray-600 rounded-md hover:bg-gray-50 transition-colors">Cancel</button>
+              <button onClick={addMarket} className="flex-1 text-xs py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium">Add</button>
+              <button onClick={() => setShowAddMarket(false)} className="flex-1 text-xs py-1.5 border border-gray-300 text-gray-600 rounded-md hover:bg-gray-50 transition-colors">Cancel</button>
             </div>
           </div>
         ) : (
           <button
             onClick={() => setShowAddMarket(true)}
-            className="mt-3 flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 transition-colors"
+            className="mb-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
           >
-            <Plus size={13} /> Add Market
+            <Plus size={14} /> Add Market
           </button>
         )}
+
+        <div className="space-y-1 flex-1">
+          {unfeatured.map((m) => <MarketItem key={m.id} market={m} />)}
+          {unfeatured.length === 0 && featured.length > 0 && (
+            <p className="text-xs text-gray-400 italic px-1">All markets featured</p>
+          )}
+        </div>
       </div>
 
       {/* Main Content */}

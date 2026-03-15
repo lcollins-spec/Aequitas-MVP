@@ -1301,6 +1301,31 @@ const Sourcing = () => {
       <div className="w-52 bg-white border-r border-gray-200 p-4 flex flex-col flex-shrink-0">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Markets</h3>
 
+        {showAddMarket ? (
+          <div className="mb-3">
+            <input
+              autoFocus
+              type="text"
+              placeholder="City, ST"
+              value={newMarketInput}
+              onChange={e => setNewMarketInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') addMarket(); if (e.key === 'Escape') setShowAddMarket(false); }}
+              className="w-full text-sm px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+            />
+            <div className="flex gap-1 mt-1.5">
+              <button onClick={addMarket} className="flex-1 text-xs py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium">Add</button>
+              <button onClick={() => setShowAddMarket(false)} className="flex-1 text-xs py-1.5 border border-gray-300 text-gray-600 rounded-md hover:bg-gray-50 transition-colors">Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowAddMarket(true)}
+            className="mb-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Plus size={14} /> Add Market
+          </button>
+        )}
+
         <div className="space-y-1 flex-1">
           {markets.map(m => (
             <div
@@ -1320,31 +1345,6 @@ const Sourcing = () => {
             </div>
           ))}
         </div>
-
-        {showAddMarket ? (
-          <div className="mt-3">
-            <input
-              autoFocus
-              type="text"
-              placeholder="City, ST"
-              value={newMarketInput}
-              onChange={e => setNewMarketInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') addMarket(); if (e.key === 'Escape') setShowAddMarket(false); }}
-              className="w-full text-sm px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
-            />
-            <div className="flex gap-1 mt-1.5">
-              <button onClick={addMarket} className="flex-1 text-xs py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">Add</button>
-              <button onClick={() => setShowAddMarket(false)} className="flex-1 text-xs py-1 border border-gray-300 text-gray-600 rounded-md hover:bg-gray-50 transition-colors">Cancel</button>
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowAddMarket(true)}
-            className="mt-3 flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 transition-colors"
-          >
-            <Plus size={13} /> Add Market
-          </button>
-        )}
       </div>
 
       {/* ── Main Content ── */}
