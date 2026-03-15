@@ -1,11 +1,13 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft, ChevronDown, Plus, Trash2, CheckCircle2, Clock, AlertTriangle,
+  ChevronRight, Upload, FileText, Loader2, Download,
 } from 'lucide-react';
 import {
   getDealExecution, patchDealExecution,
   type DealExecutionRecord, type CapitalCall, type Distribution, type CapexItem, type DealDocument,
+  type DDItemStatus,
 } from '../types/dealExecution';
 import DocumentsPanel from '../components/DocumentsPanel';
 import {
@@ -22,6 +24,66 @@ const STATUS_RANK: Record<PipelineStatus, number> = {
   'Under Contract': 3,
   'Closed': 4,
   'Exited': 5,
+};
+
+// ─── DD Checklist Config ──────────────────────────────────────────────────────
+interface DDChecklistItem { id: string; label: string; }
+interface DDPhase { id: string; label: string; items: DDChecklistItem[]; }
+
+const DD_PHASES: DDPhase[] = [
+  {
+    id: 'loi_exclusivity',
+    label: 'LOI & Exclusivity',
+    items: [
+      { id: 'execute_loi',        label: 'Execute LOI' },
+      { id: 'wire_emd',           label: 'Wire EMD' },
+      { id: 'confirm_exclusivity', label: 'Confirm exclusivity period' },
+    ],
+  },
+  {
+    id: 'physical_environmental',
+    label: 'Physical & Environmental',
+    items: [
+      { id: 'property_inspection', label: 'Property inspection' },
+      { id: 'phase1_env',          label: 'Phase I environmental' },
+      { id: 'roof_systems',        label: 'Roof/systems report' },
+    ],
+  },
+  {
+    id: 'financial_legal',
+    label: 'Financial & Legal',
+    items: [
+      { id: 'rent_roll_verification', label: 'Rent roll verification' },
+      { id: 't12_pl',                 label: 'T12 actual P&L' },
+      { id: 'utility_tax_bills',      label: 'Utility & tax bills' },
+      { id: 'title_survey',           label: 'Title search & survey' },
+      { id: 'zoning',                 label: 'Zoning confirmation' },
+      { id: 'lease_review',           label: 'Existing leases review' },
+    ],
+  },
+  {
+    id: 'financing_close',
+    label: 'Financing & Close',
+    items: [
+      { id: 'lender_term_sheet',  label: 'Lender engagement & term sheet' },
+      { id: 'appraisal',          label: 'Appraisal' },
+      { id: 'psa_negotiation',    label: 'PSA negotiation' },
+      { id: 'estoppels',          label: 'Estoppels' },
+      { id: 'final_walkthrough',  label: 'Final walkthrough & closing' },
+    ],
+  },
+];
+
+const DD_STATUS_CYCLE: DDItemStatus[] = ['pending', 'uploaded', 'reviewed'];
+const DD_STATUS_LABEL: Record<DDItemStatus, string> = {
+  pending:  'Pending',
+  uploaded: 'Uploaded',
+  reviewed: 'Reviewed',
+};
+const DD_STATUS_STYLE: Record<DDItemStatus, string> = {
+  pending:  'bg-gray-100 text-gray-500',
+  uploaded: 'bg-amber-100 text-amber-700',
+  reviewed: 'bg-green-100 text-green-700',
 };
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -82,6 +144,45 @@ const Field = ({ label, value, onChange, onBlur, type = 'text', placeholder, rea
   </div>
 );
 
+// ─── Memo renderer — converts ##-headed markdown to styled HTML ────────────────
+const MemoDisplay = ({ text }: { text: string }) => {
+  const lines = text.split('\n');
+  return (
+    <div className="text-sm text-gray-700 space-y-3 leading-relaxed">
+      {lines.map((line, i) => {
+        if (line.startsWith('## ')) {
+          return (
+            <h3 key={i} className="text-sm font-semibold text-gray-900 mt-4 mb-1 border-b border-gray-100 pb-1">
+              {line.slice(3)}
+            </h3>
+          );
+        }
+        if (line.startsWith('**') && line.endsWith('**')) {
+          return <p key={i} className="font-semibold text-gray-800">{line.slice(2, -2)}</p>;
+        }
+        if (line.startsWith('- ') || line.startsWith('• ')) {
+          return <li key={i} className="ml-3 list-disc text-gray-600">{line.slice(2)}</li>;
+        }
+        if (line.trim() === '') return null;
+        // inline bold (**...**)
+        const parts = line.split(/(\*\*[^*]+\*\*)/g);
+        if (parts.length > 1) {
+          return (
+            <p key={i}>
+              {parts.map((part, j) =>
+                part.startsWith('**') && part.endsWith('**')
+                  ? <strong key={j}>{part.slice(2, -2)}</strong>
+                  : part
+              )}
+            </p>
+          );
+        }
+        return <p key={i} className="text-gray-600">{line}</p>;
+      })}
+    </div>
+  );
+};
+
 // ─── Main component ───────────────────────────────────────────────────────────
 const DealExecution = () => {
   const { dealId } = useParams<{ dealId: string }>();
@@ -140,6 +241,22 @@ const DealExecution = () => {
   const [closedTarget, setClosedTarget] = useState('');
   const [exitedTarget, setExitedTarget] = useState('');
 
+  // DD Checklist
+  const [ddChecklist, setDdChecklist] = useState<Record<string, DDItemStatus>>({});
+  const [ddUploads, setDdUploads]     = useState<Record<string, string>>({});
+  const [openPhases, setOpenPhases]   = useState<Record<string, boolean>>({
+    loi_exclusivity: true,
+    physical_environmental: false,
+    financial_legal: false,
+    financing_close: false,
+  });
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  // Investment Memo
+  const [memoText, setMemoText]       = useState('');
+  const [memoLoading, setMemoLoading] = useState(false);
+  const [memoError, setMemoError]     = useState('');
+
   // ── Load record on mount
   useEffect(() => {
     const rec = getDealExecution(numericId);
@@ -171,6 +288,9 @@ const DealExecution = () => {
       setUnderContractTarget(ms.underContractTarget ?? '');
       setClosedTarget(ms.closedTarget ?? '');
       setExitedTarget(ms.exitedTarget ?? '');
+
+      setDdChecklist(rec.ddChecklist ?? {});
+      setDdUploads(rec.ddUploads ?? {});
     }
     setPipelineStatusState(getPipelineStatus(numericId));
   }, [numericId]);
@@ -300,6 +420,152 @@ const DealExecution = () => {
     patchDealExecution(numericId, { documents: updated });
   }, [numericId]);
 
+  // ── DD Checklist operations
+  const cycleItemStatus = (itemId: string) => {
+    const current: DDItemStatus = ddChecklist[itemId] ?? 'pending';
+    const idx = DD_STATUS_CYCLE.indexOf(current);
+    const next = DD_STATUS_CYCLE[(idx + 1) % DD_STATUS_CYCLE.length];
+    const updated = { ...ddChecklist, [itemId]: next };
+    setDdChecklist(updated);
+    patchDealExecution(numericId, { ddChecklist: updated });
+  };
+
+  const handleItemUpload = (itemId: string, file: File) => {
+    const updatedUploads = { ...ddUploads, [itemId]: file.name };
+    const updatedChecklist = { ...ddChecklist, [itemId]: 'uploaded' as DDItemStatus };
+    setDdUploads(updatedUploads);
+    setDdChecklist(updatedChecklist);
+    patchDealExecution(numericId, { ddUploads: updatedUploads, ddChecklist: updatedChecklist });
+  };
+
+  const togglePhase = (phaseId: string) => {
+    setOpenPhases(prev => ({ ...prev, [phaseId]: !prev[phaseId] }));
+  };
+
+  // ── DD progress summary
+  const ddProgress = useMemo(() => {
+    const all = DD_PHASES.flatMap(p => p.items);
+    const reviewed = all.filter(it => ddChecklist[it.id] === 'reviewed').length;
+    const uploaded = all.filter(it => ddChecklist[it.id] === 'uploaded').length;
+    return { total: all.length, reviewed, uploaded };
+  }, [ddChecklist]);
+
+  // ── Investment Memo generation
+  const generateMemo = useCallback(async () => {
+    if (!record) return;
+    setMemoLoading(true);
+    setMemoError('');
+    setMemoText('');
+
+    // Optionally fetch backend deal data for richer context
+    let dealApi: Record<string, unknown> = {};
+    try {
+      const res = await fetch(`/api/v1/deals/${numericId}`);
+      if (res.ok) {
+        const json = await res.json();
+        dealApi = json.deal ?? {};
+      }
+    } catch {
+      // silently ignore — memo will still be generated from localStorage data
+    }
+
+    const payload = {
+      dealName: record.dealName,
+      propertyAddress: record.propertyAddress,
+      location: record.location,
+      totalUnits: record.totalUnits,
+      purchasePrice: ppNum || record.purchasePrice,
+      pipelineStatus,
+      loiData: {
+        purchasePrice: ppNum || record.purchasePrice,
+        earnestMoneyDeposit: parseNum(earnestMoney) || undefined,
+        dueDiligenceDeadline: ddDeadline || undefined,
+        targetCloseDate: targetClose || undefined,
+        loanAmount: loanNum || undefined,
+        interestRate: interestRate ? parseNum(interestRate) / 100 : undefined,
+        loanTermMonths: loanTermMonths ? parseInt(loanTermMonths) : undefined,
+      },
+      proForma: {
+        strategy,
+        aequitasEquity: parseNum(aequitasEquity) || undefined,
+        projectedExitValue: parseNum(projExitValue) || undefined,
+        projectedLpNetIrr: projLpNetIrr ? parseNum(projLpNetIrr) : undefined,
+        projectedEquityMultiple: projEquityMultiple ? parseNum(projEquityMultiple) : undefined,
+      },
+      capexItems,
+      capitalCalls,
+      distributions,
+      milestones: {
+        underContractTarget: underContractTarget || undefined,
+        closedTarget: closedTarget || undefined,
+        exitedTarget: exitedTarget || undefined,
+      },
+      fundSettings,
+      ddChecklist,
+      ddUploads,
+      ddPhases: DD_PHASES,
+      dealApi,
+    };
+
+    try {
+      const res = await fetch('/api/v1/generate-investment-memo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setMemoText(json.memo);
+      } else {
+        setMemoError(json.error ?? 'Failed to generate memo.');
+      }
+    } catch (err) {
+      setMemoError('Network error — make sure the backend is running on port 5001.');
+    } finally {
+      setMemoLoading(false);
+    }
+  }, [
+    record, numericId, pipelineStatus, ppNum, earnestMoney, ddDeadline, targetClose,
+    loanNum, interestRate, loanTermMonths, strategy, aequitasEquity, projExitValue,
+    projLpNetIrr, projEquityMultiple, capexItems, capitalCalls, distributions,
+    underContractTarget, closedTarget, exitedTarget, fundSettings, ddChecklist, ddUploads,
+  ]);
+
+  // ── Export as PDF (print dialog on a clean window)
+  const exportAsPdf = () => {
+    if (!memoText || !record) return;
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head>
+      <title>Investment Memo — ${record.dealName}</title>
+      <style>
+        body { font-family: Georgia, 'Times New Roman', serif; max-width: 760px; margin: 48px auto; color: #111; line-height: 1.7; font-size: 14px; }
+        h1 { font-size: 22px; margin-bottom: 4px; }
+        .sub { color: #555; font-size: 13px; margin-bottom: 32px; }
+        h3 { font-size: 15px; font-weight: bold; border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-top: 28px; margin-bottom: 8px; }
+        p { margin: 6px 0; }
+        li { margin-left: 20px; list-style: disc; }
+        strong { font-weight: 700; }
+        @media print { body { margin: 24px; } }
+      </style>
+    </head><body>
+      <h1>Investment Memo: ${record.dealName}</h1>
+      <div class="sub">${record.propertyAddress ?? record.location ?? ''} · Generated ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</div>
+      ${memoText
+        .split('\n')
+        .map(line => {
+          if (line.startsWith('## ')) return `<h3>${line.slice(3)}</h3>`;
+          if (line.startsWith('- ') || line.startsWith('• ')) return `<li>${line.slice(2)}</li>`;
+          if (line.trim() === '') return '<br>';
+          return `<p>${line.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')}</p>`;
+        })
+        .join('')}
+    </body></html>`);
+    win.document.close();
+    win.focus();
+    win.print();
+  };
+
   // ── Milestone strip data
   const rank = STATUS_RANK[pipelineStatus];
   const today = Date.now();
@@ -424,7 +690,7 @@ const DealExecution = () => {
       {/* ── Two-column layout ────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
-        {/* Left — Documents, Sections A, C, D */}
+        {/* Left — Documents, Sections A, C, D, DD Checklist */}
         <div className="xl:col-span-2 space-y-6">
 
           {/* Documents panel */}
@@ -682,10 +948,127 @@ const DealExecution = () => {
             )}
           </div>
 
+          {/* ── E — DD Checklist ────────────────────────────────────────────── */}
+          <div className="bg-white rounded-xl p-6 shadow-sm">
+            <div className="flex items-baseline justify-between mb-5">
+              <div className="flex items-baseline gap-3">
+                <h2 className="text-base font-semibold text-gray-900">E — DD Checklist</h2>
+                <span className="text-xs text-gray-400">
+                  {ddProgress.reviewed} reviewed · {ddProgress.uploaded} uploaded · {ddProgress.total - ddProgress.reviewed - ddProgress.uploaded} pending
+                </span>
+              </div>
+              {/* Overall progress bar */}
+              <div className="flex items-center gap-2">
+                <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-green-500 rounded-full transition-all"
+                    style={{ width: `${(ddProgress.reviewed / ddProgress.total) * 100}%` }}
+                  />
+                </div>
+                <span className="text-xs text-gray-400">
+                  {Math.round((ddProgress.reviewed / ddProgress.total) * 100)}%
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {DD_PHASES.map(phase => {
+                const isOpen = openPhases[phase.id] ?? false;
+                const phaseItems = phase.items;
+                const phaseReviewed = phaseItems.filter(it => ddChecklist[it.id] === 'reviewed').length;
+                const phaseTotal = phaseItems.length;
+                const allReviewed = phaseReviewed === phaseTotal;
+
+                return (
+                  <div key={phase.id} className="border border-gray-200 rounded-xl overflow-hidden">
+                    {/* Phase header */}
+                    <button
+                      onClick={() => togglePhase(phase.id)}
+                      className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <ChevronRight
+                          size={14}
+                          className={`text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                        />
+                        {allReviewed
+                          ? <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
+                          : <div className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${
+                              phaseReviewed > 0 ? 'border-amber-400 bg-amber-50' : 'border-gray-300'
+                            }`} />
+                        }
+                        <span className="text-sm font-medium text-gray-800">{phase.label}</span>
+                      </div>
+                      <span className="text-xs text-gray-400 tabular-nums">{phaseReviewed}/{phaseTotal}</span>
+                    </button>
+
+                    {/* Phase items */}
+                    {isOpen && (
+                      <div className="divide-y divide-gray-100">
+                        {phaseItems.map(item => {
+                          const status: DDItemStatus = ddChecklist[item.id] ?? 'pending';
+                          const uploadedFile = ddUploads[item.id];
+
+                          return (
+                            <div key={item.id} className="flex items-center gap-3 px-4 py-3">
+                              {/* Status toggle */}
+                              <button
+                                onClick={() => cycleItemStatus(item.id)}
+                                className={`flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold transition-colors ${DD_STATUS_STYLE[status]}`}
+                                title="Click to cycle: Pending → Uploaded → Reviewed"
+                              >
+                                {DD_STATUS_LABEL[status]}
+                              </button>
+
+                              {/* Label */}
+                              <span className={`flex-1 text-sm ${
+                                status === 'reviewed' ? 'text-gray-400 line-through' : 'text-gray-700'
+                              }`}>
+                                {item.label}
+                              </span>
+
+                              {/* Uploaded filename */}
+                              {uploadedFile && (
+                                <span className="text-xs text-gray-400 truncate max-w-[120px] flex items-center gap-1">
+                                  <FileText size={11} />
+                                  {uploadedFile}
+                                </span>
+                              )}
+
+                              {/* Upload button */}
+                              <button
+                                onClick={() => fileInputRefs.current[item.id]?.click()}
+                                className="flex-shrink-0 flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-gray-200 hover:border-blue-200 transition-colors"
+                                title="Upload supporting document"
+                              >
+                                <Upload size={11} />
+                                {uploadedFile ? 'Replace' : 'Upload'}
+                              </button>
+                              <input
+                                type="file"
+                                className="hidden"
+                                ref={el => { fileInputRefs.current[item.id] = el; }}
+                                onChange={e => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleItemUpload(item.id, file);
+                                  e.target.value = '';
+                                }}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
         </div>{/* end left column */}
 
-        {/* Right — Section B (sticky) */}
-        <div>
+        {/* Right — Section B (sticky) + Investment Memo */}
+        <div className="space-y-6">
           <div className="bg-white rounded-xl p-6 shadow-sm xl:sticky xl:top-6 space-y-5">
             <SectionHeader label="B — Capital Structure" />
 
@@ -757,6 +1140,60 @@ const DealExecution = () => {
             <p className="text-xs text-gray-400 leading-relaxed border-t border-gray-100 pt-4">
               Pro forma data feeds the Fund Returns portfolio table and TVPI/DPI calculations. Capital call amounts feed the XIRR model.
             </p>
+          </div>
+
+          {/* ── F — Investment Memo ──────────────────────────────────────────── */}
+          <div className="bg-white rounded-xl p-6 shadow-sm space-y-4">
+            <div>
+              <h2 className="text-base font-semibold text-gray-900">F — Investment Memo</h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Claude synthesizes all saved deal data into an LP-ready memo.
+              </p>
+            </div>
+
+            {/* Generate button */}
+            <button
+              onClick={generateMemo}
+              disabled={memoLoading}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed rounded-xl transition-colors"
+            >
+              {memoLoading
+                ? <><Loader2 size={15} className="animate-spin" /> Generating…</>
+                : <><FileText size={15} /> Generate Memo</>
+              }
+            </button>
+
+            {/* Error */}
+            {memoError && (
+              <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl">
+                <AlertTriangle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-red-700">{memoError}</p>
+              </div>
+            )}
+
+            {/* Memo output */}
+            {memoText && (
+              <>
+                <div className="border border-gray-200 rounded-xl p-4 max-h-[600px] overflow-y-auto">
+                  <MemoDisplay text={memoText} />
+                </div>
+
+                {/* Export button */}
+                <button
+                  onClick={exportAsPdf}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl transition-colors"
+                >
+                  <Download size={14} />
+                  Export as PDF
+                </button>
+              </>
+            )}
+
+            {!memoText && !memoLoading && !memoError && (
+              <p className="text-xs text-gray-400 text-center py-4">
+                Fill in deal terms and pro forma above, then click Generate Memo.
+              </p>
+            )}
           </div>
         </div>
 

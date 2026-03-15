@@ -143,6 +143,10 @@ def create_app(test_config=None):
     from .api.v1.regulations_routes import regulations_bp
     app.register_blueprint(regulations_bp, url_prefix='/api/v1')
 
+    # Investment Memo generation API
+    from .api.v1.memo_routes import memo_bp
+    app.register_blueprint(memo_bp, url_prefix='/api/v1')
+
     # Serve frontend (only in production/Docker)
     if in_docker:
         logger.info("=" * 60)

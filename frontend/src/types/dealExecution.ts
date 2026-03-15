@@ -72,6 +72,8 @@ export interface ProFormaSnapshot {
   strategy?: 'Acquisition' | 'Light Rehab' | 'Heavy Rehab';
 }
 
+export type DDItemStatus = 'pending' | 'uploaded' | 'reviewed';
+
 export interface DealExecutionRecord {
   dealId: number;
   dealName: string;
@@ -95,6 +97,10 @@ export interface DealExecutionRecord {
   proForma?: ProFormaSnapshot;
   /** Milestone target dates */
   milestones?: MilestoneDates;
+  /** DD Checklist — status per item id */
+  ddChecklist?: Record<string, DDItemStatus>;
+  /** DD Checklist — uploaded filename per item id */
+  ddUploads?: Record<string, string>;
 }
 
 const DEAL_EXEC_LS_KEY = 'aequitas_deal_executions';
