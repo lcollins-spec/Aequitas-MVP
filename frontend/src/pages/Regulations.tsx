@@ -31,7 +31,7 @@ const LS_TOPICS = 'aequitas_reg_topics';
 const LS_DATA_PREFIX = 'aequitas_reg_data_';  // legacy — migrated on first load
 const LS_FEATURED = 'aequitas_reg_featured';
 const LS_PINS = 'aequitas_reg_pins';
-const AUTO_REFRESH_MS = 24 * 60 * 60 * 1000;
+const AUTO_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 
 const DEFAULT_TOPICS = [
   'rent control',
