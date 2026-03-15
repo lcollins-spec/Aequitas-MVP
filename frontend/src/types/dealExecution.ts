@@ -74,6 +74,26 @@ export interface ProFormaSnapshot {
 
 export type DDItemStatus = 'pending' | 'uploaded' | 'reviewed';
 
+export type DealStage = 1 | 2 | 3;
+
+export const DATA_ROOM_ITEMS: { id: string; label: string }[] = [
+  { id: 'dr_rent_roll',        label: 'Rent Roll' },
+  { id: 'dr_t12',              label: 'T12' },
+  { id: 'dr_leases',           label: 'Leases' },
+  { id: 'dr_tax_bills',        label: 'Tax Bills' },
+  { id: 'dr_utility_bills',    label: 'Utility Bills' },
+  { id: 'dr_inspection',       label: 'Inspection Report' },
+];
+
+export const CLOSING_ITEMS: { id: string; label: string }[] = [
+  { id: 'cl_psa',        label: 'PSA Executed' },
+  { id: 'cl_title',      label: 'Title Cleared' },
+  { id: 'cl_estoppels',  label: 'Estoppels Received' },
+  { id: 'cl_insurance',  label: 'Insurance Bound' },
+  { id: 'cl_wire',       label: 'Wire Sent' },
+  { id: 'cl_keys',       label: 'Keys Received' },
+];
+
 export interface DealExecutionRecord {
   dealId: number;
   dealName: string;
@@ -101,6 +121,14 @@ export interface DealExecutionRecord {
   ddChecklist?: Record<string, DDItemStatus>;
   /** DD Checklist — uploaded filename per item id */
   ddUploads?: Record<string, string>;
+  /** Current stage: 1=Data Room, 2=Due Diligence, 3=Closing. Defaults to 1. */
+  stage?: DealStage;
+  /** Stage 1 — Data Room checklist status per item id */
+  dataRoomChecklist?: Record<string, DDItemStatus>;
+  /** Stage 1 — Data Room uploaded filename per item id */
+  dataRoomUploads?: Record<string, string>;
+  /** Stage 3 — Closing checklist: item id → checked */
+  closingChecklist?: Record<string, boolean>;
 }
 
 const DEAL_EXEC_LS_KEY = 'aequitas_deal_executions';

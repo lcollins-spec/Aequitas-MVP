@@ -13,30 +13,20 @@ import {
   Briefcase,
 } from 'lucide-react';
 import { useState } from 'react';
-import { getAllDealExecutions } from '../types/dealExecution';
 
-const getNavItems = () => {
-  const executions = getAllDealExecutions();
-  const mostRecent = executions.sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  )[0];
-  const dealExecTo = mostRecent ? `/deal-execution/${mostRecent.dealId}` : null;
-
-  return [
-    { to: '/', icon: Home, label: 'Dashboard' },
-    { to: '/fund-returns', icon: TrendingUp, label: 'Fund Returns' },
-    { to: '/underwriting', icon: FileText, label: 'Underwriting' },
-    dealExecTo ? { to: dealExecTo, icon: Briefcase, label: 'Deal Execution' } : null,
-    { to: '/map', icon: Map, label: 'Map' },
-    { to: '/market-analysis', icon: BarChart3, label: 'Market Analysis' },
-    { to: '/gp-portfolio', icon: Users, label: 'GP Portfolio' },
-    { to: '/regulations', icon: FileCheck, label: 'Legislation and Government Funding' },
-  ].filter(Boolean) as { to: string; icon: React.ElementType; label: string }[];
-};
+const NAV_ITEMS = [
+  { to: '/', icon: Home, label: 'Dashboard' },
+  { to: '/fund-returns', icon: TrendingUp, label: 'Fund Returns' },
+  { to: '/underwriting', icon: FileText, label: 'Underwriting' },
+  { to: '/deal-execution', icon: Briefcase, label: 'Deal Execution' },
+  { to: '/map', icon: Map, label: 'Map' },
+  { to: '/market-analysis', icon: BarChart3, label: 'Market Analysis' },
+  { to: '/gp-portfolio', icon: Users, label: 'GP Portfolio' },
+  { to: '/regulations', icon: FileCheck, label: 'Legislation and Government Funding' },
+] as const;
 
 const Sidebar = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const navItems = getNavItems();
 
   return (
     <>
@@ -72,7 +62,7 @@ const Sidebar = () => {
           </div>
         </div>
         <nav className="flex flex-col py-2">
-          {navItems.map((item) => (
+          {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
