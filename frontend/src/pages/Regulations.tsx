@@ -13,6 +13,7 @@ import {
   Star,
   Pin,
   PinOff,
+  ArrowLeft,
 } from 'lucide-react';
 import type {
   MarketEntry,
@@ -405,6 +406,7 @@ const Regulations = () => {
   const [marketDataCache, setMarketDataCache] = useState<Record<string, MarketData>>({});
   const [pins, setPins] = useState<Record<string, PinnedItem[]>>(loadPins);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [view, setView] = useState<'list' | 'detail'>('list');
 
   const topicsRef = useRef(topics);
   useEffect(() => { topicsRef.current = topics; }, [topics]);
@@ -517,6 +519,7 @@ const Regulations = () => {
     setNewMarketInput('');
     setShowAddMarket(false);
     setSelectedMarket(entry);
+    setView('detail');
     triggerFetch(id, name);
   };
 
@@ -529,13 +532,6 @@ const Regulations = () => {
     setFeaturedIds(newFeatured);
     saveFeatured(newFeatured);
     if (selectedMarket?.id === id) setSelectedMarket(updated[0] ?? null);
-  };
-
-  const toggleFeatured = (id: string) => {
-    const updated = new Set(featuredIds);
-    if (updated.has(id)) updated.delete(id); else updated.add(id);
-    setFeaturedIds(updated);
-    saveFeatured(updated);
   };
 
   // ── Topic CRUD ────────────────────────────────────────────────────────
@@ -612,66 +608,102 @@ const Regulations = () => {
   const activePins = selectedMarket ? (pins[selectedMarket.id] ?? []) : [];
   const totalPinCount = Object.values(pins).reduce((sum, arr) => sum + arr.length, 0);
 
-  // Sorted market list: featured first
-  const featured = markets.filter((m) => featuredIds.has(m.id));
-  const unfeatured = markets.filter((m) => !featuredIds.has(m.id));
+  // ── Render ────────────────────────────────────────────────────────────
 
-  // ── Market sidebar item ───────────────────────────────────────────────
-  const MarketItem = ({ market }: { market: MarketEntry }) => {
-    const isFeatured = featuredIds.has(market.id);
-    const isSelected = selectedMarket?.id === market.id;
-    const refreshing = loadingMarkets.has(market.id);
-    const pinCount = (pins[market.id] ?? []).length;
-
+  // Level 1 — Market Overview
+  if (view === 'list') {
     return (
-      <div
-        onClick={() => setSelectedMarket(market)}
-        className={`p-2.5 rounded-lg cursor-pointer transition-colors group relative ${
-          isSelected ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50'
-        }`}
-      >
-        <div className="flex items-center justify-between gap-1">
-          {/* Star */}
-          <button
-            onClick={(e) => { e.stopPropagation(); toggleFeatured(market.id); }}
-            className={`flex-shrink-0 transition-colors ${isFeatured ? 'text-yellow-400' : 'text-gray-200 hover:text-yellow-300'}`}
-            aria-label={isFeatured ? 'Unstar' : 'Star market'}
-          >
-            <Star size={13} fill={isFeatured ? 'currentColor' : 'none'} />
-          </button>
-
-          <span className="text-sm font-medium text-gray-800 truncate flex-1">{market.name}</span>
-
-          {/* Pin count badge */}
-          {pinCount > 0 && (
-            <span className="flex-shrink-0 text-xs bg-blue-100 text-blue-600 rounded-full px-1.5 py-0.5 font-medium leading-none">
-              {pinCount}
-            </span>
-          )}
-
-          {/* Remove */}
-          <button
-            onClick={(e) => { e.stopPropagation(); removeMarket(market.id); }}
-            className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-opacity"
-            aria-label="Remove market"
-          >
-            <X size={12} />
-          </button>
+      <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
+        <div className="mb-6">
+          <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">Legislation and Government Funding</h1>
+          <p className="text-sm text-gray-500 mt-1">Track local regulations affecting affordable housing development</p>
         </div>
 
-        {refreshing && (
-          <div className="flex items-center gap-1 mt-1 ml-4">
-            <RefreshCw size={10} className="text-blue-400 animate-spin" />
-            <span className="text-xs text-blue-400">Refreshing…</span>
+        {showAddMarket ? (
+          <div className="mb-6 bg-white rounded-xl border border-gray-200 p-4 shadow-sm max-w-sm">
+            <input
+              autoFocus
+              type="text"
+              placeholder="City, ST"
+              value={newMarketInput}
+              onChange={(e) => setNewMarketInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addMarket(); if (e.key === 'Escape') setShowAddMarket(false); }}
+              className="w-full text-sm px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 mb-3"
+            />
+            <div className="flex gap-2">
+              <button onClick={addMarket} className="flex-1 text-sm py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">Add</button>
+              <button onClick={() => setShowAddMarket(false)} className="flex-1 text-sm py-1.5 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowAddMarket(true)}
+            className="mb-6 flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Plus size={15} /> Add Market
+          </button>
+        )}
+
+        {markets.length === 0 ? (
+          <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
+            <p>No markets yet. Add one to get started.</p>
+          </div>
+        ) : (
+          <div className="space-y-3 max-w-2xl">
+            {markets.map((m) => {
+              const mData = marketDataCache[m.id];
+              const fCount = mData?.regulations.filter(r => r.status === 'funding').length ?? 0;
+              const eCount = mData?.regulations.filter(r => r.status === 'enabling').length ?? 0;
+              const rCount = mData?.regulations.filter(r => r.status === 'risk').length ?? 0;
+              const refreshing = loadingMarkets.has(m.id);
+              return (
+                <div
+                  key={m.id}
+                  onClick={() => { setSelectedMarket(m); setView('detail'); }}
+                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all group"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mb-3">
+                        <h2 className="text-base font-semibold text-gray-800 group-hover:text-blue-700 transition-colors">{m.name}</h2>
+                        {refreshing && <RefreshCw size={13} className="text-blue-400 animate-spin flex-shrink-0" />}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="flex items-center gap-1 px-2.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-full text-xs font-medium">
+                          <CheckCircle size={11} /> {fCount} Funding
+                        </span>
+                        <span className="flex items-center gap-1 px-2.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs font-medium">
+                          <FileText size={11} /> {eCount} Enabling
+                        </span>
+                        <span className="flex items-center gap-1 px-2.5 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded-full text-xs font-medium">
+                          <AlertCircle size={11} /> {rCount} Risks
+                        </span>
+                        {mData && (
+                          <span className="text-xs text-gray-400 ml-1">
+                            Last checked: {formatTimestamp(mData.lastChecked)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={e => { e.stopPropagation(); removeMarket(m.id); }}
+                      className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-opacity flex-shrink-0 ml-3"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
     );
-  };
+  }
 
-  // ── Render ────────────────────────────────────────────────────────────
+  // Level 2 — Market Detail
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50">
       {/* Pinned Drawer */}
       <PinnedDrawer
         open={drawerOpen}
@@ -682,57 +714,15 @@ const Regulations = () => {
         onNoteChange={updateNote}
       />
 
-      {/* Markets Sidebar */}
-      <div className="w-52 bg-white border-r border-gray-200 p-4 flex flex-col">
-        {featured.length > 0 && (
-          <>
-            <h3 className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Featured</h3>
-            <div className="space-y-1 mb-4">
-              {featured.map((m) => <MarketItem key={m.id} market={m} />)}
-            </div>
-          </>
-        )}
+      <div className="p-4 md:p-6 lg:p-8">
+        {/* Back button */}
+        <button
+          onClick={() => setView('list')}
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors mb-4"
+        >
+          <ArrowLeft size={15} /> All Markets
+        </button>
 
-        <h3 className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
-          {featured.length > 0 ? 'My Markets' : 'Markets'}
-        </h3>
-
-        {/* Add Market */}
-        {showAddMarket ? (
-          <div className="mb-3">
-            <input
-              autoFocus
-              type="text"
-              placeholder="City, ST"
-              value={newMarketInput}
-              onChange={(e) => setNewMarketInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') addMarket(); if (e.key === 'Escape') setShowAddMarket(false); }}
-              className="w-full text-sm px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
-            />
-            <div className="flex gap-1 mt-1.5">
-              <button onClick={addMarket} className="flex-1 text-xs py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium">Add</button>
-              <button onClick={() => setShowAddMarket(false)} className="flex-1 text-xs py-1.5 border border-gray-300 text-gray-600 rounded-md hover:bg-gray-50 transition-colors">Cancel</button>
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowAddMarket(true)}
-            className="mb-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            <Plus size={14} /> Add Market
-          </button>
-        )}
-
-        <div className="space-y-1 flex-1">
-          {unfeatured.map((m) => <MarketItem key={m.id} market={m} />)}
-          {unfeatured.length === 0 && featured.length > 0 && (
-            <p className="text-xs text-gray-400 italic px-1">All markets featured</p>
-          )}
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 p-4 md:p-6 lg:p-8">
         {/* Header */}
         <div className="flex items-start justify-between mb-6">
           <div>

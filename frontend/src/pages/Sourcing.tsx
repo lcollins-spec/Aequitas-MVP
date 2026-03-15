@@ -11,6 +11,7 @@ import {
   ChevronDown,
   AlertCircle,
   MapPin,
+  ArrowLeft,
 } from 'lucide-react';
 import * as sourcingApi from '../services/sourcingApi';
 import type { MarketEntry, SourcingProperty, SourcingBroker, SourcingOperator } from '../services/sourcingApi';
@@ -1129,6 +1130,7 @@ const Sourcing = () => {
   const [searchParams] = useSearchParams();
   const addressParam = searchParams.get('address') ?? '';
 
+  const [view, setView] = useState<'list' | 'detail'>('list');
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<MarketEntry | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('properties');
@@ -1341,6 +1343,7 @@ const Sourcing = () => {
     setNewMarketInput('');
     setShowAddMarket(false);
     setSelectedMarket(entry);
+    setView('detail');
     sourcingApi.createMarket(entry).catch(() => {});
   };
 
@@ -1375,15 +1378,18 @@ const Sourcing = () => {
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  return (
-    <div className="flex min-h-screen bg-gray-50">
 
-      {/* ── Market Sidebar ── */}
-      <div className="w-52 bg-white border-r border-gray-200 p-4 flex flex-col flex-shrink-0">
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Markets</h3>
+  // Level 1 — Market Overview
+  if (view === 'list') {
+    return (
+      <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
+        <div className="mb-6">
+          <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">Sourcing</h1>
+          <p className="text-sm text-gray-500 mt-1">Track properties, brokers, and operators by market</p>
+        </div>
 
         {showAddMarket ? (
-          <div className="mb-3">
+          <div className="mb-6 bg-white rounded-xl border border-gray-200 p-4 shadow-sm max-w-sm">
             <input
               autoFocus
               type="text"
@@ -1391,53 +1397,123 @@ const Sourcing = () => {
               value={newMarketInput}
               onChange={e => setNewMarketInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') addMarket(); if (e.key === 'Escape') setShowAddMarket(false); }}
-              className="w-full text-sm px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+              className="w-full text-sm px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 mb-3"
             />
-            <div className="flex gap-1 mt-1.5">
-              <button onClick={addMarket} className="flex-1 text-xs py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium">Add</button>
-              <button onClick={() => setShowAddMarket(false)} className="flex-1 text-xs py-1.5 border border-gray-300 text-gray-600 rounded-md hover:bg-gray-50 transition-colors">Cancel</button>
+            <div className="flex gap-2">
+              <button onClick={addMarket} className="flex-1 text-sm py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">Add</button>
+              <button onClick={() => setShowAddMarket(false)} className="flex-1 text-sm py-1.5 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
             </div>
           </div>
         ) : (
           <button
             onClick={() => setShowAddMarket(true)}
-            className="mb-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            className="mb-6 flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
           >
-            <Plus size={14} /> Add Market
+            <Plus size={15} /> Add Market
           </button>
         )}
 
-        <div className="space-y-1 flex-1">
-          {loading ? (
-            <p className="text-xs text-gray-400 px-1 py-2">Loading…</p>
-          ) : (
-            markets.map(m => (
-              <div
-                key={m.id}
-                onClick={() => setSelectedMarket(m)}
-                className={`flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-colors group ${
-                  selectedMarket?.id === m.id ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50'
-                }`}
-              >
-                <span className="text-sm font-medium text-gray-800 truncate flex-1">{m.name}</span>
-                <button
-                  onClick={e => { e.stopPropagation(); removeMarket(m.id); }}
-                  className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-opacity flex-shrink-0"
+        {loading ? (
+          <p className="text-sm text-gray-400">Loading…</p>
+        ) : markets.length === 0 ? (
+          <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
+            <p>No markets yet. Add one to get started.</p>
+          </div>
+        ) : (
+          <div className="space-y-3 max-w-2xl">
+            {markets.map(m => {
+              const pCount = data.properties.filter(p => p.market === m.name).length;
+              const bCount = data.brokers.filter(b => b.market === m.name).length;
+              const oCount = data.operators.filter(o => o.market === m.name).length;
+              return (
+                <div
+                  key={m.id}
+                  onClick={() => { setSelectedMarket(m); setView('detail'); }}
+                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all group"
                 >
-                  <X size={12} />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <h2 className="text-base font-semibold text-gray-800 group-hover:text-blue-700 transition-colors">{m.name}</h2>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="flex items-center gap-1 px-2.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs font-medium">
+                          <Building2 size={11} /> {pCount} Properties
+                        </span>
+                        <span className="flex items-center gap-1 px-2.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-full text-xs font-medium">
+                          <Users size={11} /> {bCount} Brokers
+                        </span>
+                        <span className="flex items-center gap-1 px-2.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-full text-xs font-medium">
+                          <Briefcase size={11} /> {oCount} Operators
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={e => { e.stopPropagation(); removeMarket(m.id); }}
+                      className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-opacity flex-shrink-0 ml-3"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
+    );
+  }
+
+  // Level 2 — Market Detail
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* ── Modals ── */}
+      {(showAddProp || editProp) && (
+        <PropertyModal
+          initial={editProp}
+          market={selectedMarket?.name ?? ''}
+          onSave={saveProp}
+          onClose={() => { setShowAddProp(false); setEditProp(null); }}
+          deals={deals}
+        />
+      )}
+      {(showAddBroker || editBroker) && (
+        <BrokerModal
+          initial={editBroker}
+          market={selectedMarket?.name ?? ''}
+          onSave={saveBroker}
+          onClose={() => { setShowAddBroker(false); setEditBroker(null); }}
+        />
+      )}
+      {(showAddOperator || editOperator) && (
+        <OperatorModal
+          initial={editOperator}
+          market={selectedMarket?.name ?? ''}
+          onSave={saveOperator}
+          onClose={() => { setShowAddOperator(false); setEditOperator(null); }}
+        />
+      )}
+      {showImport && (
+        <ImportModal
+          tab={activeTab}
+          market={selectedMarket?.name ?? ''}
+          onImport={handleImport}
+          onClose={() => setShowImport(false)}
+        />
+      )}
 
       {/* ── Main Content ── */}
-      <div className="flex-1 p-4 md:p-6 lg:p-8 min-w-0">
+      <div className="p-4 md:p-6 lg:p-8 min-w-0">
+        {/* Back button */}
+        <button
+          onClick={() => setView('list')}
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors mb-4"
+        >
+          <ArrowLeft size={15} /> All Markets
+        </button>
+
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">Sourcing</h1>
-          <p className="text-sm text-gray-500 mt-1">Track properties, brokers, and operators by market</p>
+          <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">{selectedMarket?.name ?? 'Sourcing'}</h1>
+          <p className="text-sm text-gray-500 mt-1">Track properties, brokers, and operators</p>
         </div>
 
         {/* Tabs + Action buttons */}
@@ -1535,41 +1611,6 @@ const Sourcing = () => {
           />
         )}
       </div>
-
-      {/* ── Modals ── */}
-      {(showAddProp || editProp) && (
-        <PropertyModal
-          initial={editProp}
-          market={selectedMarket?.name ?? ''}
-          onSave={saveProp}
-          onClose={() => { setShowAddProp(false); setEditProp(null); }}
-          deals={deals}
-        />
-      )}
-      {(showAddBroker || editBroker) && (
-        <BrokerModal
-          initial={editBroker}
-          market={selectedMarket?.name ?? ''}
-          onSave={saveBroker}
-          onClose={() => { setShowAddBroker(false); setEditBroker(null); }}
-        />
-      )}
-      {(showAddOperator || editOperator) && (
-        <OperatorModal
-          initial={editOperator}
-          market={selectedMarket?.name ?? ''}
-          onSave={saveOperator}
-          onClose={() => { setShowAddOperator(false); setEditOperator(null); }}
-        />
-      )}
-      {showImport && (
-        <ImportModal
-          tab={activeTab}
-          market={selectedMarket?.name ?? ''}
-          onImport={handleImport}
-          onClose={() => setShowImport(false)}
-        />
-      )}
     </div>
   );
 };
