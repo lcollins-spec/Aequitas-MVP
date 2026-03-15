@@ -486,7 +486,10 @@ const Underwriting = () => {
         if (uw.omRentStabilized != null) setOmRentStabilized(uw.omRentStabilized);
         if (uw.omAnnualRentGrowthCap != null) setOmAnnualRentGrowthCap(uw.omAnnualRentGrowthCap);
         if (uw.rentGrowthRate != null) setRentGrowthRate(uw.rentGrowthRate);
-        if (uw.marketAnalysisDemographics) setMarketAnalysisDemographics(uw.marketAnalysisDemographics);
+        if (uw.marketAnalysisDemographics) {
+          setMarketAnalysisDemographics(uw.marketAnalysisDemographics);
+          setMarketAnalysisOpen(true);
+        }
         if (uw.marketAnalysisStats) setMarketAnalysisStats(uw.marketAnalysisStats);
       } catch { /* ignore malformed JSON */ }
     }
@@ -775,6 +778,15 @@ const Underwriting = () => {
         window.history.replaceState({}, '', url.toString());
       }
 
+      // Auto-fetch market analysis if not yet loaded, so it gets saved with the deal
+      let demoData = marketAnalysisDemographics;
+      let statsData = marketAnalysisStats;
+      if (!demoData && !marketAnalysisLoading) {
+        const fetched = await fetchMarketAnalysisData();
+        demoData = fetched.demographics;
+        statsData = fetched.stats;
+      }
+
       await dealApi.updateDeal(dealId, {
         dealName,
         status: dealStatus,
@@ -819,10 +831,13 @@ const Underwriting = () => {
           omRentStabilized: omRentStabilized ?? undefined,
           omAnnualRentGrowthCap: omAnnualRentGrowthCap ?? undefined,
           rentGrowthRate,
-          marketAnalysisDemographics: marketAnalysisDemographics ?? undefined,
-          marketAnalysisStats: marketAnalysisStats ?? undefined,
+          marketAnalysisDemographics: demoData ?? undefined,
+          marketAnalysisStats: statsData ?? undefined,
         }),
       });
+
+      // Open market analysis panel so results are immediately visible
+      setMarketAnalysisOpen(true);
 
       alert('Deal saved successfully!');
     } catch (error) {
@@ -830,6 +845,37 @@ const Underwriting = () => {
       alert('Failed to save deal');
     } finally {
       setSaving(false);
+    }
+  };
+
+  /**
+   * Fetches market analysis data for the current ZIP code.
+   * Returns the fetched data directly (does not rely on state being updated).
+   */
+  const fetchMarketAnalysisData = async () => {
+    const zip = zipCode.trim();
+    if (!zip || zip.length !== 5) return { demographics: null, stats: null };
+    setMarketAnalysisLoading(true);
+    setMarketAnalysisError(null);
+    try {
+      const [demoResp, statsResp] = await Promise.all([
+        censusApi.getDemographics(zip),
+        rentcastApi.getMarketStats(zip),
+      ]);
+      const demographics = demoResp.success && demoResp.data ? demoResp.data : null;
+      const stats = statsResp.success && statsResp.data ? statsResp.data : null;
+      if (demographics) {
+        setMarketAnalysisDemographics(demographics);
+      } else {
+        setMarketAnalysisError(demoResp.error || 'Failed to fetch demographics');
+      }
+      if (stats) setMarketAnalysisStats(stats);
+      return { demographics, stats };
+    } catch {
+      setMarketAnalysisError('Failed to fetch market data');
+      return { demographics: null, stats: null };
+    } finally {
+      setMarketAnalysisLoading(false);
     }
   };
 
@@ -843,28 +889,7 @@ const Underwriting = () => {
     }
     setMarketAnalysisOpen(true);
     if (marketAnalysisDemographics || marketAnalysisLoading) return;
-    const zip = zipCode.trim();
-    if (!zip || zip.length !== 5) return;
-    setMarketAnalysisLoading(true);
-    setMarketAnalysisError(null);
-    try {
-      const [demoResp, statsResp] = await Promise.all([
-        censusApi.getDemographics(zip),
-        rentcastApi.getMarketStats(zip),
-      ]);
-      if (demoResp.success && demoResp.data) {
-        setMarketAnalysisDemographics(demoResp.data);
-      } else {
-        setMarketAnalysisError(demoResp.error || 'Failed to fetch demographics');
-      }
-      if (statsResp.success && statsResp.data) {
-        setMarketAnalysisStats(statsResp.data);
-      }
-    } catch {
-      setMarketAnalysisError('Failed to fetch market data');
-    } finally {
-      setMarketAnalysisLoading(false);
-    }
+    await fetchMarketAnalysisData();
   };
 
   const handleExportExcel = async () => {
