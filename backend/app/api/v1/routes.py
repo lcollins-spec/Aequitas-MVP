@@ -112,9 +112,7 @@ def metrics():
             'families_housed': families,
         })
     except Exception:
-            return jsonify(defaults)
-
-    return jsonify(defaults)
+        return jsonify(defaults)
 
 
 @api_v1.route('/demographics/<zipcode>', methods=['GET'])
