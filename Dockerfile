@@ -56,8 +56,8 @@ EXPOSE ${PORT}
 # Change to backend directory
 WORKDIR /app/backend
 
-# Start gunicorn with production settings
-CMD gunicorn \
+# Run migrations then start gunicorn
+CMD FLASK_APP=app:create_app flask db upgrade && gunicorn \
     --bind 0.0.0.0:${PORT} \
     --workers 2 \
     --timeout 120 \

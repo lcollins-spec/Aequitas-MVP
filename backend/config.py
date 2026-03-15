@@ -28,23 +28,20 @@ class Config:
     FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
 
     # Database Configuration
-    # Supports both PostgreSQL (production) and SQLite (local development)
-    in_docker = os.path.exists('/.dockerenv')
-    if in_docker:
-        # Production: Use Render's DATABASE_URL (PostgreSQL)
-        # Render auto-generates this environment variable
-        db_url = os.getenv('DATABASE_URL', '')
-
+    # Supports both PostgreSQL (production/override) and SQLite (local development)
+    # If DATABASE_URL is set in the environment, always use it (allows local migration
+    # runs against the Render Postgres DB by exporting DATABASE_URL before flask db commands).
+    _db_url = os.getenv('DATABASE_URL', '')
+    if _db_url:
         # Handle postgres:// vs postgresql:// prefix
         # Render uses postgres://, SQLAlchemy requires postgresql://
-        if db_url.startswith('postgres://'):
-            db_url = db_url.replace('postgres://', 'postgresql://', 1)
-
-        SQLALCHEMY_DATABASE_URI = db_url
+        if _db_url.startswith('postgres://'):
+            _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
+        SQLALCHEMY_DATABASE_URI = _db_url
     else:
         # Development: Use local SQLite
         db_path = os.path.join(base_dir, 'aequitas.db')
-        SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', f'sqlite:///{db_path}')
+        SQLALCHEMY_DATABASE_URI = f'sqlite:///{db_path}'
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
@@ -54,8 +51,7 @@ class Config:
 
     # Database-agnostic engine options
     # Configure based on database type
-    db_uri = SQLALCHEMY_DATABASE_URI
-    if db_uri.startswith('postgresql://'):
+    if SQLALCHEMY_DATABASE_URI.startswith('postgresql://'):
         # PostgreSQL-specific configuration
         SQLALCHEMY_ENGINE_OPTIONS = {
             'pool_pre_ping': True,  # Verify connections before using

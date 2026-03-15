@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 from app.database import db
 from flask_migrate import Migrate
 
+migrate = Migrate()
+
 # Configure logging to ensure output is visible
 logging.basicConfig(
     level=logging.INFO,
@@ -59,67 +61,23 @@ def create_app(test_config=None):
     else:
         app.config.update(test_config)
 
-    # Initialize database
+    # Initialize database and Flask-Migrate
     db.init_app(app)
+    migrate.init_app(app, db)
 
     # Configure database session
     @app.teardown_appcontext
     def shutdown_session(exception=None):
         db.session.remove()
 
-    # Create tables if they don't exist, but don't crash if they already exist
+    # Ensure all tables exist (safe for both fresh installs and existing DBs).
+    # Schema changes going forward are handled by Flask-Migrate (flask db migrate/upgrade).
     try:
         with app.app_context():
             db.create_all()
-            logger.info("Database tables created successfully")
+            logger.info("Database tables verified/created successfully")
     except Exception as e:
         logger.warning(f"DB create_all error (continuing anyway): {e}")
-        # Continue even if table creation fails - tables may already exist
-
-    # Auto-migrate: add new columns that db.create_all() won't touch on existing tables
-    try:
-        with app.app_context():
-            from sqlalchemy import text
-            with db.engine.connect() as conn:
-                result = conn.execute(text("PRAGMA table_info(deals)"))
-                existing_cols = {row[1] for row in result.fetchall()}
-                if 'underwriting_json' not in existing_cols:
-                    conn.execute(text("ALTER TABLE deals ADD COLUMN underwriting_json TEXT"))
-                    conn.commit()
-                    logger.info("Migration: added underwriting_json column to deals table")
-                if 'dscr_json' not in existing_cols:
-                    conn.execute(text("ALTER TABLE deals ADD COLUMN dscr_json TEXT"))
-                    conn.commit()
-                    logger.info("Migration: added dscr_json column to deals table")
-                if 'regulations_json' not in existing_cols:
-                    conn.execute(text("ALTER TABLE deals ADD COLUMN regulations_json TEXT"))
-                    conn.commit()
-                    logger.info("Migration: added regulations_json column to deals table")
-            # deal_meta table
-            result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='deal_meta'"))
-            if not result.fetchone():
-                conn.execute(text(
-                    "CREATE TABLE deal_meta ("
-                    "deal_id INTEGER PRIMARY KEY, "
-                    "pipeline_status TEXT NOT NULL DEFAULT 'Analyzing', "
-                    "execution_data TEXT, "
-                    "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
-                ))
-                conn.commit()
-                logger.info("Migration: created deal_meta table")
-            # app_data table
-            result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='app_data'"))
-            if not result.fetchone():
-                conn.execute(text(
-                    "CREATE TABLE app_data ("
-                    "key TEXT PRIMARY KEY, "
-                    "value TEXT, "
-                    "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
-                ))
-                conn.commit()
-                logger.info("Migration: created app_data table")
-    except Exception as e:
-        logger.warning(f"Auto-migration warning (non-fatal): {e}")
 
     # Enable CORS for frontend communication (only in development)
     # In production (Docker), CORS not needed as same-origin
