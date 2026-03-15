@@ -695,6 +695,14 @@ const DealExecution = () => {
                 View in Sourcing →
               </Link>
             )}
+            {record.location && (
+              <Link
+                to={`/regulations?market=${encodeURIComponent(record.location.split(',').map((p: string) => p.trim()).slice(-2).join(', '))}`}
+                className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700 mt-0.5"
+              >
+                Review Local Regs →
+              </Link>
+            )}
           </div>
         </div>
 

@@ -854,11 +854,21 @@ const Underwriting = () => {
       // Silently link any matching sourcing property by address
       try {
         const sourcingProps = await sourcingApi.fetchProperties();
-        const matchedProp = sourcingProps.find(p => addressMatch(location, p.address));
+        console.log('[Sourcing link] Attempting match — location:', location, '| deal ID:', dealId);
+        console.log('[Sourcing link] Sourcing properties:', sourcingProps.map(p => ({ id: p.id, address: p.address, market: p.market, deal_id: p.deal_id })));
+        // Also try address+market combined to handle properties stored without city in the address
+        const matchedProp = sourcingProps.find(p =>
+          addressMatch(location, p.address) ||
+          addressMatch(location, `${p.address} ${p.market}`)
+        );
+        console.log('[Sourcing link] Match result:', matchedProp ? { id: matchedProp.id, address: matchedProp.address, deal_id: matchedProp.deal_id } : 'none');
         if (matchedProp && matchedProp.deal_id !== dealId) {
           await sourcingApi.updateProperty(matchedProp.id, { deal_id: dealId });
+          console.log('[Sourcing link] Updated deal_id →', dealId);
+        } else if (matchedProp) {
+          console.log('[Sourcing link] Already linked (deal_id =', matchedProp.deal_id, ')');
         }
-      } catch { /* non-critical — ignore */ }
+      } catch (err) { console.warn('[Sourcing link] Error:', err); }
 
       // Open market analysis panel so results are immediately visible
       setMarketAnalysisOpen(true);
@@ -1557,13 +1567,22 @@ const Underwriting = () => {
                 placeholder="City, State"
               />
               {location && (
-                <Link
-                  to={`/sourcing?address=${encodeURIComponent(location)}`}
-                  className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 mt-1"
-                  tabIndex={-1}
-                >
-                  View in Sourcing →
-                </Link>
+                <div className="flex gap-3 mt-1">
+                  <Link
+                    to={`/sourcing?address=${encodeURIComponent(location)}`}
+                    className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700"
+                    tabIndex={-1}
+                  >
+                    View in Sourcing →
+                  </Link>
+                  <Link
+                    to={`/regulations?market=${encodeURIComponent(location.split(',').map(p => p.trim()).slice(-2).join(', '))}`}
+                    className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700"
+                    tabIndex={-1}
+                  >
+                    Review Local Regs →
+                  </Link>
+                </div>
               )}
             </div>
             <div>

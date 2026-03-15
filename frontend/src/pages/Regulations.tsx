@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ChevronDown,
   ChevronUp,
@@ -392,6 +393,8 @@ const JurisdictionSection = ({ label, items, expanded, onToggle, pins, onPin }: 
 // ── Main component ─────────────────────────────────────────────────────────
 
 const Regulations = () => {
+  const [searchParams] = useSearchParams();
+  const arrivedViaUrlParam = useRef(false);
   const [markets, setMarkets] = useState<MarketEntry[]>(loadMarkets);
   const [selectedMarket, setSelectedMarket] = useState<MarketEntry | null>(null);
   const [featuredIds, setFeaturedIds] = useState<Set<string>>(loadFeatured);
@@ -413,10 +416,30 @@ const Regulations = () => {
 
   // ── Init ──────────────────────────────────────────────────────────────
   useEffect(() => {
+    const marketParam = searchParams.get('market');
     const featured = loadFeatured();
     const mktList = loadMarkets();
-    const firstFeatured = mktList.find((m) => featured.has(m.id));
-    setSelectedMarket(firstFeatured ?? mktList[0] ?? null);
+
+    if (marketParam) {
+      arrivedViaUrlParam.current = true;
+      const existing = mktList.find(m => m.name.toLowerCase() === marketParam.toLowerCase());
+      if (existing) {
+        setSelectedMarket(existing);
+        setView('detail');
+      } else {
+        const id = Date.now().toString();
+        const entry: MarketEntry = { id, name: marketParam };
+        const updated = [...mktList, entry];
+        setMarkets(updated);
+        saveMarkets(updated);
+        setSelectedMarket(entry);
+        setView('detail');
+        triggerFetch(id, marketParam);
+      }
+    } else {
+      const firstFeatured = mktList.find((m) => featured.has(m.id));
+      setSelectedMarket(firstFeatured ?? mktList[0] ?? null);
+    }
 
     // Background: hydrate from backend
     const syncKey = async (key: string, lsKey: string, apply: (v: any) => void) => {
@@ -433,9 +456,11 @@ const Regulations = () => {
     syncKey('reg_markets', LS_MARKETS, (v: MarketEntry[]) => {
       if (Array.isArray(v) && v.length > 0) {
         setMarkets(v);
-        const feat = loadFeatured();
-        const first = v.find(m => feat.has(m.id)) ?? v[0] ?? null;
-        setSelectedMarket(first);
+        if (!arrivedViaUrlParam.current) {
+          const feat = loadFeatured();
+          const first = v.find(m => feat.has(m.id)) ?? v[0] ?? null;
+          setSelectedMarket(first);
+        }
       }
     });
     syncKey('reg_topics', LS_TOPICS, (v: string[]) => {
@@ -465,6 +490,7 @@ const Regulations = () => {
       } catch { /* ignore */ }
       localStorage.removeItem(k);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
