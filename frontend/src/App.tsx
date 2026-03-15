@@ -17,7 +17,7 @@ function App() {
     <Router>
       <div className="flex min-h-screen bg-gray-50">
         <Sidebar />
-        <main className="flex-1 lg:ml-60 w-full">
+        <main className="flex-1 lg:ml-48 w-full">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/fund-returns" element={<FundReturns />} />
