@@ -277,6 +277,9 @@ const DealExecution = () => {
   const [memoLoading, setMemoLoading] = useState(false);
   const [memoError, setMemoError]     = useState('');
 
+  // Linked sourcing property (if any)
+  const [linkedPropAddress, setLinkedPropAddress] = useState<string | null>(null);
+
   // ── Helper: apply a loaded record to component state
   const applyRecord = useCallback((rec: DealExecutionRecord) => {
     setRecord(rec);
@@ -326,6 +329,14 @@ const DealExecution = () => {
     syncPipelineStatusesFromBackend([numericId]).then(() => {
       setPipelineStatusState(getPipelineStatus(numericId));
     });
+    // Check for a linked sourcing property
+    fetch('/api/v1/sourcing/properties')
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { properties?: { deal_id: number | null; address: string }[] } | null) => {
+        const linked = data?.properties?.find(p => p.deal_id === numericId);
+        if (linked?.address) setLinkedPropAddress(linked.address);
+      })
+      .catch(() => {});
   }, [numericId, applyRecord]);
 
   // ── Live calculations
@@ -676,6 +687,14 @@ const DealExecution = () => {
                 <span>· LOI Executed: {fmtDate(record.loiExecutedAt)}</span>
               )}
             </p>
+            {linkedPropAddress && (
+              <Link
+                to={`/sourcing?address=${encodeURIComponent(linkedPropAddress)}`}
+                className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 mt-0.5"
+              >
+                View in Sourcing →
+              </Link>
+            )}
           </div>
         </div>
 

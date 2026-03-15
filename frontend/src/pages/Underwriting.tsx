@@ -19,6 +19,7 @@ import type { DealDocument, LoiExtractedData } from '../types/dealExecution';
 
 import { scrapingApi } from '../services/scrapingApi';
 import type { UnitMixEntry, OmExtractedData } from '../types/scraping';
+import * as sourcingApi from '../services/sourcingApi';
 
 // --- FINANCIAL CALCULATION UTILITIES ---
 const calculatePMT = (rate: number, nper: number, pv: number) => {
@@ -221,6 +222,20 @@ function MarketAnalysisPanelBlock({ isOpen, loading, error, demographics, market
       )}
     </div>
   );
+}
+
+// ── Fuzzy address matcher (used for auto-linking to sourcing) ─────────────────
+function addressMatch(a: string, b: string): boolean {
+  const norm = (s: string) =>
+    s.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+  const na = norm(a);
+  const nb = norm(b);
+  if (!na || !nb) return false;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  const ta = new Set(na.split(' '));
+  const tb = nb.split(' ');
+  const shared = tb.filter(t => t.length > 2 && ta.has(t)).length;
+  return shared >= 2;
 }
 
 const Underwriting = () => {
@@ -835,6 +850,15 @@ const Underwriting = () => {
           marketAnalysisStats: statsData ?? undefined,
         }),
       });
+
+      // Silently link any matching sourcing property by address
+      try {
+        const sourcingProps = await sourcingApi.fetchProperties();
+        const matchedProp = sourcingProps.find(p => addressMatch(location, p.address));
+        if (matchedProp && matchedProp.deal_id !== dealId) {
+          await sourcingApi.updateProperty(matchedProp.id, { deal_id: dealId });
+        }
+      } catch { /* non-critical — ignore */ }
 
       // Open market analysis panel so results are immediately visible
       setMarketAnalysisOpen(true);
@@ -1532,6 +1556,15 @@ const Underwriting = () => {
                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
                 placeholder="City, State"
               />
+              {location && (
+                <Link
+                  to={`/sourcing?address=${encodeURIComponent(location)}`}
+                  className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 mt-1"
+                  tabIndex={-1}
+                >
+                  View in Sourcing →
+                </Link>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1.5">Purchase Price ($)</label>

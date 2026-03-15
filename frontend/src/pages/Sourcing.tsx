@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useSearchParams, Link } from 'react-router-dom';
 import {
   Plus,
   X,
@@ -86,9 +87,10 @@ interface SourcingMapProps {
   properties: SourcingProperty[];
   selectedMarket: MarketEntry | null;
   onGeocode: (id: string, lat: number, lng: number) => void;
+  focusPropId?: string | null;
 }
 
-const SourcingMap = ({ properties, selectedMarket, onGeocode }: SourcingMapProps) => {
+const SourcingMap = ({ properties, selectedMarket, onGeocode, focusPropId }: SourcingMapProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
@@ -126,6 +128,16 @@ const SourcingMap = ({ properties, selectedMarket, onGeocode }: SourcingMapProps
     });
     infoWindowRef.current = new window.google.maps.InfoWindow();
   }, [mapsReady]);
+
+  // Center map on focused property when it has coordinates
+  useEffect(() => {
+    if (!mapsReady || !mapRef.current || !focusPropId) return;
+    const prop = properties.find(p => p.id === focusPropId);
+    if (prop?.lat && prop?.lng) {
+      mapRef.current.panTo({ lat: prop.lat, lng: prop.lng });
+      mapRef.current.setZoom(14);
+    }
+  }, [mapsReady, focusPropId, properties]);
 
   const plotMarker = useCallback((prop: SourcingProperty, lat: number, lng: number) => {
     if (!mapRef.current) return;
@@ -284,9 +296,10 @@ interface PropertyModalProps {
   market: string;
   onSave: (p: SourcingProperty) => void;
   onClose: () => void;
+  deals?: { id: number; deal_name: string }[];
 }
 
-const PropertyModal = ({ initial, market, onSave, onClose }: PropertyModalProps) => {
+const PropertyModal = ({ initial, market, onSave, onClose, deals }: PropertyModalProps) => {
   const [form, setForm] = useState<Partial<SourcingProperty>>({
     address: '', units: 0, owner_name: '', status: 'not_contacted',
     last_contact_date: '', next_followup_date: '', notes: '', deal_id: null,
@@ -384,6 +397,21 @@ const PropertyModal = ({ initial, market, onSave, onClose }: PropertyModalProps)
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 resize-none"
             />
           </div>
+          {deals && deals.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Link to Deal</label>
+              <select
+                value={form.deal_id ?? ''}
+                onChange={e => f('deal_id', e.target.value ? Number(e.target.value) : null)}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+              >
+                <option value="">— None —</option>
+                {deals.map(d => (
+                  <option key={d.id} value={d.id}>{d.deal_name}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
         <div className="flex gap-3 px-6 py-4 border-t border-gray-200">
           <button onClick={save} className="flex-1 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
@@ -974,10 +1002,18 @@ interface PropertiesTableProps {
   properties: SourcingProperty[];
   onEdit: (p: SourcingProperty) => void;
   onDelete: (id: string) => void;
+  highlightPropId?: string | null;
 }
 
-const PropertiesTable = ({ properties, onEdit, onDelete }: PropertiesTableProps) => {
+const PropertiesTable = ({ properties, onEdit, onDelete, highlightPropId }: PropertiesTableProps) => {
   const [sort, setSort] = useState<{ col: keyof SourcingProperty; dir: SortDir }>({ col: 'address', dir: 'asc' });
+  const highlightedRowRef = useRef<HTMLTableRowElement | null>(null);
+
+  useEffect(() => {
+    if (highlightedRowRef.current) {
+      highlightedRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlightPropId]);
 
   const toggle = (col: keyof SourcingProperty) =>
     setSort(s => ({ col, dir: s.col === col && s.dir === 'asc' ? 'desc' : 'asc' }));
@@ -1028,11 +1064,13 @@ const PropertiesTable = ({ properties, onEdit, onDelete }: PropertiesTableProps)
             {sorted.map(p => {
               const si = propStatus(p.status);
               const overdue = isOverdue(p.next_followup_date);
+              const isHighlighted = p.id === highlightPropId;
               return (
                 <tr
                   key={p.id}
+                  ref={isHighlighted ? highlightedRowRef : null}
                   onClick={() => onEdit(p)}
-                  className="cursor-pointer hover:bg-blue-50 transition-colors"
+                  className={`cursor-pointer hover:bg-blue-50 transition-colors ${isHighlighted ? 'ring-2 ring-inset ring-blue-400 bg-blue-50' : ''}`}
                 >
                   <td className="px-4 py-3 font-medium text-gray-800">{p.address}</td>
                   <td className="px-4 py-3 text-gray-600">{p.units || '—'}</td>
@@ -1045,7 +1083,15 @@ const PropertiesTable = ({ properties, onEdit, onDelete }: PropertiesTableProps)
                     {p.next_followup_date || '—'}
                     {overdue && <span className="ml-1 text-xs text-yellow-600">overdue</span>}
                   </td>
-                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                  <td className="px-4 py-3 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                    {p.deal_id && (
+                      <Link
+                        to={`/deal-execution/${p.deal_id}`}
+                        className="text-xs text-blue-500 hover:text-blue-700 font-medium whitespace-nowrap"
+                      >
+                        View Deal →
+                      </Link>
+                    )}
                     <button
                       onClick={() => onDelete(p.id)}
                       className="text-gray-300 hover:text-red-400 transition-colors"
@@ -1065,12 +1111,30 @@ const PropertiesTable = ({ properties, onEdit, onDelete }: PropertiesTableProps)
 
 // ── Main Sourcing component ───────────────────────────────────────────────────
 
+// Shared fuzzy address matcher (mirrors the one in Underwriting)
+function addressMatch(a: string, b: string): boolean {
+  const norm = (s: string) =>
+    s.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+  const na = norm(a);
+  const nb = norm(b);
+  if (!na || !nb) return false;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  const ta = new Set(na.split(' '));
+  const tb = nb.split(' ');
+  const shared = tb.filter(t => t.length > 2 && ta.has(t)).length;
+  return shared >= 2;
+}
+
 const Sourcing = () => {
+  const [searchParams] = useSearchParams();
+  const addressParam = searchParams.get('address') ?? '';
+
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<MarketEntry | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('properties');
   const [data, setData] = useState<SourcingData>({ properties: [], brokers: [], operators: [] });
   const [loading, setLoading] = useState(true);
+  const [deals, setDeals] = useState<{ id: number; deal_name: string }[]>([]);
 
   // Modal state
   const [showAddProp, setShowAddProp] = useState(false);
@@ -1084,6 +1148,23 @@ const Sourcing = () => {
   // Market sidebar state
   const [showAddMarket, setShowAddMarket] = useState(false);
   const [newMarketInput, setNewMarketInput] = useState('');
+
+  // Derived: which property matches the URL ?address= param
+  const highlightPropId = useMemo(() => {
+    if (!addressParam) return null;
+    const match = data.properties.find(p => addressMatch(addressParam, p.address));
+    return match?.id ?? null;
+  }, [addressParam, data.properties]);
+
+  // ── Fetch deals for "Link to Deal" dropdown ────────────────────────────────
+  useEffect(() => {
+    fetch('/api/v1/deals')
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { deals?: { id: number; deal_name: string }[] } | null) => {
+        if (d?.deals) setDeals(d.deals);
+      })
+      .catch(() => {});
+  }, []);
 
   // ── On mount: load from API, migrate localStorage if DB is empty ───────────
   useEffect(() => {
@@ -1429,11 +1510,13 @@ const Sourcing = () => {
               properties={filteredProps}
               selectedMarket={selectedMarket}
               onGeocode={handleGeocode}
+              focusPropId={highlightPropId}
             />
             <PropertiesTable
               properties={filteredProps}
               onEdit={p => setEditProp(p)}
               onDelete={deleteProp}
+              highlightPropId={highlightPropId}
             />
           </>
         )}
@@ -1460,6 +1543,7 @@ const Sourcing = () => {
           market={selectedMarket?.name ?? ''}
           onSave={saveProp}
           onClose={() => { setShowAddProp(false); setEditProp(null); }}
+          deals={deals}
         />
       )}
       {(showAddBroker || editBroker) && (
