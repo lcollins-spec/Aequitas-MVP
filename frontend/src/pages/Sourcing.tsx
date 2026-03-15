@@ -1464,7 +1464,33 @@ const Sourcing = () => {
 
   // Level 2 — Market Detail
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Left sidebar */}
+      <div className="w-48 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
+        <button
+          onClick={() => setView('list')}
+          className="flex items-center gap-1.5 px-4 py-3 text-sm text-gray-500 hover:text-gray-800 border-b border-gray-200 transition-colors"
+        >
+          <ArrowLeft size={14} /> All Markets
+        </button>
+        <nav className="flex-1 overflow-y-auto py-2">
+          {markets.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => setSelectedMarket(m)}
+              className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                selectedMarket?.id === m.id
+                  ? 'bg-blue-50 text-blue-700 font-medium border-r-2 border-blue-500'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-800'
+              }`}
+            >
+              {m.name}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      <div className="flex-1 min-w-0">
       {/* ── Modals ── */}
       {(showAddProp || editProp) && (
         <PropertyModal
@@ -1502,14 +1528,6 @@ const Sourcing = () => {
 
       {/* ── Main Content ── */}
       <div className="p-4 md:p-6 lg:p-8 min-w-0">
-        {/* Back button */}
-        <button
-          onClick={() => setView('list')}
-          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors mb-4"
-        >
-          <ArrowLeft size={15} /> All Markets
-        </button>
-
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">{selectedMarket?.name ?? 'Sourcing'}</h1>
@@ -1610,6 +1628,7 @@ const Sourcing = () => {
             onDelete={deleteOperator}
           />
         )}
+      </div>
       </div>
     </div>
   );
