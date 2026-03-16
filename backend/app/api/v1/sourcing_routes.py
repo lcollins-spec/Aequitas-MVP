@@ -80,8 +80,7 @@ def parse_import():
 
         schemas = {
             'properties': {
-                'fields': ['address', 'units', 'owner_name', 'status', 'last_contact_date',
-                           'next_followup_date', 'notes'],
+                'fields': ['address', 'units', 'owner_name', 'status', 'last_contact_date', 'notes'],
                 'status_values': 'not_contacted | outreach_sent | in_conversation | passed | active_deal',
                 'notes': 'units should be a number; status must exactly match one of the allowed values',
             },
@@ -223,8 +222,8 @@ def create_property():
         units=int(data.get('units') or 0),
         owner_name=data.get('owner_name', ''),
         status=data.get('status', 'not_contacted'),
+        priority=data.get('priority', 'medium'),
         last_contact_date=data.get('last_contact_date', ''),
-        next_followup_date=data.get('next_followup_date', ''),
         notes=data.get('notes', ''),
         deal_id=data.get('deal_id'),
         lat=data.get('lat'),
@@ -250,8 +249,8 @@ def bulk_create_properties():
             units=int(data.get('units') or 0),
             owner_name=data.get('owner_name', ''),
             status=data.get('status', 'not_contacted'),
+            priority=data.get('priority', 'medium'),
             last_contact_date=data.get('last_contact_date', ''),
-            next_followup_date=data.get('next_followup_date', ''),
             notes=data.get('notes', ''),
             deal_id=data.get('deal_id'),
             lat=data.get('lat'),
@@ -269,8 +268,7 @@ def update_property(prop_id):
     if not prop:
         return jsonify({'error': 'Not found'}), 404
     data = request.get_json() or {}
-    for field in ['market', 'address', 'owner_name', 'status', 'last_contact_date',
-                  'next_followup_date', 'notes']:
+    for field in ['market', 'address', 'owner_name', 'status', 'priority', 'last_contact_date', 'notes']:
         if field in data:
             setattr(prop, field, data[field])
     if 'units' in data:
@@ -281,6 +279,8 @@ def update_property(prop_id):
         prop.lat = data['lat']
     if 'lng' in data:
         prop.lng = data['lng']
+    if 'property_legislation' in data:
+        prop.property_legislation = data['property_legislation']
     db.session.commit()
     return jsonify({'property': prop.to_dict()}), 200
 
@@ -447,3 +447,102 @@ def delete_operator(operator_id):
     db.session.delete(op)
     db.session.commit()
     return jsonify({'success': True}), 200
+
+
+# ── Deal import parsing ────────────────────────────────────────────────────────
+
+@sourcing_bp.route('/sourcing/parse-deal', methods=['POST'])
+def parse_deal():
+    """
+    Parse pasted email/text or a PDF to extract deal fields using Claude.
+
+    Form data:
+        - text: pasted email or deal material (optional)
+        - file: PDF file (optional)
+
+    Returns:
+        { success: true, fields: { property_address, unit_count, asking_price,
+                                   seller_broker_name, market_city } }
+    """
+    try:
+        content_parts = []
+
+        # Collect pasted text
+        pasted_text = (request.form.get('text') or '').strip()
+        if pasted_text:
+            content_parts.append(pasted_text)
+
+        # Extract text from PDF
+        file = request.files.get('file')
+        if file and file.filename:
+            filename = (file.filename or '').lower()
+            if filename.endswith('.pdf'):
+                try:
+                    import pdfplumber
+                    with pdfplumber.open(io.BytesIO(file.read())) as pdf:
+                        pages = [page.extract_text() or '' for page in pdf.pages[:10]]
+                        pdf_text = '\n'.join(p for p in pages if p).strip()
+                    if pdf_text:
+                        content_parts.append(pdf_text)
+                except Exception as e:
+                    print(f'[parse-deal] PDF extraction error: {e}', flush=True)
+
+        if not content_parts:
+            return jsonify({'success': False, 'error': 'No text or file provided'}), 400
+
+        combined = '\n\n---\n\n'.join(content_parts)
+
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'success': False, 'error': 'ANTHROPIC_API_KEY not configured'}), 503
+
+        try:
+            from anthropic import Anthropic
+        except ImportError:
+            return jsonify({'success': False, 'error': 'Anthropic SDK not available'}), 503
+
+        client = Anthropic(api_key=api_key)
+
+        prompt = (
+            'Extract the following fields from this real estate deal material. '
+            'Return ONLY valid JSON with these exact keys. '
+            'Leave the value as an empty string "" if a field is not clearly present — do not guess.\n\n'
+            'Fields:\n'
+            '- property_address: full street address of the property\n'
+            '- unit_count: number of units (as a string, e.g. "48")\n'
+            '- asking_price: asking price (as a string, e.g. "$5,200,000")\n'
+            '- seller_broker_name: name of the seller or listing broker\n'
+            '- market_city: city and state (e.g. "Austin, TX")\n\n'
+            f'Deal material:\n{combined[:8000]}'
+        )
+
+        message = client.messages.create(
+            model='claude-sonnet-4-6',
+            max_tokens=512,
+            messages=[{'role': 'user', 'content': prompt}]
+        )
+
+        response_text = message.content[0].text.strip()
+
+        if '```' in response_text:
+            response_text = re.sub(r'```json\s*', '', response_text)
+            response_text = re.sub(r'```', '', response_text).strip()
+
+        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if not json_match:
+            return jsonify({'success': False, 'error': 'Failed to parse Claude response'}), 500
+
+        fields = json.loads(json_match.group(0))
+
+        return jsonify({'success': True, 'fields': fields}), 200
+
+    except json.JSONDecodeError as e:
+        return jsonify({'success': False, 'error': f'JSON parse error: {str(e)}'}), 500
+    except Exception as e:
+        error_msg = str(e)
+        print(f'[parse-deal] Error: {error_msg}', flush=True)
+        if 'credit balance' in error_msg or 'billing' in error_msg.lower():
+            return jsonify({'success': False, 'error': 'Anthropic API credits exhausted.'}), 503
+        if 'rate_limit' in error_msg.lower():
+            return jsonify({'success': False, 'error': 'Rate limit reached. Please try again.'}), 429
+        return jsonify({'success': False, 'error': error_msg}), 500

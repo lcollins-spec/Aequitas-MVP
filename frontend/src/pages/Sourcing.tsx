@@ -12,9 +12,12 @@ import {
   AlertCircle,
   MapPin,
   ArrowLeft,
+  Loader2,
+  CheckCircle,
+  FileText,
 } from 'lucide-react';
 import * as sourcingApi from '../services/sourcingApi';
-import type { MarketEntry, SourcingProperty, SourcingBroker, SourcingOperator } from '../services/sourcingApi';
+import type { MarketEntry, SourcingProperty, SourcingBroker, SourcingOperator, ParsedDealFields } from '../services/sourcingApi';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -67,6 +70,13 @@ const OPERATOR_STATUSES: { value: OperatorStatus; label: string; cls: string }[]
 function propStatus(s: string) { return PROP_STATUSES.find(x => x.value === s) || PROP_STATUSES[0]; }
 function brokerStatus(s: string) { return BROKER_STATUSES.find(x => x.value === s) || BROKER_STATUSES[0]; }
 function operatorStatus(s: string) { return OPERATOR_STATUSES.find(x => x.value === s) || OPERATOR_STATUSES[0]; }
+
+const PRIORITY_OPTIONS: { value: string; label: string; dot: string; badge: string }[] = [
+  { value: 'high',   label: 'High',   dot: 'bg-red-500',    badge: 'bg-red-50 text-red-700 border-red-200'       },
+  { value: 'medium', label: 'Medium', dot: 'bg-yellow-400', badge: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
+  { value: 'low',    label: 'Low',    dot: 'bg-green-500',  badge: 'bg-green-50 text-green-700 border-green-200'  },
+];
+function dealPriority(val: string) { return PRIORITY_OPTIONS.find(x => x.value === val) || PRIORITY_OPTIONS[1]; }
 
 function isOverdue(date?: string): boolean {
   if (!date) return false;
@@ -303,11 +313,48 @@ interface PropertyModalProps {
 const PropertyModal = ({ initial, market, onSave, onClose, deals }: PropertyModalProps) => {
   const [form, setForm] = useState<Partial<SourcingProperty>>({
     address: '', units: 0, owner_name: '', status: 'not_contacted',
-    last_contact_date: '', next_followup_date: '', notes: '', deal_id: null,
+    priority: 'medium', last_contact_date: '', notes: '', deal_id: null,
     ...initial,
   });
 
   const f = (k: keyof SourcingProperty, v: any) => setForm(p => ({ ...p, [k]: v }));
+
+  // Legislation state
+  const [legFetching, setLegFetching] = useState(false);
+  const [legStatus, setLegStatus] = useState<'idle' | 'saved' | 'failed'>('idle');
+  const [legislation, setLegislation] = useState<any[] | null>(() => {
+    try { return initial?.property_legislation ? JSON.parse(initial.property_legislation) : null; } catch { return null; }
+  });
+
+  const handleFetchLocalRegs = async () => {
+    if (!market) return;
+    setLegFetching(true);
+    setLegStatus('idle');
+    try {
+      const resp = await fetch('/api/v1/regulations/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ market }),
+      });
+      const json = await resp.json();
+      if (!resp.ok || !json.success) throw new Error(json.error || 'Failed');
+      const data = json.data;
+      setLegislation(data);
+      if (form.id) {
+        await fetch(`/api/v1/sourcing/properties/${form.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ property_legislation: JSON.stringify(data) }),
+        });
+        setForm(p => ({ ...p, property_legislation: JSON.stringify(data) }));
+      }
+      setLegStatus('saved');
+    } catch {
+      setLegStatus('failed');
+    } finally {
+      setLegFetching(false);
+    }
+  };
 
   const save = () => {
     if (!form.address?.trim()) return;
@@ -318,12 +365,13 @@ const PropertyModal = ({ initial, market, onSave, onClose, deals }: PropertyModa
       units: Number(form.units) || 0,
       owner_name: form.owner_name || '',
       status: (form.status as PropertyStatus) || 'not_contacted',
+      priority: form.priority || 'medium',
       last_contact_date: form.last_contact_date || '',
-      next_followup_date: form.next_followup_date || '',
       notes: form.notes || '',
       deal_id: form.deal_id ?? null,
       lat: form.lat,
       lng: form.lng,
+      property_legislation: form.property_legislation,
     });
   };
 
@@ -382,12 +430,14 @@ const PropertyModal = ({ initial, market, onSave, onClose, deals }: PropertyModa
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Next Followup Date</label>
-              <input
-                type="date" value={form.next_followup_date || ''}
-                onChange={e => f('next_followup_date', e.target.value)}
+              <label className="block text-xs font-medium text-gray-600 mb-1">Priority</label>
+              <select
+                value={form.priority || 'medium'}
+                onChange={e => f('priority', e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
-              />
+              >
+                {PRIORITY_OPTIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+              </select>
             </div>
           </div>
           <div>
@@ -413,6 +463,45 @@ const PropertyModal = ({ initial, market, onSave, onClose, deals }: PropertyModa
               </select>
             </div>
           )}
+          {/* ── Local Regulations ─────────────────────────────────────── */}
+          <div className="border-t border-gray-100 pt-4">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-gray-600">Local Regulations</label>
+              <button
+                type="button"
+                onClick={handleFetchLocalRegs}
+                disabled={legFetching}
+                className="flex items-center gap-1 text-xs px-2.5 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 transition-colors font-medium"
+              >
+                {legFetching ? (
+                  <><Loader2 size={10} className="animate-spin" /> Fetching…</>
+                ) : legStatus === 'saved' ? (
+                  <><CheckCircle size={10} className="text-green-600" /> <span className="text-green-700">Saved</span></>
+                ) : legStatus === 'failed' ? (
+                  'Failed — Retry'
+                ) : (
+                  'Fetch Local Regs'
+                )}
+              </button>
+            </div>
+            {legislation && legislation.length > 0 && (
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {legislation.map((item: any, i: number) => (
+                  <div key={i} className="p-2 rounded-lg bg-gray-50 border border-gray-100">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-medium text-gray-800 leading-tight">{item.title}</p>
+                      <span className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${
+                        item.status === 'funding' ? 'bg-green-100 text-green-700' :
+                        item.status === 'enabling' ? 'bg-blue-100 text-blue-700' :
+                        'bg-red-100 text-red-700'
+                      }`}>{item.jurisdiction} · {item.status}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{item.summary}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex gap-3 px-6 py-4 border-t border-gray-200">
           <button onClick={save} className="flex-1 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
@@ -805,6 +894,184 @@ const ImportModal = ({ tab, market, onImport, onClose }: ImportModalProps) => {
   );
 };
 
+// ── ImportDealModal ────────────────────────────────────────────────────────────
+
+interface ImportDealModalProps {
+  market: string;
+  markets: MarketEntry[];
+  onSave: (p: SourcingProperty) => void;
+  onClose: () => void;
+}
+
+const ImportDealModal = ({ market, markets, onSave, onClose }: ImportDealModalProps) => {
+  const [text, setText] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [parsing, setParsing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fields, setFields] = useState<ParsedDealFields | null>(null);
+  const [targetMarket, setTargetMarket] = useState(market);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const parse = async () => {
+    if (!text.trim() && !file) return;
+    setParsing(true);
+    setError(null);
+    try {
+      const result = await sourcingApi.parseDeal(text, file);
+      setFields(result);
+    } catch (e: any) {
+      setError(e.message || 'Failed to parse');
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const handleSave = () => {
+    if (!fields) return;
+    const noteParts: string[] = [];
+    if (fields.asking_price) noteParts.push(`Asking: ${fields.asking_price}`);
+    const prop: SourcingProperty = {
+      id: Date.now().toString(),
+      market: targetMarket,
+      address: fields.property_address,
+      units: parseInt(fields.unit_count) || 0,
+      owner_name: fields.seller_broker_name,
+      status: 'not_contacted',
+      priority: 'medium',
+      last_contact_date: '',
+      notes: noteParts.join(' | '),
+      deal_id: null,
+    };
+    onSave(prop);
+  };
+
+  const inputCls = 'w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400';
+
+  // Review form
+  if (fields) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <h2 className="text-base font-semibold text-gray-800">Review Extracted Deal</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={18} /></button>
+          </div>
+          <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+            <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+              Review and edit the extracted fields before saving. Blank fields were not found in the source material.
+            </p>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Property Address</label>
+              <input type="text" value={fields.property_address}
+                onChange={e => setFields(f => f ? { ...f, property_address: e.target.value } : f)}
+                className={inputCls} placeholder="Not found" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Unit Count</label>
+                <input type="text" value={fields.unit_count}
+                  onChange={e => setFields(f => f ? { ...f, unit_count: e.target.value } : f)}
+                  className={inputCls} placeholder="Not found" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Asking Price</label>
+                <input type="text" value={fields.asking_price}
+                  onChange={e => setFields(f => f ? { ...f, asking_price: e.target.value } : f)}
+                  className={inputCls} placeholder="Not found" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Seller / Broker Name</label>
+              <input type="text" value={fields.seller_broker_name}
+                onChange={e => setFields(f => f ? { ...f, seller_broker_name: e.target.value } : f)}
+                className={inputCls} placeholder="Not found" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Market / City</label>
+              <input type="text" value={fields.market_city}
+                onChange={e => setFields(f => f ? { ...f, market_city: e.target.value } : f)}
+                className={inputCls} placeholder="Not found" />
+            </div>
+            {markets.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Add to Market</label>
+                <select value={targetMarket} onChange={e => setTargetMarket(e.target.value)} className={inputCls}>
+                  {markets.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+          <div className="flex gap-3 px-6 py-4 border-t border-gray-200">
+            <button onClick={handleSave}
+              className="flex-1 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              Save Deal
+            </button>
+            <button onClick={() => setFields(null)}
+              className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
+              Back
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Input form
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <h2 className="text-base font-semibold text-gray-800">Import Deal</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={18} /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Paste email or deal material</label>
+            <textarea
+              rows={6} value={text} onChange={e => setText(e.target.value)}
+              placeholder="Paste email, OM summary, or any deal text here…"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 resize-none"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">Or upload a PDF</label>
+            <div className="flex items-center gap-3">
+              <button onClick={() => fileRef.current?.click()}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors">
+                Choose PDF
+              </button>
+              <span className="text-sm text-gray-500">{file ? file.name : 'No file selected'}</span>
+              <input ref={fileRef} type="file" accept=".pdf"
+                onChange={e => setFile(e.target.files?.[0] ?? null)} className="hidden" />
+            </div>
+          </div>
+          {error && (
+            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <AlertCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
+              <span className="text-sm text-red-700">{error}</span>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-3 px-6 py-4 border-t border-gray-200">
+          <button
+            onClick={parse}
+            disabled={(!text.trim() && !file) || parsing}
+            className="flex-1 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+          >
+            {parsing
+              ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Parsing…</>
+              : 'Parse'}
+          </button>
+          <button onClick={onClose}
+            className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── BrokersTable ──────────────────────────────────────────────────────────────
 
 interface BrokersTableProps {
@@ -1056,15 +1323,15 @@ const PropertiesTable = ({ properties, onEdit, onDelete, highlightPropId }: Prop
               <Th col="units" label="Units" />
               <Th col="owner_name" label="Owner" />
               <Th col="status" label="Status" />
+              <Th col="priority" label="Priority" />
               <Th col="last_contact_date" label="Last Contact" />
-              <Th col="next_followup_date" label="Next Followup" />
               <th className="px-4 py-3 w-10" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {sorted.map(p => {
               const si = propStatus(p.status);
-              const overdue = isOverdue(p.next_followup_date);
+              const pri = dealPriority(p.priority);
               const isHighlighted = p.id === highlightPropId;
               return (
                 <tr
@@ -1079,11 +1346,13 @@ const PropertiesTable = ({ properties, onEdit, onDelete, highlightPropId }: Prop
                   <td className="px-4 py-3">
                     <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${si.cls}`}>{si.label}</span>
                   </td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{p.last_contact_date || '—'}</td>
-                  <td className={`px-4 py-3 whitespace-nowrap text-sm ${overdue ? 'bg-yellow-50 text-yellow-800 font-medium' : 'text-gray-600'}`}>
-                    {p.next_followup_date || '—'}
-                    {overdue && <span className="ml-1 text-xs text-yellow-600">overdue</span>}
+                  <td className="px-4 py-3">
+                    <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border w-fit ${pri.badge}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${pri.dot}`} />
+                      {pri.label}
+                    </span>
                   </td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{p.last_contact_date || '—'}</td>
                   <td className="px-4 py-3 flex items-center gap-2" onClick={e => e.stopPropagation()}>
                     {p.deal_id && (
                       <Link
@@ -1146,6 +1415,7 @@ const Sourcing = () => {
   const [showAddOperator, setShowAddOperator] = useState(false);
   const [editOperator, setEditOperator] = useState<SourcingOperator | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [showImportDeal, setShowImportDeal] = useState(false);
 
   // Market sidebar state
   const [showAddMarket, setShowAddMarket] = useState(false);
@@ -1525,6 +1795,14 @@ const Sourcing = () => {
           onClose={() => setShowImport(false)}
         />
       )}
+      {showImportDeal && (
+        <ImportDealModal
+          market={selectedMarket?.name ?? ''}
+          markets={markets}
+          onSave={(p) => { saveProp(p); setShowImportDeal(false); }}
+          onClose={() => setShowImportDeal(false)}
+        />
+      )}
 
       {/* ── Main Content ── */}
       <div className="p-4 md:p-6 lg:p-8 min-w-0">
@@ -1561,6 +1839,14 @@ const Sourcing = () => {
             })}
           </div>
           <div className="flex items-center gap-2">
+            {activeTab === 'properties' && (
+              <button
+                onClick={() => setShowImportDeal(true)}
+                className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <FileText size={15} /> Import Deal
+              </button>
+            )}
             <button
               onClick={() => setShowImport(true)}
               className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"

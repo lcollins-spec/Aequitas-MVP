@@ -10,12 +10,13 @@ export interface SourcingProperty {
   units: number;
   owner_name: string;
   status: string;
+  priority: string;
   last_contact_date: string;
-  next_followup_date: string;
   notes: string;
   deal_id: number | null;
   lat?: number;
   lng?: number;
+  property_legislation?: string | null;
 }
 
 export interface SourcingBroker {
@@ -182,4 +183,24 @@ export async function updateOperator(id: string, patch: Partial<SourcingOperator
 
 export async function deleteOperator(id: string): Promise<void> {
   await fetch(`${BASE}/operators/${id}`, { method: 'DELETE' });
+}
+
+// ── Deal import parsing ────────────────────────────────────────────────────────
+
+export interface ParsedDealFields {
+  property_address: string;
+  unit_count: string;
+  asking_price: string;
+  seller_broker_name: string;
+  market_city: string;
+}
+
+export async function parseDeal(text: string, file: File | null): Promise<ParsedDealFields> {
+  const fd = new FormData();
+  if (text.trim()) fd.append('text', text);
+  if (file) fd.append('file', file);
+  const r = await fetch(`${BASE}/parse-deal`, { method: 'POST', body: fd });
+  const j = await r.json();
+  if (!j.success) throw new Error(j.error || 'Parse failed');
+  return j.fields;
 }

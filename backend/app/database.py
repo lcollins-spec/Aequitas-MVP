@@ -88,6 +88,7 @@ class DealModel(db.Model):
     climate_risk = Column(Text)       # JSON — climate risk scores from Claude
     dscr_json = Column(Text)          # JSON — year-by-year DSCR values
     regulations_json = Column(Text)   # JSON — regulations for deal's market
+    deal_legislation = Column(Text)   # JSON — legislation fetched from Underwriting page
 
     def __repr__(self):
         return f'<Deal {self.id}: {self.deal_name} ({self.status})>'
@@ -157,6 +158,7 @@ class DealModel(db.Model):
             'climateRisk': self.climate_risk,
             'dscrJson': self.dscr_json,
             'regulationsJson': self.regulations_json,
+            'dealLegislation': self.deal_legislation,
         }
 
     @staticmethod
@@ -329,6 +331,8 @@ class DealModel(db.Model):
             self.dscr_json = data['dscrJson']
         if 'regulationsJson' in data:
             self.regulations_json = data['regulationsJson']
+        if 'dealLegislation' in data:
+            self.deal_legislation = data['dealLegislation']
 
         # Update timestamp
         self.updated_at = datetime.utcnow()
@@ -1568,13 +1572,14 @@ class SourcingPropertyModel(db.Model):
     units = Column(Integer, nullable=False, default=0)
     owner_name = Column(String(255), nullable=False, default='')
     status = Column(String(50), nullable=False, default='not_contacted')
+    priority = Column(String(20), nullable=False, default='medium')
     last_contact_date = Column(String(20), nullable=False, default='')
-    next_followup_date = Column(String(20), nullable=False, default='')
     notes = Column(Text, nullable=False, default='')
     deal_id = Column(Integer, nullable=True)
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    property_legislation = Column(Text, nullable=True)  # JSON — legislation fetched from Sourcing page
 
     def to_dict(self):
         return {
@@ -1584,12 +1589,13 @@ class SourcingPropertyModel(db.Model):
             'units': self.units,
             'owner_name': self.owner_name,
             'status': self.status,
+            'priority': self.priority,
             'last_contact_date': self.last_contact_date,
-            'next_followup_date': self.next_followup_date,
             'notes': self.notes,
             'deal_id': self.deal_id,
             'lat': self.lat,
             'lng': self.lng,
+            'property_legislation': self.property_legislation,
         }
 
 

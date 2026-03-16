@@ -77,6 +77,21 @@ def create_app(test_config=None):
     except Exception as e:
         logger.warning(f"DB create_all error (continuing anyway): {e}")
 
+    # Inline migration: add 'priority' column to sourcing_properties if not present.
+    try:
+        with app.app_context():
+            from sqlalchemy import text, inspect as sa_inspect
+            inspector = sa_inspect(db.engine)
+            if 'sourcing_properties' in inspector.get_table_names():
+                cols = [c['name'] for c in inspector.get_columns('sourcing_properties')]
+                if 'priority' not in cols:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE sourcing_properties ADD COLUMN priority VARCHAR(20) NOT NULL DEFAULT 'medium'"))
+                        conn.commit()
+                    logger.info("Added 'priority' column to sourcing_properties")
+    except Exception as e:
+        logger.warning(f"Priority column migration note: {e}")
+
     # Enable CORS for frontend communication (only in development)
     # In production (Docker), CORS not needed as same-origin
     if not in_docker:
