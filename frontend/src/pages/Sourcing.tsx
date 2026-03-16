@@ -1413,6 +1413,8 @@ const PropertiesTable = ({
               const pri = dealPriority(p.priority);
               const isHighlighted = p.id === highlightPropId;
               const canUw = p.status === 'In Conversation' || p.status === 'LOI';
+              const isStale = p.status !== 'Dead' && !!p.updated_at &&
+                (Date.now() - new Date(p.updated_at).getTime()) > 60 * 24 * 60 * 60 * 1000;
               return (
                 <tr
                   key={p.id}
@@ -1433,7 +1435,17 @@ const PropertiesTable = ({
                       {pri.label}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{timeAgo(p.updated_at)}</td>
+                  <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+                    <span className="flex items-center gap-1.5">
+                      {isStale && (
+                        <span
+                          className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0"
+                          title="No activity in 60+ days."
+                        />
+                      )}
+                      {timeAgo(p.updated_at)}
+                    </span>
+                  </td>
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center gap-2">
                       <button
@@ -1478,18 +1490,48 @@ const DetailField = ({ label, value }: { label: string; value?: string | number 
   );
 };
 
+interface ActivityEntry { timestamp: string; note: string; }
+
 interface PropertyDetailPanelProps {
   prop: SourcingProperty;
   onClose: () => void;
   onEdit: () => void;
   onStartUnderwriting: () => void;
   startingUw: boolean;
+  onAddActivity: (note: string) => Promise<void>;
 }
 
-const PropertyDetailPanel = ({ prop, onClose, onEdit, onStartUnderwriting, startingUw }: PropertyDetailPanelProps) => {
+const PropertyDetailPanel = ({ prop, onClose, onEdit, onStartUnderwriting, startingUw, onAddActivity }: PropertyDetailPanelProps) => {
   const si = propStatus(prop.status);
   const pri = dealPriority(prop.priority);
   const canUw = prop.status === 'In Conversation' || prop.status === 'LOI';
+  const [activityNote, setActivityNote] = useState('');
+  const [addingActivity, setAddingActivity] = useState(false);
+
+  const activities: ActivityEntry[] = (() => {
+    try { return JSON.parse(prop.activity_log || '[]'); } catch { return []; }
+  })();
+
+  const formatActivityTs = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+        hour: 'numeric', minute: '2-digit',
+      });
+    } catch { return iso; }
+  };
+
+  const submitActivity = async () => {
+    const note = activityNote.trim();
+    if (!note || addingActivity) return;
+    setAddingActivity(true);
+    try {
+      await onAddActivity(note);
+      setActivityNote('');
+    } finally {
+      setAddingActivity(false);
+    }
+  };
 
   return (
     <>
@@ -1554,6 +1596,40 @@ const PropertyDetailPanel = ({ prop, onClose, onEdit, onStartUnderwriting, start
           )}
 
           <p className="text-xs text-gray-400">Last updated {timeAgo(prop.updated_at)}</p>
+
+          {/* Activity log */}
+          <div className="space-y-3 pt-1">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Activity</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={activityNote}
+                onChange={e => setActivityNote(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') submitActivity(); }}
+                placeholder="Add a note…"
+                className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+              />
+              <button
+                onClick={submitActivity}
+                disabled={!activityNote.trim() || addingActivity}
+                className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors"
+              >
+                {addingActivity ? '…' : 'Add'}
+              </button>
+            </div>
+            {activities.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">No activity yet</p>
+            ) : (
+              <ul className="space-y-2">
+                {[...activities].reverse().map((a, i) => (
+                  <li key={i} className="text-sm">
+                    <span className="block text-xs text-gray-400 mb-0.5">{formatActivityTs(a.timestamp)}</span>
+                    <span className="text-gray-700">{a.note}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
 
         {/* Footer */}
@@ -2010,6 +2086,11 @@ const Sourcing = () => {
             onEdit={() => { setEditProp(selectedProp); setSelectedProp(null); }}
             onStartUnderwriting={() => startUnderwriting(selectedProp)}
             startingUw={startingUwId === selectedProp.id}
+            onAddActivity={async (note) => {
+              const updated = await sourcingApi.addPropertyActivity(selectedProp.id, note);
+              setData(prev => ({ ...prev, properties: prev.properties.map(x => x.id === updated.id ? updated : x) }));
+              setSelectedProp(updated);
+            }}
           />
         )}
 

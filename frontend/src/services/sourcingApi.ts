@@ -22,6 +22,7 @@ export interface SourcingProperty {
   lng?: number;
   updated_at?: string;
   property_legislation?: string | null;
+  activity_log?: string;
 }
 
 export interface SourcingBroker {
@@ -108,6 +109,16 @@ export async function updateProperty(id: string, patch: Partial<SourcingProperty
 
 export async function deleteProperty(id: string): Promise<void> {
   await fetch(`${BASE}/properties/${id}`, { method: 'DELETE' });
+}
+
+export async function addPropertyActivity(id: string, note: string): Promise<SourcingProperty> {
+  const r = await fetch(`${BASE}/properties/${id}/activity`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note }),
+  });
+  const j = await r.json();
+  return j.property;
 }
 
 // ── Brokers ───────────────────────────────────────────────────────────────────

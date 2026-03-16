@@ -17,7 +17,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', '.env'))
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 
 def create_app(test_config=None):
@@ -91,6 +91,21 @@ def create_app(test_config=None):
                     logger.info("Added 'priority' column to sourcing_properties")
     except Exception as e:
         logger.warning(f"Priority column migration note: {e}")
+
+    # Inline migration: add 'activity_log' column to sourcing_properties if not present.
+    try:
+        with app.app_context():
+            from sqlalchemy import text, inspect as sa_inspect
+            inspector = sa_inspect(db.engine)
+            if 'sourcing_properties' in inspector.get_table_names():
+                cols = [c['name'] for c in inspector.get_columns('sourcing_properties')]
+                if 'activity_log' not in cols:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE sourcing_properties ADD COLUMN activity_log TEXT DEFAULT '[]'"))
+                        conn.commit()
+                    logger.info("Added 'activity_log' column to sourcing_properties")
+    except Exception as e:
+        logger.warning(f"activity_log column migration note: {e}")
 
     # Enable CORS for frontend communication (only in development)
     # In production (Docker), CORS not needed as same-origin
@@ -260,6 +275,25 @@ def create_app(test_config=None):
             if path and os.path.exists(os.path.join(_candidate_dist, path)):
                 return send_from_directory(_candidate_dist, path)
             return send_from_directory(_candidate_dist, 'index.html')
+
+    # JSON error handlers for API routes — prevents Flask from ever returning HTML
+    # for 404/405 when a client hits /api/* with the wrong URL or method.
+    from flask import jsonify as _jsonify
+
+    @app.errorhandler(404)
+    def _api_not_found(e):
+        if request.path.startswith('/api/'):
+            return _jsonify({'success': False, 'error': 'Not found', 'path': request.path}), 404
+        # Non-API 404: fall through to SPA or default Flask handler
+        if serve_spa:
+            return send_from_directory(_candidate_dist, 'index.html')
+        return e
+
+    @app.errorhandler(405)
+    def _api_method_not_allowed(e):
+        if request.path.startswith('/api/'):
+            return _jsonify({'success': False, 'error': 'Method not allowed', 'method': request.method, 'path': request.path}), 405
+        return e
 
     logger.info("CREATE_APP COMPLETED SUCCESSFULLY")
     return app

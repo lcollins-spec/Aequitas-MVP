@@ -1584,6 +1584,7 @@ class SourcingPropertyModel(db.Model):
     lng = Column(Float, nullable=True)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     property_legislation = Column(Text, nullable=True)  # JSON — legislation fetched from Sourcing page
+    activity_log = Column(Text, nullable=True, default='[]')  # JSON array of {timestamp, note}
 
     def to_dict(self):
         return {
@@ -1605,6 +1606,7 @@ class SourcingPropertyModel(db.Model):
             'lng': self.lng,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'property_legislation': self.property_legislation,
+            'activity_log': self.activity_log or '[]',
         }
 
 

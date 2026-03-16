@@ -361,6 +361,26 @@ def update_property(prop_id):
     return jsonify({'property': prop.to_dict()}), 200
 
 
+@sourcing_bp.route('/sourcing/properties/<prop_id>/activity', methods=['POST'])
+def add_property_activity(prop_id):
+    from datetime import datetime, timezone
+    prop = SourcingPropertyModel.query.get(prop_id)
+    if not prop:
+        return jsonify({'error': 'Not found'}), 404
+    data = request.get_json() or {}
+    note = (data.get('note') or '').strip()
+    if not note:
+        return jsonify({'error': 'note is required'}), 400
+    try:
+        log = json.loads(prop.activity_log or '[]')
+    except (json.JSONDecodeError, TypeError):
+        log = []
+    log.append({'timestamp': datetime.now(timezone.utc).isoformat(), 'note': note})
+    prop.activity_log = json.dumps(log)
+    db.session.commit()
+    return jsonify({'property': prop.to_dict()}), 200
+
+
 @sourcing_bp.route('/sourcing/properties/<prop_id>', methods=['DELETE'])
 def delete_property(prop_id):
     prop = SourcingPropertyModel.query.get(prop_id)
