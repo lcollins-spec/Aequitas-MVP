@@ -954,9 +954,10 @@ interface ImportDealModalProps {
   markets: MarketEntry[];
   onSave: (p: SourcingProperty) => void;
   onClose: () => void;
+  mode?: 'email' | 'om';
 }
 
-const ImportDealModal = ({ market, markets, onSave, onClose }: ImportDealModalProps) => {
+const ImportDealModal = ({ market, markets, onSave, onClose, mode = 'email' }: ImportDealModalProps) => {
   const [text, setText] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
@@ -1121,20 +1122,22 @@ const ImportDealModal = ({ market, markets, onSave, onClose }: ImportDealModalPr
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-base font-semibold text-gray-800">Import Deal</h2>
+          <h2 className="text-base font-semibold text-gray-800">{mode === 'om' ? 'Import from OM' : 'Import from Email'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={18} /></button>
         </div>
         <div className="p-6 space-y-4">
+          {mode === 'email' && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Paste email or deal material</label>
+              <textarea
+                rows={6} value={text} onChange={e => setText(e.target.value)}
+                placeholder="Paste email, OM summary, or any deal text here…"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 resize-none"
+              />
+            </div>
+          )}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Paste email or deal material</label>
-            <textarea
-              rows={6} value={text} onChange={e => setText(e.target.value)}
-              placeholder="Paste email, OM summary, or any deal text here…"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 resize-none"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-2">Or upload a PDF</label>
+            <label className="block text-xs font-medium text-gray-600 mb-2">{mode === 'om' ? 'Upload OM (PDF)' : 'Or upload a PDF'}</label>
             <div className="flex items-center gap-3">
               <button onClick={() => fileRef.current?.click()}
                 className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors">
@@ -1624,6 +1627,7 @@ const Sourcing = () => {
   const [editOperator, setEditOperator] = useState<SourcingOperator | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [showImportDeal, setShowImportDeal] = useState(false);
+  const [showImportOM, setShowImportOM] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const addMenuRef = useRef<HTMLDivElement>(null);
   const [startingUwId, setStartingUwId] = useState<string | null>(null);
@@ -2050,6 +2054,15 @@ const Sourcing = () => {
             onClose={() => setShowImportDeal(false)}
           />
         )}
+        {showImportOM && (
+          <ImportDealModal
+            mode="om"
+            market={selectedMarket?.name ?? ''}
+            markets={markets}
+            onSave={(p) => { saveProp(p); setShowImportOM(false); }}
+            onClose={() => setShowImportOM(false)}
+          />
+        )}
 
         {/* Main Content */}
         <div className="p-4 md:p-6 lg:p-8 min-w-0">
@@ -2098,7 +2111,7 @@ const Sourcing = () => {
                         <Mail size={14} className="text-blue-500 shrink-0" /> Import from Email
                       </button>
                       <button
-                        onClick={() => { setShowImportDeal(true); setShowAddMenu(false); }}
+                        onClick={() => { setShowImportOM(true); setShowAddMenu(false); }}
                         className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                       >
                         <FileText size={14} className="text-purple-500 shrink-0" /> Import from OM
