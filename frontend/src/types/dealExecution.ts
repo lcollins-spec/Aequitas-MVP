@@ -32,11 +32,41 @@ export interface LoiExtractedData {
   loanTermMonths?: number;
 }
 
-// Section C types — CapEx line items
+// CapEx line items
 export interface CapexItem {
   id: string;
   description: string;
   amount: number;
+}
+
+// Loan Details table — one row per loan tranche
+export interface LoanRow {
+  lender: string;
+  loanAmount: string;
+  ltvOverride?: string;   // user-set LTV when auto-calc not available
+  interestRate: string;
+  rateType: 'Fixed' | 'Float';
+  term: string;           // years
+  amortization: string;   // years
+  ioPeriod: string;       // months
+}
+
+// JV / Partnership Terms
+export interface JvTerms {
+  operatorEquityShare?: number;
+  preferredReturn?: number;
+  promoteStructure?: string;
+  acquisitionFee?: number;
+  assetManagementFee?: number;
+  dispositionFee?: number;
+}
+
+// Control & Approval Rights
+export interface ControlApproval {
+  majorDecisionRequired?: boolean;
+  approvedFor?: string[];
+  majorCapexThreshold?: number;
+  notes?: string;
 }
 
 // Milestone target dates — editable on Deal Execution page
@@ -46,10 +76,10 @@ export interface MilestoneDates {
   exitedTarget?: string;         // ISO date (user-set target)
 }
 
-// Section D types — populated by Deal Execution page (item 6)
+// Capital calls and distributions
 export interface CapitalCall {
   id: string;
-  date: string;           // ISO date
+  date: string;
   amountCalled: number;
   amountReceived: number;
   purpose: string;
@@ -58,12 +88,12 @@ export interface CapitalCall {
 
 export interface Distribution {
   id: string;
-  date: string;           // ISO date
+  date: string;
   amount: number;
   type: 'Operating' | 'Return of Capital' | 'Disposition';
 }
 
-// Section B pro-forma snapshot — populated by Deal Execution page (item 6)
+// Pro-forma snapshot for fund roll-up
 export interface ProFormaSnapshot {
   projectedExitValue?: number;
   projectedLpNetIrr?: number;
@@ -77,12 +107,13 @@ export type DDItemStatus = 'pending' | 'uploaded' | 'reviewed';
 export type DealStage = 1 | 2 | 3;
 
 export const DATA_ROOM_ITEMS: { id: string; label: string }[] = [
-  { id: 'dr_rent_roll',        label: 'Rent Roll' },
-  { id: 'dr_t12',              label: 'T12' },
-  { id: 'dr_leases',           label: 'Leases' },
-  { id: 'dr_tax_bills',        label: 'Tax Bills' },
-  { id: 'dr_utility_bills',    label: 'Utility Bills' },
-  { id: 'dr_inspection',       label: 'Inspection Report' },
+  { id: 'dr_om',           label: 'Offering Memorandum (OM)' },
+  { id: 'dr_rent_roll',    label: 'Rent Roll' },
+  { id: 'dr_t12',          label: 'T12' },
+  { id: 'dr_leases',       label: 'Leases' },
+  { id: 'dr_tax_bills',    label: 'Tax Bills' },
+  { id: 'dr_utility_bills', label: 'Utility Bills' },
+  { id: 'dr_inspection',   label: 'Inspection Report' },
 ];
 
 export const CLOSING_ITEMS: { id: string; label: string }[] = [
@@ -108,12 +139,12 @@ export interface DealExecutionRecord {
   loiDocumentName?: string;
   /** Timestamp when LOI was executed — set by Underwriting page */
   loiExecutedAt?: string;
-  /** Section C — CapEx line items */
+  /** CapEx line items (Section D) */
   capexItems?: CapexItem[];
-  /** Section D — capital calls and distributions */
+  /** Capital calls and distributions */
   capitalCalls?: CapitalCall[];
   distributions?: Distribution[];
-  /** Section B snapshot for fund roll-up */
+  /** Pro-forma snapshot for fund roll-up */
   proForma?: ProFormaSnapshot;
   /** Milestone target dates */
   milestones?: MilestoneDates;
@@ -129,6 +160,29 @@ export interface DealExecutionRecord {
   dataRoomUploads?: Record<string, string>;
   /** Stage 3 — Closing checklist: item id → checked */
   closingChecklist?: Record<string, boolean>;
+
+  // ─── Extended Section A fields ───────────────────────────────────────────
+  transactionType?: string;
+  earnestMoneyRefundable?: boolean;
+  financingContingencyPeriodDays?: number;
+  exclusivity?: boolean;
+  psaDraftedBy?: string;
+  psaExecutedDate?: string;
+  earnestMoneyHardDate?: string;
+  keyConditions?: string;
+  loiNotes?: string;
+
+  // ─── Loan Details table (replaces individual loiData loan fields) ─────────
+  loanDetails?: LoanRow[];
+
+  // ─── Stage 2 document uploads (LOI Draft, PSA Draft) ─────────────────────
+  stage2Uploads?: Record<string, string>;
+
+  // ─── Section B — JV / Partnership Terms ──────────────────────────────────
+  jvTerms?: JvTerms;
+
+  // ─── Section C — Control & Approval Rights ───────────────────────────────
+  controlApproval?: ControlApproval;
 }
 
 const DEAL_EXEC_LS_KEY = 'aequitas_deal_executions';

@@ -9,7 +9,7 @@ import {
   getDealExecution, patchDealExecution, getAllDealExecutions,
   loadExecutionFromBackend,
   type DealExecutionRecord, type CapexItem, type DealDocument,
-  type DDItemStatus, type DealStage,
+  type DDItemStatus, type DealStage, type LoanRow,
   DATA_ROOM_ITEMS, CLOSING_ITEMS,
 } from '../types/dealExecution';
 import DocumentsPanel from '../components/DocumentsPanel';
@@ -19,7 +19,7 @@ import {
 } from '../types/deal';
 import { getFundSettings } from '../types/fundSettings';
 
-// ─── DD Checklist Config (Stage 2 — 3 phases only) ───────────────────────────
+// ─── DD Checklist Config ─────────────────────────────────────────────────────
 interface DDChecklistItem { id: string; label: string; }
 interface DDPhase { id: string; label: string; items: DDChecklistItem[]; }
 
@@ -70,7 +70,31 @@ const DD_STATUS_STYLE: Record<DDItemStatus, string> = {
   reviewed: 'bg-green-100 text-green-700',
 };
 
-// ─── Formatters ───────────────────────────────────────────────────────────────
+// ─── Approval Options ────────────────────────────────────────────────────────
+const APPROVAL_OPTIONS = [
+  { key: 'refinancing',          label: 'Refinancing' },
+  { key: 'major_capex',          label: 'Major CapEx' },
+  { key: 'sale_disposition',     label: 'Sale / Disposition' },
+  { key: 'change_business_plan', label: 'Change in Business Plan' },
+  { key: 'additional_debt',      label: 'Additional Debt' },
+];
+
+// ─── Loan Table Config ───────────────────────────────────────────────────────
+const LOAN_ROW_LABELS = ['Existing Loan', 'Acquisition Loan', 'Refinance Loan'];
+const BLANK_LOAN_ROW = (): LoanRow => ({
+  lender: '', loanAmount: '', interestRate: '', rateType: 'Fixed', term: '', amortization: '', ioPeriod: '',
+});
+
+// ─── Stage 2 document upload slots ──────────────────────────────────────────
+const STAGE2_UPLOAD_ITEMS = [
+  { id: 's2_loi_draft', label: 'LOI Draft' },
+  { id: 's2_psa_draft', label: 'PSA Draft' },
+];
+
+// ─── Transaction Types ───────────────────────────────────────────────────────
+const TRANSACTION_TYPES = ['', 'Acquisition', 'JV', 'Recap', 'Refinance', 'Disposition'];
+
+// ─── Formatters ──────────────────────────────────────────────────────────────
 const fmtDate = (iso?: string) => {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -82,7 +106,7 @@ const fmt$ = (v: number) => {
   return `$${v.toFixed(0)}`;
 };
 
-const parseNum = (s: string) => parseFloat(s.replace(/,/g, '')) || 0;
+const parseNum = (s: string) => parseFloat(s.replace(/[$,%]/g, '').replace(/,/g, '')) || 0;
 
 // ─── Small helpers ────────────────────────────────────────────────────────────
 const SectionHeader = ({ label, sub }: { label: string; sub?: string }) => (
@@ -124,6 +148,42 @@ const Field = ({ label, value, onChange, onBlur, type = 'text', placeholder, rea
           ? 'bg-gray-50 border-gray-200 text-gray-500 cursor-default'
           : 'border-gray-200 bg-white focus:bg-white'
       }`}
+    />
+  </div>
+);
+
+const Toggle = ({ label, value, onChange, onBlur }: { label: string; value: boolean; onChange: (v: boolean) => void; onBlur?: () => void }) => (
+  <div>
+    <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => { onChange(!value); onBlur?.(); }}
+        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+          value ? 'bg-blue-600' : 'bg-gray-300'
+        }`}
+      >
+        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+          value ? 'translate-x-4' : 'translate-x-0.5'
+        }`} />
+      </button>
+      <span className="text-sm text-gray-700">{value ? 'Yes' : 'No'}</span>
+    </div>
+  </div>
+);
+
+const TextArea = ({ label, value, onChange, onBlur, placeholder, rows = 3 }: {
+  label: string; value: string; onChange?: (v: string) => void; onBlur?: () => void; placeholder?: string; rows?: number;
+}) => (
+  <div>
+    <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+    <textarea
+      value={value}
+      onChange={e => onChange?.(e.target.value)}
+      onBlur={onBlur}
+      placeholder={placeholder}
+      rows={rows}
+      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
     />
   </div>
 );
@@ -225,21 +285,55 @@ const DealExecution = () => {
   // Stage
   const [stage, setStage] = useState<DealStage>(1);
 
-  // Section A — Deal Terms
+  // Transaction type (drives JV section visibility)
+  const [transactionType, setTransactionType] = useState('');
+
+  // ─── Section A — Core Deal Terms ──────────────────────────────────────────
   const [purchasePrice, setPurchasePrice] = useState('');
   const [earnestMoney, setEarnestMoney] = useState('');
   const [ddDeadline, setDdDeadline] = useState('');
   const [financingContingency, setFinancingContingency] = useState('');
   const [targetClose, setTargetClose] = useState('');
-  const [loanAmount, setLoanAmount] = useState('');
-  const [interestRate, setInterestRate] = useState('');
-  const [loanTermMonths, setLoanTermMonths] = useState('');
-  // Target dates (moved from milestones strip)
+
+  // Section A — Extended fields
+  const [earnestMoneyRefundable, setEarnestMoneyRefundable] = useState(true);
+  const [financingContingencyPeriodDays, setFinancingContingencyPeriodDays] = useState('');
+  const [exclusivity, setExclusivity] = useState(false);
+  const [psaDraftedBy, setPsaDraftedBy] = useState('');
+  const [psaExecutedDate, setPsaExecutedDate] = useState('');
+  const [earnestMoneyHardDate, setEarnestMoneyHardDate] = useState('');
+  const [keyConditions, setKeyConditions] = useState('');
+  const [loiNotes, setLoiNotes] = useState('');
+
+  // Target dates
   const [underContractTarget, setUnderContractTarget] = useState('');
   const [closedTarget, setClosedTarget] = useState('');
   const [exitedTarget, setExitedTarget] = useState('');
 
-  // Section B — Capital Structure / Pro Forma
+  // ─── Loan Details table ───────────────────────────────────────────────────
+  const [loanDetails, setLoanDetails] = useState<LoanRow[]>([
+    BLANK_LOAN_ROW(), BLANK_LOAN_ROW(), BLANK_LOAN_ROW(),
+  ]);
+
+  // ─── Stage 2 doc uploads (LOI Draft, PSA Draft) ───────────────────────────
+  const [stage2Uploads, setStage2Uploads] = useState<Record<string, string>>({});
+  const stage2FileRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  // ─── Section B — JV / Partnership Terms ──────────────────────────────────
+  const [jvOperatorEquity, setJvOperatorEquity] = useState('');
+  const [jvPrefReturn, setJvPrefReturn] = useState('');
+  const [jvPromoteStructure, setJvPromoteStructure] = useState('');
+  const [jvAcquisitionFee, setJvAcquisitionFee] = useState('');
+  const [jvAssetMgmtFee, setJvAssetMgmtFee] = useState('');
+  const [jvDispositionFee, setJvDispositionFee] = useState('');
+
+  // ─── Section C — Control & Approval Rights ───────────────────────────────
+  const [majorDecisionRequired, setMajorDecisionRequired] = useState(true);
+  const [approvalRights, setApprovalRights] = useState<string[]>([]);
+  const [majorCapexThreshold, setMajorCapexThreshold] = useState('');
+  const [approvalNotes, setApprovalNotes] = useState('');
+
+  // ─── Capital Structure (sidebar) ──────────────────────────────────────────
   const [strategy, setStrategy] = useState<'Acquisition' | 'Light Rehab' | 'Heavy Rehab'>('Acquisition');
   const [aequitasEquity, setAequitasEquity] = useState('');
   const [projExitValue, setProjExitValue] = useState('');
@@ -249,7 +343,7 @@ const DealExecution = () => {
   // Documents
   const [documents, setDocuments] = useState<DealDocument[]>([]);
 
-  // Section C — CapEx
+  // Section D — CapEx
   const [capexItems, setCapexItems] = useState<CapexItem[]>([]);
   const [newCapexDesc, setNewCapexDesc] = useState('');
   const [newCapexAmt, setNewCapexAmt] = useState('');
@@ -277,36 +371,92 @@ const DealExecution = () => {
   const [memoLoading, setMemoLoading] = useState(false);
   const [memoError, setMemoError]     = useState('');
 
-  // Linked sourcing property (if any)
+  // Linked sourcing property
   const [linkedPropAddress, setLinkedPropAddress] = useState<string | null>(null);
 
-  // Legislation panel (Stage 2 sidebar)
-  const [showLegislationPanel, setShowLegislationPanel] = useState(false);
-  const [dealLegislation, setDealLegislation] = useState<any[] | null>(null);
+  // ── Computed ─────────────────────────────────────────────────────────────
+  const ppNum = parseNum(purchasePrice);
+  const acqLoanAmt = parseNum(loanDetails[1]?.loanAmount ?? '');
+  const capexTotal = useMemo(() => capexItems.reduce((s, i) => s + i.amount, 0), [capexItems]);
+  const totalEquityRequired = ppNum - acqLoanAmt + capexTotal;
+  const acqFeeAmount = ppNum * fundSettings.acqFee;
+  const showJvSection = transactionType === 'JV' || transactionType === 'Recap';
+  const jvAequitasShare = jvOperatorEquity
+    ? String(Math.max(0, 100 - (parseFloat(jvOperatorEquity) || 0)).toFixed(1))
+    : '';
 
-  // ── Helper: apply a loaded record to component state
+  // ── Helper: apply a loaded record to component state ────────────────────
   const applyRecord = useCallback((rec: DealExecutionRecord) => {
     setRecord(rec);
     setStage(rec.stage ?? 1);
+    setTransactionType(rec.transactionType ?? '');
+
     const loi = rec.loiData ?? {};
     setPurchasePrice(loi.purchasePrice ? String(loi.purchasePrice) : rec.purchasePrice ? String(rec.purchasePrice) : '');
     setEarnestMoney(loi.earnestMoneyDeposit ? String(loi.earnestMoneyDeposit) : '');
     setDdDeadline(loi.dueDiligenceDeadline ?? '');
     setFinancingContingency(loi.financingContingency ?? '');
     setTargetClose(loi.targetCloseDate ?? '');
-    setLoanAmount(loi.loanAmount ? String(loi.loanAmount) : '');
-    setInterestRate(loi.interestRate ? String((loi.interestRate * 100).toFixed(3)) : '');
-    setLoanTermMonths(loi.loanTermMonths ? String(loi.loanTermMonths) : '');
+
+    // Extended Section A
+    setEarnestMoneyRefundable(rec.earnestMoneyRefundable ?? true);
+    setFinancingContingencyPeriodDays(rec.financingContingencyPeriodDays ? String(rec.financingContingencyPeriodDays) : '');
+    setExclusivity(rec.exclusivity ?? false);
+    setPsaDraftedBy(rec.psaDraftedBy ?? '');
+    setPsaExecutedDate(rec.psaExecutedDate ?? '');
+    setEarnestMoneyHardDate(rec.earnestMoneyHardDate ?? '');
+    setKeyConditions(rec.keyConditions ?? '');
+    setLoiNotes(rec.loiNotes ?? '');
+
+    // Loan Details — use stored table or pre-populate acquisition row from loiData
+    if (rec.loanDetails && rec.loanDetails.length === 3) {
+      setLoanDetails(rec.loanDetails);
+    } else {
+      setLoanDetails([
+        BLANK_LOAN_ROW(),
+        {
+          lender: '',
+          loanAmount: loi.loanAmount ? String(loi.loanAmount) : '',
+          interestRate: loi.interestRate ? String((loi.interestRate * 100).toFixed(3)) : '',
+          rateType: 'Fixed',
+          term: loi.loanTermMonths ? String(Math.round(loi.loanTermMonths / 12)) : '',
+          amortization: '',
+          ioPeriod: '',
+        },
+        BLANK_LOAN_ROW(),
+      ]);
+    }
+
+    setStage2Uploads(rec.stage2Uploads ?? {});
+
+    // JV Terms
+    const jv = rec.jvTerms ?? {};
+    setJvOperatorEquity(jv.operatorEquityShare != null ? String(jv.operatorEquityShare) : '');
+    setJvPrefReturn(jv.preferredReturn != null ? String(jv.preferredReturn) : '');
+    setJvPromoteStructure(jv.promoteStructure ?? '');
+    setJvAcquisitionFee(jv.acquisitionFee != null ? String(jv.acquisitionFee) : '');
+    setJvAssetMgmtFee(jv.assetManagementFee != null ? String(jv.assetManagementFee) : '');
+    setJvDispositionFee(jv.dispositionFee != null ? String(jv.dispositionFee) : '');
+
+    // Control & Approval Rights
+    const ca = rec.controlApproval ?? {};
+    setMajorDecisionRequired(ca.majorDecisionRequired ?? true);
+    setApprovalRights(ca.approvedFor ?? []);
+    setMajorCapexThreshold(ca.majorCapexThreshold != null ? String(ca.majorCapexThreshold) : '');
+    setApprovalNotes(ca.notes ?? '');
+
     const ms = rec.milestones ?? {};
     setUnderContractTarget(ms.underContractTarget ?? '');
     setClosedTarget(ms.closedTarget ?? '');
     setExitedTarget(ms.exitedTarget ?? '');
+
     const pf = rec.proForma ?? {};
     setStrategy(pf.strategy ?? 'Acquisition');
     setAequitasEquity(pf.aequitasEquity ? String(pf.aequitasEquity) : '');
     setProjExitValue(pf.projectedExitValue ? String(pf.projectedExitValue) : '');
     setProjLpNetIrr(pf.projectedLpNetIrr ? String(pf.projectedLpNetIrr) : '');
     setProjEquityMultiple(pf.projectedEquityMultiple ? String(pf.projectedEquityMultiple) : '');
+
     setDocuments(rec.documents ?? []);
     setCapexItems(rec.capexItems ?? []);
     setDdChecklist(rec.ddChecklist ?? {});
@@ -316,7 +466,7 @@ const DealExecution = () => {
     setClosingChecklist(rec.closingChecklist ?? {});
   }, []);
 
-  // ── Load record on mount (localStorage first for instant render, then backend hydration)
+  // ── Load on mount ──────────────────────────────────────────────────────────
   useEffect(() => {
     const rec = getDealExecution(numericId);
     if (rec) applyRecord(rec);
@@ -326,14 +476,12 @@ const DealExecution = () => {
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       )
     );
-    // Hydrate from backend in background — overwrites localStorage cache with server truth
     loadExecutionFromBackend(numericId).then(backendRec => {
       if (backendRec) applyRecord(backendRec);
     });
     syncPipelineStatusesFromBackend([numericId]).then(() => {
       setPipelineStatusState(getPipelineStatus(numericId));
     });
-    // Check for a linked sourcing property
     fetch('/api/v1/sourcing/properties')
       .then(r => r.ok ? r.json() : null)
       .then((data: { properties?: { deal_id: number | null; address: string }[] } | null) => {
@@ -341,26 +489,9 @@ const DealExecution = () => {
         if (linked?.address) setLinkedPropAddress(linked.address);
       })
       .catch(() => {});
-    // Load saved legislation
-    fetch(`/api/v1/deals/${numericId}`)
-      .then(r => r.ok ? r.json() : null)
-      .then((data: { deal?: { dealLegislation?: string | null } } | null) => {
-        const raw = data?.deal?.dealLegislation;
-        if (raw) {
-          try { setDealLegislation(JSON.parse(raw)); } catch { /* ignore */ }
-        }
-      })
-      .catch(() => {});
   }, [numericId, applyRecord]);
 
-  // ── Live calculations
-  const ppNum = parseNum(purchasePrice);
-  const loanNum = parseNum(loanAmount);
-  const capexTotal = useMemo(() => capexItems.reduce((s, i) => s + i.amount, 0), [capexItems]);
-  const totalEquityRequired = ppNum - loanNum + capexTotal;
-  const acqFeeAmount = ppNum * fundSettings.acqFee;
-
-  // ── Auto-save callbacks
+  // ── Save callbacks ────────────────────────────────────────────────────────
   const saveLoiData = useCallback(() => {
     patchDealExecution(numericId, {
       loiData: {
@@ -369,12 +500,27 @@ const DealExecution = () => {
         dueDiligenceDeadline: ddDeadline || undefined,
         financingContingency: financingContingency || undefined,
         targetCloseDate: targetClose || undefined,
-        loanAmount: loanNum || undefined,
-        interestRate: interestRate ? parseNum(interestRate) / 100 : undefined,
-        loanTermMonths: loanTermMonths ? parseInt(loanTermMonths) : undefined,
       },
     });
-  }, [numericId, ppNum, earnestMoney, ddDeadline, financingContingency, targetClose, loanNum, interestRate, loanTermMonths]);
+  }, [numericId, ppNum, earnestMoney, ddDeadline, financingContingency, targetClose]);
+
+  const saveSectionAExtra = useCallback(() => {
+    patchDealExecution(numericId, {
+      transactionType: transactionType || undefined,
+      earnestMoneyRefundable,
+      financingContingencyPeriodDays: financingContingencyPeriodDays ? parseInt(financingContingencyPeriodDays) : undefined,
+      exclusivity,
+      psaDraftedBy: psaDraftedBy || undefined,
+      psaExecutedDate: psaExecutedDate || undefined,
+      earnestMoneyHardDate: earnestMoneyHardDate || undefined,
+      keyConditions: keyConditions || undefined,
+      loiNotes: loiNotes || undefined,
+    });
+  }, [numericId, transactionType, earnestMoneyRefundable, financingContingencyPeriodDays, exclusivity, psaDraftedBy, psaExecutedDate, earnestMoneyHardDate, keyConditions, loiNotes]);
+
+  const saveLoanDetails = useCallback(() => {
+    patchDealExecution(numericId, { loanDetails });
+  }, [numericId, loanDetails]);
 
   const saveMilestones = useCallback(() => {
     patchDealExecution(numericId, {
@@ -398,14 +544,38 @@ const DealExecution = () => {
     });
   }, [numericId, strategy, aequitasEquity, projExitValue, projLpNetIrr, projEquityMultiple]);
 
-  // ── Status change
+  const saveJvTerms = useCallback(() => {
+    patchDealExecution(numericId, {
+      jvTerms: {
+        operatorEquityShare: jvOperatorEquity ? parseFloat(jvOperatorEquity) : undefined,
+        preferredReturn: jvPrefReturn ? parseFloat(jvPrefReturn) : undefined,
+        promoteStructure: jvPromoteStructure || undefined,
+        acquisitionFee: jvAcquisitionFee ? parseFloat(jvAcquisitionFee) : undefined,
+        assetManagementFee: jvAssetMgmtFee ? parseFloat(jvAssetMgmtFee) : undefined,
+        dispositionFee: jvDispositionFee ? parseFloat(jvDispositionFee) : undefined,
+      },
+    });
+  }, [numericId, jvOperatorEquity, jvPrefReturn, jvPromoteStructure, jvAcquisitionFee, jvAssetMgmtFee, jvDispositionFee]);
+
+  const saveControlApproval = useCallback(() => {
+    patchDealExecution(numericId, {
+      controlApproval: {
+        majorDecisionRequired,
+        approvedFor: approvalRights,
+        majorCapexThreshold: majorCapexThreshold ? parseFloat(majorCapexThreshold) : undefined,
+        notes: approvalNotes || undefined,
+      },
+    });
+  }, [numericId, majorDecisionRequired, approvalRights, majorCapexThreshold, approvalNotes]);
+
+  // ── Status change ────────────────────────────────────────────────────────
   const handleStatusChange = (s: PipelineStatus) => {
     setPipelineStatusState(s);
     setPipelineStatus(numericId, s);
     setShowStatusDrop(false);
   };
 
-  // ── Stage advancement
+  // ── Stage advancement ────────────────────────────────────────────────────
   const advanceToStage = (next: DealStage, newStatus?: PipelineStatus) => {
     setStage(next);
     patchDealExecution(numericId, { stage: next });
@@ -415,7 +585,39 @@ const DealExecution = () => {
     }
   };
 
-  // ── CapEx operations
+  // ── Loan Details table ───────────────────────────────────────────────────
+  const updateLoanRow = (idx: number, field: keyof LoanRow, value: string) => {
+    setLoanDetails(prev => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], [field]: value };
+      return next;
+    });
+  };
+
+  // ── Stage 2 document uploads ─────────────────────────────────────────────
+  const handleStage2Upload = (itemId: string, file: File) => {
+    const updated = { ...stage2Uploads, [itemId]: file.name };
+    setStage2Uploads(updated);
+    patchDealExecution(numericId, { stage2Uploads: updated });
+  };
+
+  // ── Approval Rights checkboxes ───────────────────────────────────────────
+  const toggleApprovalRight = (key: string) => {
+    setApprovalRights(prev => {
+      const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+      patchDealExecution(numericId, {
+        controlApproval: {
+          majorDecisionRequired,
+          approvedFor: next,
+          majorCapexThreshold: majorCapexThreshold ? parseFloat(majorCapexThreshold) : undefined,
+          notes: approvalNotes || undefined,
+        },
+      });
+      return next;
+    });
+  };
+
+  // ── CapEx operations ─────────────────────────────────────────────────────
   const addCapexItem = () => {
     if (!newCapexDesc.trim() && !newCapexAmt) return;
     const item: CapexItem = {
@@ -436,13 +638,13 @@ const DealExecution = () => {
     patchDealExecution(numericId, { capexItems: updated });
   };
 
-  // ── Document operations
+  // ── Document operations ──────────────────────────────────────────────────
   const handleDocumentsChange = useCallback((updated: DealDocument[]) => {
     setDocuments(updated);
     patchDealExecution(numericId, { documents: updated });
   }, [numericId]);
 
-  // ── Stage 1 — Data Room checklist
+  // ── Stage 1 — Data Room checklist ────────────────────────────────────────
   const cycleDataRoomStatus = (itemId: string) => {
     const current: DDItemStatus = dataRoomChecklist[itemId] ?? 'pending';
     const idx = DD_STATUS_CYCLE.indexOf(current);
@@ -460,7 +662,7 @@ const DealExecution = () => {
     patchDealExecution(numericId, { dataRoomUploads: updatedUploads, dataRoomChecklist: updatedChecklist });
   };
 
-  // ── Stage 2 — DD Checklist operations
+  // ── Stage 2 — DD Checklist ───────────────────────────────────────────────
   const cycleItemStatus = (itemId: string) => {
     const current: DDItemStatus = ddChecklist[itemId] ?? 'pending';
     const idx = DD_STATUS_CYCLE.indexOf(current);
@@ -482,14 +684,14 @@ const DealExecution = () => {
     setOpenPhases(prev => ({ ...prev, [phaseId]: !prev[phaseId] }));
   };
 
-  // ── Stage 3 — Closing checklist
+  // ── Stage 3 — Closing checklist ──────────────────────────────────────────
   const toggleClosingItem = (itemId: string) => {
     const updated = { ...closingChecklist, [itemId]: !closingChecklist[itemId] };
     setClosingChecklist(updated);
     patchDealExecution(numericId, { closingChecklist: updated });
   };
 
-  // ── DD progress summary
+  // ── DD progress summary ──────────────────────────────────────────────────
   const ddProgress = useMemo(() => {
     const all = DD_PHASES.flatMap(p => p.items);
     const reviewed = all.filter(it => ddChecklist[it.id] === 'reviewed').length;
@@ -497,7 +699,7 @@ const DealExecution = () => {
     return { total: all.length, reviewed, uploaded };
   }, [ddChecklist]);
 
-  // ── Investment Memo generation
+  // ── Investment Memo generation ───────────────────────────────────────────
   const generateMemo = useCallback(async () => {
     if (!record) return;
     setMemoLoading(true);
@@ -525,10 +727,8 @@ const DealExecution = () => {
         earnestMoneyDeposit: parseNum(earnestMoney) || undefined,
         dueDiligenceDeadline: ddDeadline || undefined,
         targetCloseDate: targetClose || undefined,
-        loanAmount: loanNum || undefined,
-        interestRate: interestRate ? parseNum(interestRate) / 100 : undefined,
-        loanTermMonths: loanTermMonths ? parseInt(loanTermMonths) : undefined,
       },
+      loanDetails,
       proForma: {
         strategy,
         aequitasEquity: parseNum(aequitasEquity) || undefined,
@@ -568,12 +768,12 @@ const DealExecution = () => {
     }
   }, [
     record, numericId, pipelineStatus, ppNum, earnestMoney, ddDeadline, targetClose,
-    loanNum, interestRate, loanTermMonths, strategy, aequitasEquity, projExitValue,
+    loanDetails, strategy, aequitasEquity, projExitValue,
     projLpNetIrr, projEquityMultiple, capexItems,
     underContractTarget, closedTarget, exitedTarget, fundSettings, ddChecklist, ddUploads,
   ]);
 
-  // ── Export as PDF
+  // ── Export as PDF ─────────────────────────────────────────────────────────
   const exportAsPdf = () => {
     if (!memoText || !record) return;
     const win = window.open('', '_blank');
@@ -608,7 +808,7 @@ const DealExecution = () => {
     win.print();
   };
 
-  // ── Not found state
+  // ── Not found state ───────────────────────────────────────────────────────
   if (!record) {
     return (
       <div className="p-8 flex flex-col items-center justify-center min-h-[60vh] text-center gap-4">
@@ -627,11 +827,11 @@ const DealExecution = () => {
   const stageStatus = (n: 1 | 2 | 3): 'completed' | 'active' | 'locked' =>
     stage > n ? 'completed' : stage === n ? 'active' : 'locked';
 
-  // ─── Model Status Card data ───────────────────────────────────────────────
-  const originalIrr       = record.proForma?.projectedLpNetIrr;
-  const currentIrr        = projLpNetIrr ? parseNum(projLpNetIrr) : undefined;
-  const originalEM        = record.proForma?.projectedEquityMultiple;
-  const currentEM         = projEquityMultiple ? parseNum(projEquityMultiple) : undefined;
+  // ── Model Status Card data ────────────────────────────────────────────────
+  const originalIrr = record.proForma?.projectedLpNetIrr;
+  const currentIrr  = projLpNetIrr ? parseNum(projLpNetIrr) : undefined;
+  const originalEM  = record.proForma?.projectedEquityMultiple;
+  const currentEM   = projEquityMultiple ? parseNum(projEquityMultiple) : undefined;
 
   const isFlagged = (orig?: number, curr?: number) => {
     if (!orig || !curr) return false;
@@ -642,7 +842,7 @@ const DealExecution = () => {
   return (
     <div className="p-4 md:p-6 lg:p-8 bg-gray-50 min-h-screen">
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between mb-6">
         <div className="flex items-start gap-3">
           <Link
@@ -694,7 +894,6 @@ const DealExecution = () => {
               )}
             </div>
 
-            {/* Subtitle — read-only dates */}
             <p className="text-xs text-gray-400 mt-0.5 space-x-3">
               <span>Data Room: {fmtDate(record.createdAt)}</span>
               {record.loiExecutedAt && (
@@ -750,19 +949,19 @@ const DealExecution = () => {
         </div>
       </div>
 
-      {/* ── Two-column layout ────────────────────────────────────────────────── */}
+      {/* ── Two-column layout ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
-        {/* ── Left column ─────────────────────────────────────────────────── */}
+        {/* ── Left column ──────────────────────────────────────────────────── */}
         <div className="xl:col-span-2 space-y-8">
 
-          {/* ═══════════════════════════════════════════════════════════════
+          {/* ═════════════════════════════════════════════════════════════════
               STAGE 1 — DATA ROOM
-          ═══════════════════════════════════════════════════════════════ */}
+          ═════════════════════════════════════════════════════════════════ */}
           <div>
             <StageHeader number={1} label="Stage 1 — Data Room" status={stageStatus(1)} />
 
-            {/* Documents panel (existing) */}
+            {/* Documents panel */}
             <div className="mb-4">
               <DocumentsPanel
                 documents={documents}
@@ -818,7 +1017,7 @@ const DealExecution = () => {
               </div>
             </div>
 
-            {/* Exit trigger — Stage 1 */}
+            {/* Proceed to LOI */}
             {stage === 1 && (
               <div className="mt-4 flex justify-end">
                 <button
@@ -831,28 +1030,208 @@ const DealExecution = () => {
             )}
           </div>
 
-          {/* ═══════════════════════════════════════════════════════════════
+          {/* ═════════════════════════════════════════════════════════════════
               STAGE 2 — DUE DILIGENCE
-          ═══════════════════════════════════════════════════════════════ */}
+          ═════════════════════════════════════════════════════════════════ */}
           <div className={stage < 2 ? 'opacity-40 pointer-events-none select-none' : ''}>
             <StageHeader number={2} label="Stage 2 — Due Diligence" status={stageStatus(2)} />
 
             <div className="space-y-6">
-              {/* Section A — Deal Terms */}
+
+              {/* ── Section A — Deal Terms ──────────────────────────────── */}
               <div className="bg-white rounded-xl p-6 shadow-sm">
                 <SectionHeader label="A — Deal Terms" sub="Pre-filled from LOI · edit and blur to save" />
-                <div className="grid grid-cols-2 gap-4">
+
+                {/* Transaction Type */}
+                <div className="mb-4">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Transaction Type</label>
+                  <select
+                    value={transactionType}
+                    onChange={e => setTransactionType(e.target.value)}
+                    onBlur={saveSectionAExtra}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  >
+                    {TRANSACTION_TYPES.map(t => (
+                      <option key={t} value={t}>{t || '— Select —'}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Core LOI fields */}
+                <div className="grid grid-cols-2 gap-4 mb-4">
                   <Field label="Purchase Price ($)" value={purchasePrice} onChange={setPurchasePrice} onBlur={saveLoiData} placeholder="e.g. 8500000" />
                   <Field label="Earnest Money Deposit ($)" value={earnestMoney} onChange={setEarnestMoney} onBlur={saveLoiData} placeholder="e.g. 250000" />
                   <Field label="Due Diligence Deadline" value={ddDeadline} onChange={setDdDeadline} onBlur={saveLoiData} type="date" />
                   <Field label="Financing Contingency" value={financingContingency} onChange={setFinancingContingency} onBlur={saveLoiData} type="date" />
                   <Field label="Target Close Date" value={targetClose} onChange={setTargetClose} onBlur={saveLoiData} type="date" />
-                  <Field label="Loan Amount ($)" value={loanAmount} onChange={setLoanAmount} onBlur={saveLoiData} placeholder="e.g. 6000000" />
-                  <Field label="Interest Rate (%)" value={interestRate} onChange={setInterestRate} onBlur={saveLoiData} placeholder="e.g. 6.5" />
-                  <Field label="Loan Term (months)" value={loanTermMonths} onChange={setLoanTermMonths} onBlur={saveLoiData} placeholder="e.g. 360" />
                 </div>
 
-                {/* Target Dates row */}
+                {/* Extended Section A fields */}
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <Toggle
+                    label="Earnest Money Refundable"
+                    value={earnestMoneyRefundable}
+                    onChange={setEarnestMoneyRefundable}
+                    onBlur={saveSectionAExtra}
+                  />
+                  <Field
+                    label="Financing Contingency Period (days)"
+                    value={financingContingencyPeriodDays}
+                    onChange={setFinancingContingencyPeriodDays}
+                    onBlur={saveSectionAExtra}
+                    placeholder="e.g. 30"
+                  />
+                  <Toggle
+                    label="Exclusivity / No-Shop"
+                    value={exclusivity}
+                    onChange={setExclusivity}
+                    onBlur={saveSectionAExtra}
+                  />
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">PSA Drafted By</label>
+                    <select
+                      value={psaDraftedBy}
+                      onChange={e => setPsaDraftedBy(e.target.value)}
+                      onBlur={saveSectionAExtra}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    >
+                      <option value="">— Select —</option>
+                      <option value="Buyer">Buyer</option>
+                      <option value="Seller">Seller</option>
+                    </select>
+                  </div>
+                  <Field label="PSA Executed Date" value={psaExecutedDate} onChange={setPsaExecutedDate} onBlur={saveSectionAExtra} type="date" />
+                  <Field label="Earnest Money Hard Date" value={earnestMoneyHardDate} onChange={setEarnestMoneyHardDate} onBlur={saveSectionAExtra} type="date" />
+                </div>
+                <div className="grid grid-cols-1 gap-4 mb-4">
+                  <TextArea label="Key Conditions" value={keyConditions} onChange={setKeyConditions} onBlur={saveSectionAExtra} placeholder="e.g. Subject to financing approval, inspection satisfactory..." />
+                  <TextArea label="LOI Notes" value={loiNotes} onChange={setLoiNotes} onBlur={saveSectionAExtra} placeholder="Additional notes on LOI terms..." />
+                </div>
+
+                {/* Stage 2 document uploads */}
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Deal Documents</p>
+                  <div className="divide-y divide-gray-100">
+                    {STAGE2_UPLOAD_ITEMS.map(item => {
+                      const uploadedFile = stage2Uploads[item.id];
+                      return (
+                        <div key={item.id} className="flex items-center gap-3 py-3">
+                          <span className="flex-1 text-sm text-gray-700">{item.label}</span>
+                          {uploadedFile && (
+                            <span className="text-xs text-gray-400 truncate max-w-[140px] flex items-center gap-1">
+                              <FileText size={11} />
+                              {uploadedFile}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => stage2FileRefs.current[item.id]?.click()}
+                            className="flex-shrink-0 flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-gray-200 hover:border-blue-200 transition-colors"
+                          >
+                            <Upload size={11} />
+                            {uploadedFile ? 'Replace' : 'Upload'}
+                          </button>
+                          <input
+                            type="file"
+                            className="hidden"
+                            ref={el => { stage2FileRefs.current[item.id] = el; }}
+                            onChange={e => {
+                              const file = e.target.files?.[0];
+                              if (file) handleStage2Upload(item.id, file);
+                              e.target.value = '';
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Loan Details table */}
+                <div className="mt-5 pt-5 border-t border-gray-100">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Loan Details</p>
+                  <div className="overflow-x-auto -mx-1">
+                    <table className="w-full min-w-[700px] text-xs">
+                      <thead>
+                        <tr className="border-b border-gray-100 text-left">
+                          <th className="pb-2 pr-3 text-gray-400 font-medium w-28">Type</th>
+                          <th className="pb-2 pr-3 text-gray-400 font-medium">Lender</th>
+                          <th className="pb-2 pr-3 text-gray-400 font-medium w-28">Loan Amt ($)</th>
+                          <th className="pb-2 pr-3 text-gray-400 font-medium w-16">LTV (%)</th>
+                          <th className="pb-2 pr-3 text-gray-400 font-medium w-20">Rate (%)</th>
+                          <th className="pb-2 pr-3 text-gray-400 font-medium w-16">Type</th>
+                          <th className="pb-2 pr-3 text-gray-400 font-medium w-14">Term (yr)</th>
+                          <th className="pb-2 pr-3 text-gray-400 font-medium w-16">Amort (yr)</th>
+                          <th className="pb-2 text-gray-400 font-medium w-16">IO (mo)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {loanDetails.map((row, idx) => {
+                          const loanAmt = parseFloat(row.loanAmount.replace(/,/g, '')) || 0;
+                          const autoLtv = ppNum > 0 && loanAmt > 0
+                            ? ((loanAmt / ppNum) * 100).toFixed(1)
+                            : '';
+                          const cellCls = 'w-full px-2 py-1 border border-gray-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400';
+                          return (
+                            <tr key={idx}>
+                              <td className="py-2 pr-3 font-medium text-gray-500 whitespace-nowrap">
+                                {LOAN_ROW_LABELS[idx]}
+                              </td>
+                              <td className="py-2 pr-3">
+                                <input type="text" value={row.lender} placeholder="Lender name"
+                                  onChange={e => updateLoanRow(idx, 'lender', e.target.value)}
+                                  onBlur={saveLoanDetails} className={cellCls} />
+                              </td>
+                              <td className="py-2 pr-3">
+                                <input type="text" value={row.loanAmount} placeholder="0"
+                                  onChange={e => updateLoanRow(idx, 'loanAmount', e.target.value)}
+                                  onBlur={saveLoanDetails} className={cellCls} />
+                              </td>
+                              <td className="py-2 pr-3">
+                                {autoLtv
+                                  ? <span className="inline-block px-2 py-1 text-xs text-blue-700 bg-blue-50 rounded font-medium">{autoLtv}%</span>
+                                  : <input type="text" value={row.ltvOverride ?? ''} placeholder="—"
+                                      onChange={e => updateLoanRow(idx, 'ltvOverride', e.target.value)}
+                                      onBlur={saveLoanDetails} className={cellCls} />
+                                }
+                              </td>
+                              <td className="py-2 pr-3">
+                                <input type="text" value={row.interestRate} placeholder="0.0"
+                                  onChange={e => updateLoanRow(idx, 'interestRate', e.target.value)}
+                                  onBlur={saveLoanDetails} className={cellCls} />
+                              </td>
+                              <td className="py-2 pr-3">
+                                <select value={row.rateType}
+                                  onChange={e => updateLoanRow(idx, 'rateType', e.target.value as 'Fixed' | 'Float')}
+                                  onBlur={saveLoanDetails}
+                                  className={cellCls}>
+                                  <option>Fixed</option>
+                                  <option>Float</option>
+                                </select>
+                              </td>
+                              <td className="py-2 pr-3">
+                                <input type="text" value={row.term} placeholder="—"
+                                  onChange={e => updateLoanRow(idx, 'term', e.target.value)}
+                                  onBlur={saveLoanDetails} className={cellCls} />
+                              </td>
+                              <td className="py-2 pr-3">
+                                <input type="text" value={row.amortization} placeholder="—"
+                                  onChange={e => updateLoanRow(idx, 'amortization', e.target.value)}
+                                  onBlur={saveLoanDetails} className={cellCls} />
+                              </td>
+                              <td className="py-2">
+                                <input type="text" value={row.ioPeriod} placeholder="—"
+                                  onChange={e => updateLoanRow(idx, 'ioPeriod', e.target.value)}
+                                  onBlur={saveLoanDetails} className={cellCls} />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Target Dates */}
                 <div className="mt-5 pt-5 border-t border-gray-100">
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Target Dates</p>
                   <div className="grid grid-cols-3 gap-4">
@@ -863,9 +1242,110 @@ const DealExecution = () => {
                 </div>
               </div>
 
-              {/* Section C — CapEx */}
+              {/* ── Section B — JV / Partnership Terms (conditional) ─────── */}
+              {showJvSection && (
+                <div className="bg-white rounded-xl p-6 shadow-sm">
+                  <SectionHeader label="B — JV / Partnership Terms" sub="Shown for JV and Recap transactions" />
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field
+                      label="Operator Equity Share (%)"
+                      value={jvOperatorEquity}
+                      onChange={setJvOperatorEquity}
+                      onBlur={saveJvTerms}
+                      placeholder="e.g. 20"
+                    />
+                    <Field
+                      label="Aequitas Equity Share (% — auto)"
+                      value={jvAequitasShare}
+                      readOnly
+                    />
+                    <Field
+                      label="Preferred Return (%)"
+                      value={jvPrefReturn}
+                      onChange={setJvPrefReturn}
+                      onBlur={saveJvTerms}
+                      placeholder="e.g. 8"
+                    />
+                    <Field
+                      label="Promote Structure"
+                      value={jvPromoteStructure}
+                      onChange={setJvPromoteStructure}
+                      onBlur={saveJvTerms}
+                      placeholder="e.g. 80/20 above 8% pref"
+                    />
+                    <Field
+                      label="Acquisition Fee (% of purchase price)"
+                      value={jvAcquisitionFee}
+                      onChange={setJvAcquisitionFee}
+                      onBlur={saveJvTerms}
+                      placeholder="e.g. 1.5"
+                    />
+                    <Field
+                      label="Asset Management Fee (% of EGI)"
+                      value={jvAssetMgmtFee}
+                      onChange={setJvAssetMgmtFee}
+                      onBlur={saveJvTerms}
+                      placeholder="e.g. 3"
+                    />
+                    <Field
+                      label="Disposition Fee (%)"
+                      value={jvDispositionFee}
+                      onChange={setJvDispositionFee}
+                      onBlur={saveJvTerms}
+                      placeholder="e.g. 1"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* ── Section C — Control & Approval Rights ───────────────── */}
               <div className="bg-white rounded-xl p-6 shadow-sm">
-                <SectionHeader label="C — CapEx Budget" sub="Total feeds equity calculation in real time" />
+                <SectionHeader label="C — Control &amp; Approval Rights" />
+                <div className="space-y-4">
+                  <Toggle
+                    label="Major Decision Approval Required"
+                    value={majorDecisionRequired}
+                    onChange={v => { setMajorDecisionRequired(v); }}
+                    onBlur={saveControlApproval}
+                  />
+
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 mb-2">Aequitas Approval Required For</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {APPROVAL_OPTIONS.map(opt => (
+                        <label key={opt.key} className="flex items-center gap-2 cursor-pointer group">
+                          <input
+                            type="checkbox"
+                            checked={approvalRights.includes(opt.key)}
+                            onChange={() => toggleApprovalRight(opt.key)}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-400"
+                          />
+                          <span className="text-sm text-gray-700 group-hover:text-gray-900">{opt.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <Field
+                    label="Major CapEx Threshold ($)"
+                    value={majorCapexThreshold}
+                    onChange={setMajorCapexThreshold}
+                    onBlur={saveControlApproval}
+                    placeholder="e.g. 50000"
+                  />
+                  <TextArea
+                    label="Notes"
+                    value={approvalNotes}
+                    onChange={setApprovalNotes}
+                    onBlur={saveControlApproval}
+                    placeholder="Additional approval rights notes..."
+                  />
+                </div>
+              </div>
+
+              {/* ── Section D — CapEx Budget ─────────────────────────────── */}
+              <div className="bg-white rounded-xl p-6 shadow-sm">
+                <SectionHeader label="D — CapEx Budget" sub="Total feeds equity calculation in real time" />
                 {capexItems.length > 0 && (
                   <table className="w-full text-sm mb-4">
                     <thead>
@@ -927,7 +1407,7 @@ const DealExecution = () => {
                 </div>
               </div>
 
-              {/* E — DD Checklist */}
+              {/* ── Section E — DD Checklist ─────────────────────────────── */}
               <div className="bg-white rounded-xl p-6 shadow-sm">
                 <div className="flex items-baseline justify-between mb-5">
                   <div className="flex items-baseline gap-3">
@@ -1023,7 +1503,7 @@ const DealExecution = () => {
                 </div>
               </div>
 
-              {/* Exit trigger — Stage 2 */}
+              {/* Proceed to Closing */}
               {stage === 2 && (
                 <div className="flex justify-end">
                   <button
@@ -1037,14 +1517,13 @@ const DealExecution = () => {
             </div>
           </div>
 
-          {/* ═══════════════════════════════════════════════════════════════
+          {/* ═════════════════════════════════════════════════════════════════
               STAGE 3 — CLOSING
-          ═══════════════════════════════════════════════════════════════ */}
+          ═════════════════════════════════════════════════════════════════ */}
           <div className={stage < 3 ? 'opacity-40 pointer-events-none select-none' : ''}>
             <StageHeader number={3} label="Stage 3 — Closing" status={stageStatus(3)} />
 
             <div className="space-y-6">
-              {/* Closing checklist */}
               <div className="bg-white rounded-xl p-6 shadow-sm">
                 <SectionHeader label="Closing Checklist" />
                 <div className="divide-y divide-gray-100">
@@ -1071,7 +1550,6 @@ const DealExecution = () => {
                 </div>
               </div>
 
-              {/* Exit trigger — Stage 3 */}
               {stage === 3 && (
                 <div className="flex justify-end">
                   <button
@@ -1087,7 +1565,7 @@ const DealExecution = () => {
 
         </div>{/* end left column */}
 
-        {/* ── Right column (sticky sidebar) ───────────────────────────────── */}
+        {/* ── Right column (sticky sidebar) ─────────────────────────────── */}
         <div className="space-y-6">
 
           {/* ── Model Status Card ──────────────────────────────────────────── */}
@@ -1100,14 +1578,6 @@ const DealExecution = () => {
               >
                 View Full Model →
               </Link>
-            </div>
-            <div className="grid grid-cols-4 gap-1 mb-3">
-              <div className="col-span-4 grid grid-cols-4 text-center mb-1">
-                <div />
-                <p className="text-xs text-gray-400 col-span-1">Orig.</p>
-                <p className="text-xs text-gray-400 col-span-1">Current</p>
-                <div />
-              </div>
             </div>
             <div className="space-y-3">
               {/* IRR */}
@@ -1159,58 +1629,9 @@ const DealExecution = () => {
             </div>
           </div>
 
-          {/* ── Relevant Legislation ─────────────────────────────────────── */}
-          {stage >= 2 && (
-            <div className="bg-white rounded-xl p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold text-gray-900">Relevant Legislation</h2>
-                <button
-                  onClick={() => setShowLegislationPanel(v => !v)}
-                  className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors font-medium"
-                >
-                  {showLegislationPanel ? 'Hide' : 'View'}
-                </button>
-              </div>
-              {showLegislationPanel && (
-                dealLegislation && dealLegislation.length > 0 ? (
-                  <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                    {(['federal', 'state', 'local'] as const).map(jurisdiction => {
-                      const items = dealLegislation.filter((r: any) => r.jurisdiction === jurisdiction);
-                      if (!items.length) return null;
-                      return (
-                        <div key={jurisdiction}>
-                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
-                            {jurisdiction.charAt(0).toUpperCase() + jurisdiction.slice(1)}
-                          </p>
-                          {items.map((item: any, i: number) => (
-                            <div key={i} className="mb-2 p-2.5 rounded-lg bg-gray-50 border border-gray-100">
-                              <div className="flex items-start justify-between gap-2">
-                                <p className="text-xs font-medium text-gray-800 leading-tight">{item.title}</p>
-                                <span className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${
-                                  item.status === 'funding' ? 'bg-green-100 text-green-700' :
-                                  item.status === 'enabling' ? 'bg-blue-100 text-blue-700' :
-                                  'bg-red-100 text-red-700'
-                                }`}>{item.status}</span>
-                              </div>
-                              <p className="text-xs text-gray-500 mt-1 leading-relaxed">{item.summary}</p>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-400 text-center py-3">
-                    No legislation saved — go to Underwriting to fetch.
-                  </p>
-                )
-              )}
-            </div>
-          )}
-
-          {/* ── Section B — Capital Structure (sticky) ─────────────────────── */}
+          {/* ── Capital Structure (sticky) ────────────────────────────────── */}
           <div className="bg-white rounded-xl p-6 shadow-sm xl:sticky xl:top-6 space-y-5">
-            <SectionHeader label="B — Capital Structure" />
+            <SectionHeader label="Capital Structure" />
 
             {/* Live equity waterfall */}
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-2">
@@ -1219,9 +1640,9 @@ const DealExecution = () => {
                 <span className="font-semibold tabular-nums">{ppNum > 0 ? fmt$(ppNum) : '—'}</span>
               </div>
               <div className="flex justify-between text-xs text-blue-800">
-                <span>Loan Amount</span>
-                <span className={`font-semibold tabular-nums ${loanNum > 0 ? 'text-red-600' : ''}`}>
-                  {loanNum > 0 ? `− ${fmt$(loanNum)}` : '—'}
+                <span>Acq. Loan Amount</span>
+                <span className={`font-semibold tabular-nums ${acqLoanAmt > 0 ? 'text-red-600' : ''}`}>
+                  {acqLoanAmt > 0 ? `− ${fmt$(acqLoanAmt)}` : '—'}
                 </span>
               </div>
               <div className="flex justify-between text-xs text-blue-800">
@@ -1277,10 +1698,10 @@ const DealExecution = () => {
             </p>
           </div>
 
-          {/* ── F — Investment Memo ──────────────────────────────────────────── */}
+          {/* ── Investment Memo ───────────────────────────────────────────── */}
           <div className="bg-white rounded-xl p-6 shadow-sm space-y-4">
             <div>
-              <h2 className="text-base font-semibold text-gray-900">F — Investment Memo</h2>
+              <h2 className="text-base font-semibold text-gray-900">Investment Memo</h2>
               <p className="text-xs text-gray-400 mt-0.5">
                 Claude synthesizes all saved deal data into an LP-ready memo.
               </p>
