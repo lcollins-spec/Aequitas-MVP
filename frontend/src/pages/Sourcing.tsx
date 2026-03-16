@@ -1632,7 +1632,7 @@ const Sourcing = () => {
       await sourcingApi.updateProperty(p.id, { deal_id: deal.id });
       setData(prev => ({
         ...prev,
-        properties: prev.properties.map(x => x.id === p.id ? { ...x, deal_id: deal.id } : x),
+        properties: prev.properties.map(x => x.id === p.id ? { ...x, deal_id: deal.id ?? null } : x),
       }));
 
       navigate(`/underwriting?dealId=${deal.id}`);
