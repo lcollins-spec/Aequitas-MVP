@@ -16,6 +16,7 @@ import {
   CheckCircle,
   FileText,
   Pencil,
+  Mail,
 } from 'lucide-react';
 import * as sourcingApi from '../services/sourcingApi';
 import type { MarketEntry, SourcingProperty, SourcingBroker, SourcingOperator, ParsedDealFields } from '../services/sourcingApi';
@@ -1623,6 +1624,8 @@ const Sourcing = () => {
   const [editOperator, setEditOperator] = useState<SourcingOperator | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [showImportDeal, setShowImportDeal] = useState(false);
+  const [showAddMenu, setShowAddMenu] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
   const [startingUwId, setStartingUwId] = useState<string | null>(null);
 
   // Detail panel
@@ -1713,6 +1716,16 @@ const Sourcing = () => {
       properties: prev.properties.map(p => p.id === id ? { ...p, lat, lng } : p),
     }));
     sourcingApi.updateProperty(id, { lat, lng }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+        setShowAddMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, []);
 
   // ── Property CRUD ──────────────────────────────────────────────────────────
@@ -2068,26 +2081,52 @@ const Sourcing = () => {
               })}
             </div>
             <div className="flex items-center gap-2">
-              {activeTab === 'properties' && (
+              {activeTab === 'properties' ? (
+                <div className="relative" ref={addMenuRef}>
+                  <button
+                    onClick={() => setShowAddMenu(v => !v)}
+                    className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  >
+                    <Plus size={15} /> Add Deal <ChevronDown size={13} />
+                  </button>
+                  {showAddMenu && (
+                    <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1">
+                      <button
+                        onClick={() => { setShowImportDeal(true); setShowAddMenu(false); }}
+                        className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        <Mail size={14} className="text-blue-500 shrink-0" /> Import from Email
+                      </button>
+                      <button
+                        onClick={() => { setShowImportDeal(true); setShowAddMenu(false); }}
+                        className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        <FileText size={14} className="text-purple-500 shrink-0" /> Import from OM
+                      </button>
+                      <div className="border-t border-gray-100 my-1" />
+                      <button
+                        onClick={() => { setShowAddProp(true); setShowAddMenu(false); }}
+                        className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        <Plus size={14} className="text-green-500 shrink-0" /> Add Manually
+                      </button>
+                      <button
+                        onClick={() => { setShowImport(true); setShowAddMenu(false); }}
+                        className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        <Upload size={14} className="text-orange-500 shrink-0" /> Bulk Import from Excel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
                 <button
-                  onClick={() => setShowImportDeal(true)}
-                  className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
+                  onClick={handleAdd}
+                  className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
                 >
-                  <FileText size={15} /> Import Deal
+                  <Plus size={15} /> {addLabel}
                 </button>
               )}
-              <button
-                onClick={() => setShowImport(true)}
-                className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <Upload size={15} /> Import from Excel
-              </button>
-              <button
-                onClick={handleAdd}
-                className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-              >
-                <Plus size={15} /> {addLabel}
-              </button>
             </div>
           </div>
 
