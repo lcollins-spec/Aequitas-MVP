@@ -139,6 +139,7 @@ export interface Deal {
   npv?: number;
   irr?: number;
   equityMultiple?: number;
+  dealLegislation?: string | null;
 }
 
 export interface DealFormData {

@@ -248,6 +248,10 @@ const Underwriting = () => {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  // Legislation fetch state
+  const [legislationFetching, setLegislationFetching] = useState(false);
+  const [legislationStatus, setLegislationStatus] = useState<'idle' | 'saved' | 'failed'>('idle');
+
   // Pipeline status (localStorage-backed)
   const [pipelineStatus, setPipelineStatusState] = useState<PipelineStatus>('Analyzing');
   const [showDataRoomModal, setShowDataRoomModal] = useState(false);
@@ -285,6 +289,23 @@ const Underwriting = () => {
   const [rentGrowthRate, setRentGrowthRate] = useState(0.02); // 2% default
   const [cashFlowTab, setCashFlowTab] = useState<'noi' | 'levered'>('noi');
   const [amiTarget, setAmiTarget] = useState('60% AMI - $48,000/year');
+
+  // Returns & Loan Summary state
+  const [entryCapRateInput, setEntryCapRateInput] = useState(6.0);
+  const [offerPrice, setOfferPrice] = useState(0);
+  const [exitPrice, setExitPrice] = useState(0);
+  const [lpEquityShare, setLpEquityShare] = useState(90);
+  const gpEquityShare = 100 - lpEquityShare;
+  const [seniorLoanAmount, setSeniorLoanAmount] = useState(0);
+  const [seniorInterestRateInput, setSeniorInterestRateInput] = useState(6.5);
+  const [seniorTermYearsInput, setSeniorTermYearsInput] = useState(10);
+  const [seniorAmortYearsInput, setSeniorAmortYearsInput] = useState(30);
+  const [seniorIOMonthsInput, setSeniorIOMonthsInput] = useState(0);
+  const [refiLoanAmount, setRefiLoanAmount] = useState(0);
+  const [refiInterestRateInput, setRefiInterestRateInput] = useState(6.0);
+  const [refiTermYearsInput, setRefiTermYearsInput] = useState(10);
+  const [refiAmortYearsInput, setRefiAmortYearsInput] = useState(30);
+  const [refiIOMonthsInput, setRefiIOMonthsInput] = useState(0);
   const [gpPartner, setGpPartner] = useState('Aequitas Housing');
   const [gpPartners, setGpPartners] = useState<string[]>(GP_PARTNERS_FALLBACK);
 
@@ -926,6 +947,33 @@ const Underwriting = () => {
     await fetchMarketAnalysisData();
   };
 
+  const handleFetchLegislation = async () => {
+    if (!location) return;
+    setLegislationFetching(true);
+    setLegislationStatus('idle');
+    try {
+      const resp = await fetch('/api/v1/regulations/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ market: location }),
+      });
+      const json = await resp.json();
+      if (!resp.ok || !json.success) throw new Error(json.error || 'Failed');
+      if (currentDealId) {
+        await fetch(`/api/v1/deals/${currentDealId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dealLegislation: JSON.stringify(json.data) }),
+        });
+      }
+      setLegislationStatus('saved');
+    } catch {
+      setLegislationStatus('failed');
+    } finally {
+      setLegislationFetching(false);
+    }
+  };
+
   const handleExportExcel = async () => {
     if (!currentDealId) {
       alert('No deal loaded. Please load a deal first.');
@@ -1173,6 +1221,59 @@ const Underwriting = () => {
       yearlyData,
     };
   }, [purchasePrice, constructionCost, closingCosts, totalUnits, avgMonthlyRent, operatingExpenseRatio, interestRate, loanTermYears, ltv, exitCapRate, holdingPeriod, vacancyRate, badDebtRate, rentGrowthRate]);
+
+  // Returns & Loan Summary derived metrics
+  const returnsMetrics = useMemo(() => {
+    const sellersImpliedCapRate = (purchasePrice > 0 && metrics.netOperatingIncome > 0)
+      ? metrics.netOperatingIncome / purchasePrice
+      : null;
+
+    const askingPricePerUnit = (totalUnits > 0 && purchasePrice > 0) ? purchasePrice / totalUnits : null;
+    const offerPricePerUnit = (totalUnits > 0 && offerPrice > 0) ? offerPrice / totalUnits : null;
+    const exitPricePerUnit = (totalUnits > 0 && exitPrice > 0) ? exitPrice / totalUnits : null;
+
+    // Unlevered cash flows: [-offerPrice, NOI_1, ..., NOI_n + exitPrice]
+    let unleveredIRR: number | null = null;
+    let unleveredEM: number | null = null;
+    const operatingYears = metrics.yearlyData.filter(r => !r.isAcquisition && !r.isExit);
+    if (offerPrice > 0 && exitPrice > 0 && operatingYears.length > 0) {
+      const uCFs: number[] = [-offerPrice];
+      operatingYears.forEach((row, i) => {
+        uCFs.push(i === operatingYears.length - 1 ? row.noi + exitPrice : row.noi);
+      });
+      const irrRaw = calculateIRR(uCFs);
+      if (isFinite(irrRaw) && !isNaN(irrRaw)) unleveredIRR = irrRaw * 100;
+      const totalIn = uCFs.slice(1).reduce((a, b) => a + b, 0);
+      unleveredEM = totalIn / offerPrice;
+    }
+
+    // Levered cash flows rebuilt from yearlyData
+    const exitRow = metrics.yearlyData.find(r => r.isExit);
+    const leveredCFs: number[] = [-metrics.equityRequired];
+    operatingYears.forEach((row, i) => {
+      leveredCFs.push(i === operatingYears.length - 1 ? row.cfbt + (exitRow?.saleProceeds ?? 0) : row.cfbt);
+    });
+
+    let lpIRR: number | null = null, gpIRR: number | null = null;
+    let lpEM: number | null = null, gpEM: number | null = null;
+    if (leveredCFs.length > 1) {
+      const lpShare = lpEquityShare / 100;
+      const gpShare = gpEquityShare / 100;
+      const lpCFs = leveredCFs.map(v => v * lpShare);
+      const gpCFs = leveredCFs.map(v => v * gpShare);
+      const lpRaw = calculateIRR(lpCFs);
+      const gpRaw = calculateIRR(gpCFs);
+      if (isFinite(lpRaw) && !isNaN(lpRaw)) lpIRR = lpRaw * 100;
+      if (isFinite(gpRaw) && !isNaN(gpRaw)) gpIRR = gpRaw * 100;
+      if (lpCFs[0] < 0) lpEM = lpCFs.slice(1).reduce((a, b) => a + b, 0) / Math.abs(lpCFs[0]);
+      if (gpCFs[0] < 0) gpEM = gpCFs.slice(1).reduce((a, b) => a + b, 0) / Math.abs(gpCFs[0]);
+    }
+
+    const seniorLTV = (offerPrice > 0 && seniorLoanAmount > 0) ? (seniorLoanAmount / offerPrice * 100) : null;
+    const refiLTV = (offerPrice > 0 && refiLoanAmount > 0) ? (refiLoanAmount / offerPrice * 100) : null;
+
+    return { sellersImpliedCapRate, askingPricePerUnit, offerPricePerUnit, exitPricePerUnit, unleveredIRR, unleveredEM, lpIRR, gpIRR, lpEM, gpEM, seniorLTV, refiLTV };
+  }, [purchasePrice, totalUnits, offerPrice, exitPrice, lpEquityShare, gpEquityShare, seniorLoanAmount, refiLoanAmount, metrics]);
 
   // --- Data Room modal handlers ---
   const createDealExecutionRecord = (docs: Omit<DealDocument, 'id' | 'uploadedAt'>[]) => {
@@ -1567,7 +1668,7 @@ const Underwriting = () => {
                 placeholder="City, State"
               />
               {location && (
-                <div className="flex gap-3 mt-1">
+                <div className="flex flex-wrap gap-3 mt-1 items-center">
                   <Link
                     to={`/sourcing?address=${encodeURIComponent(location)}`}
                     className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700"
@@ -1582,6 +1683,21 @@ const Underwriting = () => {
                   >
                     Review Local Regs →
                   </Link>
+                  <button
+                    onClick={handleFetchLegislation}
+                    disabled={legislationFetching}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 transition-colors"
+                  >
+                    {legislationFetching ? (
+                      <><Loader2 size={10} className="animate-spin" /> Fetching…</>
+                    ) : legislationStatus === 'saved' ? (
+                      <><CheckCircle size={10} className="text-green-600" /> <span className="text-green-700">Legislation Saved</span></>
+                    ) : legislationStatus === 'failed' ? (
+                      'Failed — Retry'
+                    ) : (
+                      'Fetch Relevant Legislation'
+                    )}
+                  </button>
                 </div>
               )}
             </div>
@@ -1605,6 +1721,30 @@ const Underwriting = () => {
                 type="number"
                 value={totalUnits}
                 onChange={(e) => setTotalUnits(Number(e.target.value) || 0)}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+              />
+            </div>
+
+            {/* Seller's Implied Cap Rate */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">Seller's Implied Cap Rate</label>
+              <div className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-sm text-gray-600 font-mono">
+                {returnsMetrics.sellersImpliedCapRate !== null
+                  ? `${(returnsMetrics.sellersImpliedCapRate * 100).toFixed(2)}%`
+                  : '—'}
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1">Year 1 NOI ÷ Asking Price</p>
+            </div>
+
+            {/* Your Entry Cap Rate */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Your Entry Cap Rate (%)</label>
+              <p className="text-[10px] text-gray-400 mb-1.5">What cap rate are you underwriting to?</p>
+              <input
+                type="number"
+                step="0.1"
+                value={entryCapRateInput}
+                onChange={(e) => setEntryCapRateInput(Number(e.target.value) || 0)}
                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
               />
             </div>
@@ -1952,6 +2092,20 @@ const Underwriting = () => {
                         </td>
                       ))}
                     </tr>
+                    {/* NOI Margin */}
+                    <tr className="hover:bg-gray-50">
+                      <td className="sticky left-0 z-10 bg-white hover:bg-gray-50 px-4 py-2.5 text-xs text-gray-500 pl-7">NOI Margin</td>
+                      {metrics.yearlyData.map((row) => {
+                        const margin = (!row.isAcquisition && !row.isExit && row.egi > 0)
+                          ? `${(row.noi / row.egi * 100).toFixed(1)}%`
+                          : '—';
+                        return (
+                          <td key={row.label} className="px-4 py-2.5 text-right text-xs text-gray-600 font-mono">
+                            {margin}
+                          </td>
+                        );
+                      })}
+                    </tr>
                   </tbody>
                 ) : (
                   <tbody className="divide-y divide-gray-100">
@@ -2055,6 +2209,203 @@ const Underwriting = () => {
                 <span className="text-xs text-gray-500">Exit Cap Rate</span>
                 <span className="block text-lg font-bold text-gray-700">{(exitCapRate * 100).toFixed(1)}%</span>
               </div>
+            </div>
+          </div>
+
+          {/* Returns & Loan Summary */}
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-800">Returns &amp; Loan Summary</h3>
+            </div>
+
+            <div className="p-5 space-y-6">
+
+              {/* Price Summary */}
+              <div>
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Price Summary</p>
+                <div className="border border-gray-200 rounded-lg overflow-hidden text-xs">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        <th className="text-left px-3 py-2 text-gray-500 font-medium"></th>
+                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Asking Price</th>
+                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Offer Price</th>
+                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Exit Price</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      <tr>
+                        <td className="px-3 py-2 text-gray-600 font-medium">Total ($)</td>
+                        <td className="px-3 py-2 text-right text-gray-700 font-mono">{purchasePrice > 0 ? `$${Math.round(purchasePrice).toLocaleString()}` : '—'}</td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="number"
+                            value={offerPrice || ''}
+                            placeholder="0"
+                            onChange={(e) => setOfferPrice(Number(e.target.value) || 0)}
+                            className="w-full px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="number"
+                            value={exitPrice || ''}
+                            placeholder="0"
+                            onChange={(e) => setExitPrice(Number(e.target.value) || 0)}
+                            className="w-full px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </td>
+                      </tr>
+                      <tr className="bg-gray-50">
+                        <td className="px-3 py-2 text-gray-600 font-medium">Per Unit ($/unit)</td>
+                        <td className="px-3 py-2 text-right text-gray-700 font-mono">
+                          {returnsMetrics.askingPricePerUnit !== null ? `$${Math.round(returnsMetrics.askingPricePerUnit).toLocaleString()}` : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-700 font-mono">
+                          {returnsMetrics.offerPricePerUnit !== null ? `$${Math.round(returnsMetrics.offerPricePerUnit).toLocaleString()}` : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-700 font-mono">
+                          {returnsMetrics.exitPricePerUnit !== null ? `$${Math.round(returnsMetrics.exitPricePerUnit).toLocaleString()}` : '—'}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Unlevered Returns */}
+              <div>
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Unlevered Returns</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-xs text-gray-500">Unlevered IRR</p>
+                    <p className={`text-lg font-bold mt-0.5 ${returnsMetrics.unleveredIRR !== null ? (returnsMetrics.unleveredIRR > 0 ? 'text-green-600' : 'text-orange-600') : 'text-gray-400'}`}>
+                      {returnsMetrics.unleveredIRR !== null ? `${returnsMetrics.unleveredIRR.toFixed(2)}%` : '—'}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-xs text-gray-500">Unlevered Equity Multiple</p>
+                    <p className={`text-lg font-bold mt-0.5 ${returnsMetrics.unleveredEM !== null ? 'text-green-600' : 'text-gray-400'}`}>
+                      {returnsMetrics.unleveredEM !== null ? `${returnsMetrics.unleveredEM.toFixed(2)}x` : '—'}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1">Based on Offer Price outflow and Exit Price terminal value</p>
+              </div>
+
+              {/* LP / GP Returns */}
+              <div>
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">LP / GP Returns</p>
+                <div className="border border-gray-200 rounded-lg overflow-hidden text-xs">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        <th className="text-left px-3 py-2 text-gray-500 font-medium"></th>
+                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Equity Share (%)</th>
+                        <th className="text-right px-3 py-2 text-gray-500 font-medium">IRR</th>
+                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Equity Multiple</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      <tr>
+                        <td className="px-3 py-2 text-gray-700 font-medium">LP</td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={lpEquityShare}
+                            onChange={(e) => setLpEquityShare(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
+                            className="w-full px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-700">
+                          {returnsMetrics.lpIRR !== null ? `${returnsMetrics.lpIRR.toFixed(2)}%` : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-700">
+                          {returnsMetrics.lpEM !== null ? `${returnsMetrics.lpEM.toFixed(2)}x` : '—'}
+                        </td>
+                      </tr>
+                      <tr className="bg-gray-50">
+                        <td className="px-3 py-2 text-gray-700 font-medium">GP</td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-600">{gpEquityShare}%</td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-700">
+                          {returnsMetrics.gpIRR !== null ? `${returnsMetrics.gpIRR.toFixed(2)}%` : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-700">
+                          {returnsMetrics.gpEM !== null ? `${returnsMetrics.gpEM.toFixed(2)}x` : '—'}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Loan Summary */}
+              <div>
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Loan Summary</p>
+                <div className="border border-gray-200 rounded-lg overflow-x-auto text-xs">
+                  <table className="w-full min-w-[600px]">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        <th className="text-left px-3 py-2 text-gray-500 font-medium">Loan</th>
+                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Amount ($)</th>
+                        <th className="text-right px-3 py-2 text-gray-500 font-medium">LTV</th>
+                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Rate (%)</th>
+                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Term (yrs)</th>
+                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Amort (yrs)</th>
+                        <th className="text-right px-3 py-2 text-gray-500 font-medium">IO (mo)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      <tr>
+                        <td className="px-3 py-2 text-gray-700 font-medium whitespace-nowrap">Senior Acq.</td>
+                        <td className="px-3 py-2">
+                          <input type="number" value={seniorLoanAmount || ''} placeholder="0" onChange={(e) => setSeniorLoanAmount(Number(e.target.value) || 0)} className="w-24 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-600">
+                          {returnsMetrics.seniorLTV !== null ? `${returnsMetrics.seniorLTV.toFixed(1)}%` : '—'}
+                        </td>
+                        <td className="px-3 py-2">
+                          <input type="number" step="0.1" value={seniorInterestRateInput} onChange={(e) => setSeniorInterestRateInput(Number(e.target.value) || 0)} className="w-16 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input type="number" value={seniorTermYearsInput} onChange={(e) => setSeniorTermYearsInput(Number(e.target.value) || 0)} className="w-14 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input type="number" value={seniorAmortYearsInput} onChange={(e) => setSeniorAmortYearsInput(Number(e.target.value) || 0)} className="w-14 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input type="number" value={seniorIOMonthsInput} onChange={(e) => setSeniorIOMonthsInput(Number(e.target.value) || 0)} className="w-14 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        </td>
+                      </tr>
+                      <tr className="bg-gray-50">
+                        <td className="px-3 py-2 text-gray-700 font-medium whitespace-nowrap">Refinance</td>
+                        <td className="px-3 py-2">
+                          <input type="number" value={refiLoanAmount || ''} placeholder="0" onChange={(e) => setRefiLoanAmount(Number(e.target.value) || 0)} className="w-24 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-600">
+                          {returnsMetrics.refiLTV !== null ? `${returnsMetrics.refiLTV.toFixed(1)}%` : '—'}
+                        </td>
+                        <td className="px-3 py-2">
+                          <input type="number" step="0.1" value={refiInterestRateInput} onChange={(e) => setRefiInterestRateInput(Number(e.target.value) || 0)} className="w-16 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input type="number" value={refiTermYearsInput} onChange={(e) => setRefiTermYearsInput(Number(e.target.value) || 0)} className="w-14 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input type="number" value={refiAmortYearsInput} onChange={(e) => setRefiAmortYearsInput(Number(e.target.value) || 0)} className="w-14 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input type="number" value={refiIOMonthsInput} onChange={(e) => setRefiIOMonthsInput(Number(e.target.value) || 0)} className="w-14 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1">LTV auto-calculates from Loan Amount ÷ Offer Price</p>
+              </div>
+
             </div>
           </div>
 

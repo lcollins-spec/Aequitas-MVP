@@ -280,6 +280,10 @@ const DealExecution = () => {
   // Linked sourcing property (if any)
   const [linkedPropAddress, setLinkedPropAddress] = useState<string | null>(null);
 
+  // Legislation panel (Stage 2 sidebar)
+  const [showLegislationPanel, setShowLegislationPanel] = useState(false);
+  const [dealLegislation, setDealLegislation] = useState<any[] | null>(null);
+
   // ── Helper: apply a loaded record to component state
   const applyRecord = useCallback((rec: DealExecutionRecord) => {
     setRecord(rec);
@@ -335,6 +339,16 @@ const DealExecution = () => {
       .then((data: { properties?: { deal_id: number | null; address: string }[] } | null) => {
         const linked = data?.properties?.find(p => p.deal_id === numericId);
         if (linked?.address) setLinkedPropAddress(linked.address);
+      })
+      .catch(() => {});
+    // Load saved legislation
+    fetch(`/api/v1/deals/${numericId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { deal?: { dealLegislation?: string | null } } | null) => {
+        const raw = data?.deal?.dealLegislation;
+        if (raw) {
+          try { setDealLegislation(JSON.parse(raw)); } catch { /* ignore */ }
+        }
       })
       .catch(() => {});
   }, [numericId, applyRecord]);
@@ -1144,6 +1158,55 @@ const DealExecution = () => {
               <span>Current</span>
             </div>
           </div>
+
+          {/* ── Relevant Legislation ─────────────────────────────────────── */}
+          {stage >= 2 && (
+            <div className="bg-white rounded-xl p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-gray-900">Relevant Legislation</h2>
+                <button
+                  onClick={() => setShowLegislationPanel(v => !v)}
+                  className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors font-medium"
+                >
+                  {showLegislationPanel ? 'Hide' : 'View'}
+                </button>
+              </div>
+              {showLegislationPanel && (
+                dealLegislation && dealLegislation.length > 0 ? (
+                  <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                    {(['federal', 'state', 'local'] as const).map(jurisdiction => {
+                      const items = dealLegislation.filter((r: any) => r.jurisdiction === jurisdiction);
+                      if (!items.length) return null;
+                      return (
+                        <div key={jurisdiction}>
+                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+                            {jurisdiction.charAt(0).toUpperCase() + jurisdiction.slice(1)}
+                          </p>
+                          {items.map((item: any, i: number) => (
+                            <div key={i} className="mb-2 p-2.5 rounded-lg bg-gray-50 border border-gray-100">
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="text-xs font-medium text-gray-800 leading-tight">{item.title}</p>
+                                <span className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${
+                                  item.status === 'funding' ? 'bg-green-100 text-green-700' :
+                                  item.status === 'enabling' ? 'bg-blue-100 text-blue-700' :
+                                  'bg-red-100 text-red-700'
+                                }`}>{item.status}</span>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-1 leading-relaxed">{item.summary}</p>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400 text-center py-3">
+                    No legislation saved — go to Underwriting to fetch.
+                  </p>
+                )
+              )}
+            </div>
+          )}
 
           {/* ── Section B — Capital Structure (sticky) ─────────────────────── */}
           <div className="bg-white rounded-xl p-6 shadow-sm xl:sticky xl:top-6 space-y-5">
