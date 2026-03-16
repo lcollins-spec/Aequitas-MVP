@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import {
   Plus,
   X,
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import * as sourcingApi from '../services/sourcingApi';
 import type { MarketEntry, SourcingProperty, SourcingBroker, SourcingOperator, ParsedDealFields } from '../services/sourcingApi';
+import { dealApi } from '../services/dealApi';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -1271,9 +1272,11 @@ interface PropertiesTableProps {
   onEdit: (p: SourcingProperty) => void;
   onDelete: (id: string) => void;
   highlightPropId?: string | null;
+  onStartUnderwriting: (p: SourcingProperty) => void;
+  startingUwId?: string | null;
 }
 
-const PropertiesTable = ({ properties, onEdit, onDelete, highlightPropId }: PropertiesTableProps) => {
+const PropertiesTable = ({ properties, onEdit, onDelete, highlightPropId, onStartUnderwriting, startingUwId }: PropertiesTableProps) => {
   const [sort, setSort] = useState<{ col: keyof SourcingProperty; dir: SortDir }>({ col: 'address', dir: 'asc' });
   const highlightedRowRef = useRef<HTMLTableRowElement | null>(null);
 
@@ -1363,6 +1366,13 @@ const PropertiesTable = ({ properties, onEdit, onDelete, highlightPropId }: Prop
                       </Link>
                     )}
                     <button
+                      onClick={() => onStartUnderwriting(p)}
+                      disabled={startingUwId === p.id}
+                      className="text-xs text-indigo-500 hover:text-indigo-700 font-medium whitespace-nowrap transition-colors disabled:opacity-50"
+                    >
+                      {startingUwId === p.id ? '…' : p.deal_id ? 'Underwriting →' : 'Start Underwriting'}
+                    </button>
+                    <button
                       onClick={() => onDelete(p.id)}
                       className="text-gray-300 hover:text-red-400 transition-colors"
                     >
@@ -1397,6 +1407,7 @@ function addressMatch(a: string, b: string): boolean {
 
 const Sourcing = () => {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const addressParam = searchParams.get('address') ?? '';
 
   const [view, setView] = useState<'list' | 'detail'>('list');
@@ -1416,6 +1427,7 @@ const Sourcing = () => {
   const [editOperator, setEditOperator] = useState<SourcingOperator | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [showImportDeal, setShowImportDeal] = useState(false);
+  const [startingUwId, setStartingUwId] = useState<string | null>(null);
 
   // Market sidebar state
   const [showAddMarket, setShowAddMarket] = useState(false);
@@ -1584,6 +1596,51 @@ const Sourcing = () => {
   const deleteOperator = (id: string) => {
     setData(prev => ({ ...prev, operators: prev.operators.filter(o => o.id !== id) }));
     sourcingApi.deleteOperator(id).catch(() => {});
+  };
+
+  // ── Start Underwriting ─────────────────────────────────────────────────────
+  const startUnderwriting = async (p: SourcingProperty) => {
+    // If already linked, open the existing underwriting record
+    if (p.deal_id) {
+      navigate(`/underwriting?dealId=${p.deal_id}`);
+      return;
+    }
+
+    setStartingUwId(p.id);
+    try {
+      // Parse asking price from notes (format set by Import Deal: "Asking: $5,200,000")
+      let purchasePrice: number | undefined;
+      const askingMatch = (p.notes || '').match(/Asking:\s*\$?([\d,]+)/i);
+      if (askingMatch) {
+        const parsed = parseInt(askingMatch[1].replace(/,/g, ''), 10);
+        if (parsed > 0) purchasePrice = parsed;
+      }
+
+      // Create a new deal pre-populated from the sourcing property
+      const deal = await dealApi.createDeal({
+        dealName: p.address || 'Untitled Deal',
+        location: p.market || '',
+        propertyAddress: p.address || '',
+        status: 'potential',
+        purchasePrice,
+        underwritingJson: JSON.stringify({ totalUnits: p.units || 0 }),
+      });
+
+      if (!deal.id) throw new Error('No deal ID returned');
+
+      // Link the sourcing property to the new deal
+      await sourcingApi.updateProperty(p.id, { deal_id: deal.id });
+      setData(prev => ({
+        ...prev,
+        properties: prev.properties.map(x => x.id === p.id ? { ...x, deal_id: deal.id } : x),
+      }));
+
+      navigate(`/underwriting?dealId=${deal.id}`);
+    } catch {
+      // Silently swallow — button just re-enables
+    } finally {
+      setStartingUwId(null);
+    }
   };
 
   // ── Import ─────────────────────────────────────────────────────────────────
@@ -1897,6 +1954,8 @@ const Sourcing = () => {
               onEdit={p => setEditProp(p)}
               onDelete={deleteProp}
               highlightPropId={highlightPropId}
+              onStartUnderwriting={startUnderwriting}
+              startingUwId={startingUwId}
             />
           </>
         )}
