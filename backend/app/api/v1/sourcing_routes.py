@@ -27,18 +27,80 @@ sourcing_bp = Blueprint('sourcing', __name__)
 @sourcing_bp.route('/sourcing/parse-import', methods=['POST'])
 def parse_import():
     """
-    Parse an uploaded Excel or CSV file and map columns to the sourcing data model.
+    Parse an uploaded Excel/CSV file OR pasted text/email/OM and map to the sourcing data model.
 
     Form data:
-        - file: the Excel/CSV file
-        - type: 'properties' | 'brokers' | 'operators'
+        - file: Excel/CSV file (spreadsheet bulk import path)
+        - text: pasted email / OM / broker message (text extraction path)
+        - type: 'properties' | 'brokers' | 'operators'  (file path only)
 
-    Returns:
-        { success: true, data: [...mapped rows...], total: N, columns: [...] }
+    Returns (file path):  { success: true, data: [...mapped rows...], total: N, columns: [...] }
+    Returns (text path):  { success: true, fields: { address, units, ... } }
     """
     try:
+        pasted_text = (request.form.get('text') or '').strip()
+
+        # ── Text paste / email / OM extraction path ──────────────────────────
+        if pasted_text:
+            api_key = os.getenv('ANTHROPIC_API_KEY')
+            if not api_key:
+                return jsonify({'success': False, 'error': 'ANTHROPIC_API_KEY not configured'}), 503
+
+            try:
+                from anthropic import Anthropic
+            except ImportError:
+                return jsonify({'success': False, 'error': 'Anthropic SDK not available'}), 503
+
+            client = Anthropic(api_key=api_key)
+
+            prompt = (
+                'You are a real estate deal data extraction assistant.\n\n'
+                'Extract the following fields from the text below. The text may be an email, '
+                'email thread, offering memorandum excerpt, or broker message.\n\n'
+                'Return ONLY a raw JSON object (no markdown, no explanation) with exactly these keys:\n'
+                '{\n'
+                '  "address": "full property address or empty string",\n'
+                '  "units": "number of units as integer or empty string",\n'
+                '  "asking_price": "asking price as number or empty string",\n'
+                '  "market": "city or submarket name or empty string",\n'
+                '  "owner_name": "property owner name or empty string",\n'
+                '  "operator_name": "operator or company name or empty string",\n'
+                '  "contact_name": "primary contact person name or empty string",\n'
+                '  "contact_phone": "primary contact phone number or empty string",\n'
+                '  "contact_email": "primary contact email address or empty string",\n'
+                '  "transaction_type": "Acquisition, Recap, or JV \u2014 infer from context or empty string",\n'
+                '  "notes": "any other relevant deal details in one sentence or empty string"\n'
+                '}\n\n'
+                'If a field is not present in the text, use empty string. '
+                'Do not guess or hallucinate values.\n\n'
+                f'Text to extract from:\n{pasted_text[:8000]}'
+            )
+
+            message = client.messages.create(
+                model='claude-sonnet-4-6',
+                max_tokens=1024,
+                messages=[{'role': 'user', 'content': prompt}]
+            )
+
+            response_text = message.content[0].text.strip()
+            print(f'[parse-import/text] RAW Claude response: {repr(response_text[:500])}', flush=True)
+
+            if '```' in response_text:
+                response_text = re.sub(r'```json\s*', '', response_text)
+                response_text = re.sub(r'```', '', response_text).strip()
+
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if not json_match:
+                print(f'[parse-import/text] No JSON object in response: {repr(response_text[:300])}', flush=True)
+                return jsonify({'success': False, 'error': 'Failed to parse Claude response as JSON object'}), 500
+
+            fields = json.loads(json_match.group(0))
+            print(f'[parse-import/text] Returning fields: {fields}', flush=True)
+            return jsonify({'success': True, 'fields': fields}), 200
+
+        # ── Spreadsheet / bulk file import path ──────────────────────────────
         if 'file' not in request.files:
-            return jsonify({'success': False, 'error': 'No file uploaded'}), 400
+            return jsonify({'success': False, 'error': 'No file or text provided'}), 400
 
         file = request.files['file']
         import_type = request.form.get('type', 'properties')
@@ -135,6 +197,7 @@ def parse_import():
         )
 
         response_text = message.content[0].text.strip()
+        print(f'[parse-import] RAW Claude response (first 500 chars):\n{repr(response_text[:500])}', flush=True)
 
         if '```' in response_text:
             response_text = re.sub(r'```json\s*', '', response_text)
@@ -147,6 +210,7 @@ def parse_import():
             return jsonify({'success': False, 'error': 'Failed to parse Claude response as JSON array'}), 500
 
         mapped_rows = json.loads(json_match.group(0))
+        print(f'[parse-import] Returning {len(mapped_rows)} rows. First row: {mapped_rows[0] if mapped_rows else "none"}', flush=True)
 
         return jsonify({
             'success': True,
@@ -524,6 +588,7 @@ def parse_deal():
             '- unit_count: number of units (as a string, e.g. "48")\n'
             '- asking_price: asking price (as a string, e.g. "$5,200,000")\n'
             '- seller_broker_name: name of the seller or listing broker\n'
+            '- operator_name: company or firm the contact works for, or the operating entity for the property\n'
             '- market_city: city and state (e.g. "Austin, TX")\n'
             '- contact_name: contact person name if present\n'
             '- contact_phone: contact phone number if present\n'

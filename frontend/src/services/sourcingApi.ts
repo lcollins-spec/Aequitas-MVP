@@ -197,6 +197,7 @@ export interface ParsedDealFields {
   unit_count: string;
   asking_price: string;
   seller_broker_name: string;
+  operator_name: string;
   market_city: string;
   contact_name: string;
   contact_phone: string;

@@ -975,11 +975,19 @@ const ImportDealModal = ({ market, markets, onSave, onClose }: ImportDealModalPr
         unit_count:         result.unit_count         || '',
         asking_price:       result.asking_price       || '',
         seller_broker_name: result.seller_broker_name || '',
+        operator_name:      result.operator_name      || '',
         market_city:        result.market_city        || '',
         contact_name:       result.contact_name       || '',
         contact_phone:      result.contact_phone      || '',
         contact_email:      result.contact_email      || '',
       });
+      // Default "Add to Market" to extracted market if it matches an existing entry
+      const extracted = (result.market_city || '').toLowerCase().split(',')[0].trim();
+      const matched = markets.find(m => {
+        const n = m.name.toLowerCase();
+        return n === extracted || n.includes(extracted) || extracted.includes(n);
+      });
+      setTargetMarket(matched ? matched.name : '');
     } catch (e: any) {
       setError(e.message || 'Failed to parse');
     } finally {
@@ -998,7 +1006,7 @@ const ImportDealModal = ({ market, markets, onSave, onClose }: ImportDealModalPr
       units:          parseInt(fields.unit_count) || 0,
       transaction_type: 'Acquisition',
       owner_name:     fields.seller_broker_name,
-      operator_name:  '',
+      operator_name:  fields.operator_name,
       contact_name:   fields.contact_name,
       contact_phone:  fields.contact_phone,
       contact_email:  fields.contact_email,
@@ -1051,6 +1059,12 @@ const ImportDealModal = ({ market, markets, onSave, onClose }: ImportDealModalPr
                 className={inputCls} placeholder="Not found" />
             </div>
             <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Operator Name</label>
+              <input type="text" value={fields.operator_name}
+                onChange={e => setFields(f => f ? { ...f, operator_name: e.target.value } : f)}
+                className={inputCls} placeholder="Not found" />
+            </div>
+            <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Market / City</label>
               <input type="text" value={fields.market_city}
                 onChange={e => setFields(f => f ? { ...f, market_city: e.target.value } : f)}
@@ -1083,6 +1097,7 @@ const ImportDealModal = ({ market, markets, onSave, onClose }: ImportDealModalPr
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Add to Market</label>
                 <select value={targetMarket} onChange={e => setTargetMarket(e.target.value)} className={inputCls}>
+                  <option value="">— select market —</option>
                   {markets.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
                 </select>
               </div>
