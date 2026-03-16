@@ -8,14 +8,19 @@ export interface SourcingProperty {
   market: string;
   address: string;
   units: number;
+  transaction_type: string;
   owner_name: string;
+  operator_name: string;
+  contact_name: string;
+  contact_phone: string;
+  contact_email: string;
   status: string;
   priority: string;
-  last_contact_date: string;
   notes: string;
   deal_id: number | null;
   lat?: number;
   lng?: number;
+  updated_at?: string;
   property_legislation?: string | null;
 }
 
@@ -193,6 +198,9 @@ export interface ParsedDealFields {
   asking_price: string;
   seller_broker_name: string;
   market_city: string;
+  contact_name: string;
+  contact_phone: string;
+  contact_email: string;
 }
 
 export async function parseDeal(text: string, file: File | null): Promise<ParsedDealFields> {

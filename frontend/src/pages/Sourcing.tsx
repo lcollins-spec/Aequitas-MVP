@@ -15,6 +15,7 @@ import {
   Loader2,
   CheckCircle,
   FileText,
+  Pencil,
 } from 'lucide-react';
 import * as sourcingApi from '../services/sourcingApi';
 import type { MarketEntry, SourcingProperty, SourcingBroker, SourcingOperator, ParsedDealFields } from '../services/sourcingApi';
@@ -22,7 +23,7 @@ import { dealApi } from '../services/dealApi';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
-type PropertyStatus = 'not_contacted' | 'outreach_sent' | 'in_conversation' | 'passed' | 'active_deal';
+type PropertyStatus = 'Identified' | 'Contacted' | 'In Conversation' | 'LOI' | 'Dead';
 type BrokerStatus = 'cold' | 'introduced' | 'active' | 'strong';
 type OperatorStatus = 'prospecting' | 'intro_made' | 'meeting_held' | 'partnership_discussion' | 'active_partner';
 type Tab = 'properties' | 'brokers' | 'operators';
@@ -46,12 +47,14 @@ const LS_MARKETS = 'sourcing_markets';
 // ── Status constants ─────────────────────────────────────────────────────────
 
 const PROP_STATUSES: { value: PropertyStatus; label: string; cls: string; pin: string }[] = [
-  { value: 'not_contacted',   label: 'Not Contacted',   cls: 'bg-gray-100 text-gray-700 border-gray-200',     pin: '#9CA3AF' },
-  { value: 'outreach_sent',   label: 'Outreach Sent',   cls: 'bg-yellow-50 text-yellow-700 border-yellow-200', pin: '#F59E0B' },
-  { value: 'in_conversation', label: 'In Conversation', cls: 'bg-blue-50 text-blue-700 border-blue-200',       pin: '#3B82F6' },
-  { value: 'passed',          label: 'Passed',          cls: 'bg-red-50 text-red-700 border-red-200',          pin: '#EF4444' },
-  { value: 'active_deal',     label: 'Active Deal',     cls: 'bg-green-50 text-green-700 border-green-200',    pin: '#10B981' },
+  { value: 'Identified',      label: 'Identified',      cls: 'bg-gray-100 text-gray-700 border-gray-200',       pin: '#9CA3AF' },
+  { value: 'Contacted',       label: 'Contacted',       cls: 'bg-yellow-50 text-yellow-700 border-yellow-200',  pin: '#F59E0B' },
+  { value: 'In Conversation', label: 'In Conversation', cls: 'bg-blue-50 text-blue-700 border-blue-200',         pin: '#3B82F6' },
+  { value: 'LOI',             label: 'LOI',             cls: 'bg-purple-50 text-purple-700 border-purple-200',   pin: '#8B5CF6' },
+  { value: 'Dead',            label: 'Dead',            cls: 'bg-red-50 text-red-700 border-red-200',            pin: '#EF4444' },
 ];
+
+const TRANSACTION_TYPES = ['Acquisition', 'Recap', 'JV'] as const;
 
 const BROKER_STATUSES: { value: BrokerStatus; label: string; cls: string }[] = [
   { value: 'cold',       label: 'Cold',       cls: 'bg-gray-100 text-gray-700 border-gray-200'     },
@@ -73,15 +76,30 @@ function brokerStatus(s: string) { return BROKER_STATUSES.find(x => x.value === 
 function operatorStatus(s: string) { return OPERATOR_STATUSES.find(x => x.value === s) || OPERATOR_STATUSES[0]; }
 
 const PRIORITY_OPTIONS: { value: string; label: string; dot: string; badge: string }[] = [
-  { value: 'high',   label: 'High',   dot: 'bg-red-500',    badge: 'bg-red-50 text-red-700 border-red-200'       },
+  { value: 'high',   label: 'High',   dot: 'bg-red-500',    badge: 'bg-red-50 text-red-700 border-red-200'          },
   { value: 'medium', label: 'Medium', dot: 'bg-yellow-400', badge: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
-  { value: 'low',    label: 'Low',    dot: 'bg-green-500',  badge: 'bg-green-50 text-green-700 border-green-200'  },
+  { value: 'low',    label: 'Low',    dot: 'bg-green-500',  badge: 'bg-green-50 text-green-700 border-green-200'    },
 ];
 function dealPriority(val: string) { return PRIORITY_OPTIONS.find(x => x.value === val) || PRIORITY_OPTIONS[1]; }
 
 function isOverdue(date?: string): boolean {
   if (!date) return false;
   return new Date(date) < new Date(new Date().toDateString());
+}
+
+function timeAgo(dateStr?: string): string {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '—';
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 1)   return 'just now';
+  if (mins < 60)  return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)   return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30)  return `${days} day${days === 1 ? '' : 's'} ago`;
+  const months = Math.floor(days / 30);
+  return `${months}mo ago`;
 }
 
 // ── Google Maps declarations ──────────────────────────────────────────────────
@@ -141,7 +159,6 @@ const SourcingMap = ({ properties, selectedMarket, onGeocode, focusPropId }: Sou
     infoWindowRef.current = new window.google.maps.InfoWindow();
   }, [mapsReady]);
 
-  // Center map on focused property when it has coordinates
   useEffect(() => {
     if (!mapsReady || !mapRef.current || !focusPropId) return;
     const prop = properties.find(p => p.id === focusPropId);
@@ -173,8 +190,8 @@ const SourcingMap = ({ properties, selectedMarket, onGeocode, focusPropId }: Sou
           <div style="font-weight:600;font-size:14px;margin-bottom:6px">${prop.address || 'Address unknown'}</div>
           <div style="color:#6B7280;margin-bottom:3px"><b>Owner:</b> ${prop.owner_name || '—'}</div>
           <div style="color:#6B7280;margin-bottom:3px"><b>Units:</b> ${prop.units || '—'}</div>
+          <div style="color:#6B7280;margin-bottom:3px"><b>Type:</b> ${prop.transaction_type || 'Acquisition'}</div>
           <div style="color:#6B7280;margin-bottom:3px"><b>Status:</b> ${si.label}</div>
-          ${prop.last_contact_date ? `<div style="color:#6B7280;margin-bottom:3px"><b>Last Contact:</b> ${prop.last_contact_date}</div>` : ''}
           ${prop.notes ? `<div style="color:#6B7280;margin-bottom:6px"><b>Notes:</b> ${prop.notes}</div>` : ''}
           ${prop.deal_id ? `<div><a href="/deal-execution/${prop.deal_id}" style="color:#3B82F6;font-weight:500;text-decoration:none">View Deal →</a></div>` : ''}
         </div>
@@ -308,19 +325,20 @@ interface PropertyModalProps {
   market: string;
   onSave: (p: SourcingProperty) => void;
   onClose: () => void;
-  deals?: { id: number; deal_name: string }[];
 }
 
-const PropertyModal = ({ initial, market, onSave, onClose, deals }: PropertyModalProps) => {
+const PropertyModal = ({ initial, market, onSave, onClose }: PropertyModalProps) => {
   const [form, setForm] = useState<Partial<SourcingProperty>>({
-    address: '', units: 0, owner_name: '', status: 'not_contacted',
-    priority: 'medium', last_contact_date: '', notes: '', deal_id: null,
+    address: '', units: 0, market, transaction_type: 'Acquisition',
+    owner_name: '', operator_name: '', contact_name: '', contact_phone: '',
+    contact_email: '', status: 'Identified', priority: 'medium', notes: '',
+    deal_id: null,
     ...initial,
   });
 
   const f = (k: keyof SourcingProperty, v: any) => setForm(p => ({ ...p, [k]: v }));
 
-  // Legislation state
+  // Legislation state (preserved)
   const [legFetching, setLegFetching] = useState(false);
   const [legStatus, setLegStatus] = useState<'idle' | 'saved' | 'failed'>('idle');
   const [legislation, setLegislation] = useState<any[] | null>(() => {
@@ -328,14 +346,15 @@ const PropertyModal = ({ initial, market, onSave, onClose, deals }: PropertyModa
   });
 
   const handleFetchLocalRegs = async () => {
-    if (!market) return;
+    const mkt = form.market || market;
+    if (!mkt) return;
     setLegFetching(true);
     setLegStatus('idle');
     try {
       const resp = await fetch('/api/v1/regulations/fetch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ market }),
+        body: JSON.stringify({ market: mkt }),
       });
       const json = await resp.json();
       if (!resp.ok || !json.success) throw new Error(json.error || 'Failed');
@@ -361,13 +380,17 @@ const PropertyModal = ({ initial, market, onSave, onClose, deals }: PropertyModa
     if (!form.address?.trim()) return;
     onSave({
       id: form.id || Date.now().toString(),
-      market,
+      market: form.market || market,
       address: form.address || '',
       units: Number(form.units) || 0,
+      transaction_type: form.transaction_type || 'Acquisition',
       owner_name: form.owner_name || '',
-      status: (form.status as PropertyStatus) || 'not_contacted',
+      operator_name: form.operator_name || '',
+      contact_name: form.contact_name || '',
+      contact_phone: form.contact_phone || '',
+      contact_email: form.contact_email || '',
+      status: (form.status as PropertyStatus) || 'Identified',
       priority: form.priority || 'medium',
-      last_contact_date: form.last_contact_date || '',
       notes: form.notes || '',
       deal_id: form.deal_id ?? null,
       lat: form.lat,
@@ -375,6 +398,8 @@ const PropertyModal = ({ initial, market, onSave, onClose, deals }: PropertyModa
       property_legislation: form.property_legislation,
     });
   };
+
+  const inputCls = 'w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -384,87 +409,129 @@ const PropertyModal = ({ initial, market, onSave, onClose, deals }: PropertyModa
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={18} /></button>
         </div>
         <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+          {/* Address */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Address *</label>
             <input
               type="text" value={form.address || ''}
               onChange={e => f('address', e.target.value)}
               placeholder="123 Main St, Austin, TX 78701"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+              className={inputCls}
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Units</label>
-              <input
-                type="number" value={form.units || ''}
-                onChange={e => f('units', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-              <select
-                value={form.status || 'not_contacted'}
-                onChange={e => f('status', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
-              >
-                {PROP_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
-            </div>
+          {/* Units */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Units</label>
+            <input
+              type="number" value={form.units || ''}
+              onChange={e => f('units', e.target.value)}
+              className={inputCls}
+            />
           </div>
+          {/* Market */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Market</label>
+            <input
+              type="text" value={form.market || ''}
+              onChange={e => f('market', e.target.value)}
+              placeholder="e.g. Austin, TX"
+              className={inputCls}
+            />
+          </div>
+          {/* Transaction Type */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Transaction Type</label>
+            <select
+              value={form.transaction_type || 'Acquisition'}
+              onChange={e => f('transaction_type', e.target.value)}
+              className={inputCls}
+            >
+              {TRANSACTION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          {/* Owner Name */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Owner Name</label>
             <input
               type="text" value={form.owner_name || ''}
               onChange={e => f('owner_name', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+              className={inputCls}
             />
           </div>
+          {/* Operator Name */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Operator Name</label>
+            <input
+              type="text" value={form.operator_name || ''}
+              onChange={e => f('operator_name', e.target.value)}
+              className={inputCls}
+            />
+          </div>
+          {/* Contact group */}
+          <div className="space-y-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Contact</p>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Contact Name</label>
+              <input
+                type="text" value={form.contact_name || ''}
+                onChange={e => f('contact_name', e.target.value)}
+                className={inputCls}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Contact Phone</label>
+                <input
+                  type="tel" value={form.contact_phone || ''}
+                  onChange={e => f('contact_phone', e.target.value)}
+                  placeholder="(512) 555-0100"
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Contact Email</label>
+                <input
+                  type="email" value={form.contact_email || ''}
+                  onChange={e => f('contact_email', e.target.value)}
+                  placeholder="name@firm.com"
+                  className={inputCls}
+                />
+              </div>
+            </div>
+          </div>
+          {/* Status + Priority */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Last Contact Date</label>
-              <input
-                type="date" value={form.last_contact_date || ''}
-                onChange={e => f('last_contact_date', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
-              />
+              <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+              <select
+                value={form.status || 'Identified'}
+                onChange={e => f('status', e.target.value)}
+                className={inputCls}
+              >
+                {PROP_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Priority</label>
               <select
                 value={form.priority || 'medium'}
                 onChange={e => f('priority', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+                className={inputCls}
               >
                 {PRIORITY_OPTIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
               </select>
             </div>
           </div>
+          {/* Notes */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
             <textarea
               rows={3} value={form.notes || ''}
               onChange={e => f('notes', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 resize-none"
+              className={`${inputCls} resize-none`}
             />
           </div>
-          {deals && deals.length > 0 && (
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Link to Deal</label>
-              <select
-                value={form.deal_id ?? ''}
-                onChange={e => f('deal_id', e.target.value ? Number(e.target.value) : null)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
-              >
-                <option value="">— None —</option>
-                {deals.map(d => (
-                  <option key={d.id} value={d.id}>{d.deal_name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          {/* ── Local Regulations ─────────────────────────────────────── */}
+          {/* Local Regulations */}
           <div className="border-t border-gray-100 pt-4">
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-medium text-gray-600">Local Regulations</label>
@@ -752,7 +819,7 @@ const ImportModal = ({ tab, market, onImport, onClose }: ImportModalProps) => {
   const typeLabel = tab === 'properties' ? 'Properties' : tab === 'brokers' ? 'Brokers' : 'Operators';
 
   const previewCols: Record<Tab, string[]> = {
-    properties: ['address', 'units', 'owner_name', 'status', 'last_contact_date'],
+    properties: ['address', 'units', 'market', 'transaction_type', 'owner_name', 'status'],
     brokers: ['name', 'firm', 'status', 'last_contact_date', 'last_deal_sent'],
     operators: ['name', 'firm', 'status', 'properties_managed', 'last_contact_date'],
   };
@@ -786,11 +853,7 @@ const ImportModal = ({ tab, market, onImport, onClose }: ImportModalProps) => {
   const confirmImport = () => {
     if (!preview) return;
     const ts = Date.now();
-    const items = preview.map((row, i) => ({
-      ...row,
-      id: `${ts}_${i}`,
-      market,
-    }));
+    const items = preview.map((row, i) => ({ ...row, id: `${ts}_${i}`, market }));
     onImport(items);
   };
 
@@ -801,7 +864,6 @@ const ImportModal = ({ tab, market, onImport, onClose }: ImportModalProps) => {
           <h2 className="text-base font-semibold text-gray-800">Import {typeLabel} from Excel / CSV</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={18} /></button>
         </div>
-
         <div className="p-6 flex-1 overflow-y-auto space-y-5">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-2">Select file (.xlsx or .csv)</label>
@@ -819,14 +881,12 @@ const ImportModal = ({ tab, market, onImport, onClose }: ImportModalProps) => {
               Column names can vary — Claude will intelligently map them to the {typeLabel.toLowerCase()} data model.
             </p>
           </div>
-
           {error && (
             <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
               <AlertCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
               <span className="text-sm text-red-700">{error}</span>
             </div>
           )}
-
           {preview && (
             <div>
               <div className="flex items-center gap-2 mb-3">
@@ -848,9 +908,7 @@ const ImportModal = ({ tab, market, onImport, onClose }: ImportModalProps) => {
                     {preview.slice(0, 12).map((row, i) => (
                       <tr key={i} className="hover:bg-gray-50">
                         {previewCols[tab].map(col => (
-                          <td key={col} className="px-3 py-2 text-gray-700 max-w-[180px] truncate">
-                            {row[col] || '—'}
-                          </td>
+                          <td key={col} className="px-3 py-2 text-gray-700 max-w-[180px] truncate">{row[col] || '—'}</td>
                         ))}
                       </tr>
                     ))}
@@ -863,7 +921,6 @@ const ImportModal = ({ tab, market, onImport, onClose }: ImportModalProps) => {
             </div>
           )}
         </div>
-
         <div className="flex gap-3 px-6 py-4 border-t border-gray-200 flex-shrink-0">
           {!preview ? (
             <button
@@ -872,17 +929,11 @@ const ImportModal = ({ tab, market, onImport, onClose }: ImportModalProps) => {
               className="flex-1 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
             >
               {loading ? (
-                <>
-                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Parsing with Claude…
-                </>
+                <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Parsing with Claude…</>
               ) : 'Parse File'}
             </button>
           ) : (
-            <button
-              onClick={confirmImport}
-              className="flex-1 py-2 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-            >
+            <button onClick={confirmImport} className="flex-1 py-2 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
               Import {preview.length} {typeLabel}
             </button>
           )}
@@ -919,7 +970,16 @@ const ImportDealModal = ({ market, markets, onSave, onClose }: ImportDealModalPr
     setError(null);
     try {
       const result = await sourcingApi.parseDeal(text, file);
-      setFields(result);
+      setFields({
+        property_address:   result.property_address   || '',
+        unit_count:         result.unit_count         || '',
+        asking_price:       result.asking_price       || '',
+        seller_broker_name: result.seller_broker_name || '',
+        market_city:        result.market_city        || '',
+        contact_name:       result.contact_name       || '',
+        contact_phone:      result.contact_phone      || '',
+        contact_email:      result.contact_email      || '',
+      });
     } catch (e: any) {
       setError(e.message || 'Failed to parse');
     } finally {
@@ -934,21 +994,24 @@ const ImportDealModal = ({ market, markets, onSave, onClose }: ImportDealModalPr
     const prop: SourcingProperty = {
       id: Date.now().toString(),
       market: targetMarket,
-      address: fields.property_address,
-      units: parseInt(fields.unit_count) || 0,
-      owner_name: fields.seller_broker_name,
-      status: 'not_contacted',
+      address:        fields.property_address,
+      units:          parseInt(fields.unit_count) || 0,
+      transaction_type: 'Acquisition',
+      owner_name:     fields.seller_broker_name,
+      operator_name:  '',
+      contact_name:   fields.contact_name,
+      contact_phone:  fields.contact_phone,
+      contact_email:  fields.contact_email,
+      status:   'Identified',
       priority: 'medium',
-      last_contact_date: '',
-      notes: noteParts.join(' | '),
-      deal_id: null,
+      notes:    noteParts.join(' | '),
+      deal_id:  null,
     };
     onSave(prop);
   };
 
   const inputCls = 'w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400';
 
-  // Review form
   if (fields) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -982,7 +1045,7 @@ const ImportDealModal = ({ market, markets, onSave, onClose }: ImportDealModalPr
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Seller / Broker Name</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Owner / Broker Name</label>
               <input type="text" value={fields.seller_broker_name}
                 onChange={e => setFields(f => f ? { ...f, seller_broker_name: e.target.value } : f)}
                 className={inputCls} placeholder="Not found" />
@@ -992,6 +1055,29 @@ const ImportDealModal = ({ market, markets, onSave, onClose }: ImportDealModalPr
               <input type="text" value={fields.market_city}
                 onChange={e => setFields(f => f ? { ...f, market_city: e.target.value } : f)}
                 className={inputCls} placeholder="Not found" />
+            </div>
+            <div className="space-y-3 pt-1">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Contact</p>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Contact Name</label>
+                <input type="text" value={fields.contact_name}
+                  onChange={e => setFields(f => f ? { ...f, contact_name: e.target.value } : f)}
+                  className={inputCls} placeholder="Not found" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Contact Phone</label>
+                  <input type="tel" value={fields.contact_phone}
+                    onChange={e => setFields(f => f ? { ...f, contact_phone: e.target.value } : f)}
+                    className={inputCls} placeholder="Not found" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Contact Email</label>
+                  <input type="email" value={fields.contact_email}
+                    onChange={e => setFields(f => f ? { ...f, contact_email: e.target.value } : f)}
+                    className={inputCls} placeholder="Not found" />
+                </div>
+              </div>
             </div>
             {markets.length > 0 && (
               <div>
@@ -1003,12 +1089,10 @@ const ImportDealModal = ({ market, markets, onSave, onClose }: ImportDealModalPr
             )}
           </div>
           <div className="flex gap-3 px-6 py-4 border-t border-gray-200">
-            <button onClick={handleSave}
-              className="flex-1 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+            <button onClick={handleSave} className="flex-1 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
               Save Deal
             </button>
-            <button onClick={() => setFields(null)}
-              className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
+            <button onClick={() => setFields(null)} className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
               Back
             </button>
           </div>
@@ -1017,7 +1101,6 @@ const ImportDealModal = ({ market, markets, onSave, onClose }: ImportDealModalPr
     );
   }
 
-  // Input form
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
@@ -1063,8 +1146,7 @@ const ImportDealModal = ({ market, markets, onSave, onClose }: ImportDealModalPr
               ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Parsing…</>
               : 'Parse'}
           </button>
-          <button onClick={onClose}
-            className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
+          <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
             Cancel
           </button>
         </div>
@@ -1094,17 +1176,12 @@ const BrokersTable = ({ brokers, onEdit, onDelete }: BrokersTableProps) => {
   });
 
   const SortIcon = ({ col }: { col: keyof SourcingBroker }) =>
-    sort.col !== col
-      ? <ChevronDown size={12} className="text-gray-300" />
-      : sort.dir === 'asc'
-        ? <ChevronUp size={12} className="text-blue-500" />
-        : <ChevronDown size={12} className="text-blue-500" />;
+    sort.col !== col ? <ChevronDown size={12} className="text-gray-300" />
+      : sort.dir === 'asc' ? <ChevronUp size={12} className="text-blue-500" />
+      : <ChevronDown size={12} className="text-blue-500" />;
 
   const Th = ({ col, label }: { col: keyof SourcingBroker; label: string }) => (
-    <th
-      onClick={() => toggle(col)}
-      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700 select-none whitespace-nowrap"
-    >
+    <th onClick={() => toggle(col)} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700 select-none whitespace-nowrap">
       <div className="flex items-center gap-1">{label} <SortIcon col={col} /></div>
     </th>
   );
@@ -1137,11 +1214,7 @@ const BrokersTable = ({ brokers, onEdit, onDelete }: BrokersTableProps) => {
             {sorted.map(b => {
               const si = brokerStatus(b.status);
               return (
-                <tr
-                  key={b.id}
-                  onClick={() => onEdit(b)}
-                  className="cursor-pointer hover:bg-blue-50 transition-colors"
-                >
+                <tr key={b.id} onClick={() => onEdit(b)} className="cursor-pointer hover:bg-blue-50 transition-colors">
                   <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{b.name}</td>
                   <td className="px-4 py-3 text-gray-600">{b.firm || '—'}</td>
                   <td className="px-4 py-3">
@@ -1151,10 +1224,7 @@ const BrokersTable = ({ brokers, onEdit, onDelete }: BrokersTableProps) => {
                   <td className="px-4 py-3 text-gray-600">{b.last_deal_sent || '—'}</td>
                   <td className="px-4 py-3 text-gray-400 text-xs max-w-[200px] truncate">{b.notes || '—'}</td>
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                    <button
-                      onClick={() => onDelete(b.id)}
-                      className="text-gray-300 hover:text-red-400 transition-colors"
-                    >
+                    <button onClick={() => onDelete(b.id)} className="text-gray-300 hover:text-red-400 transition-colors">
                       <X size={14} />
                     </button>
                   </td>
@@ -1189,17 +1259,12 @@ const OperatorsTable = ({ operators, onEdit, onDelete }: OperatorsTableProps) =>
   });
 
   const SortIcon = ({ col }: { col: keyof SourcingOperator }) =>
-    sort.col !== col
-      ? <ChevronDown size={12} className="text-gray-300" />
-      : sort.dir === 'asc'
-        ? <ChevronUp size={12} className="text-blue-500" />
-        : <ChevronDown size={12} className="text-blue-500" />;
+    sort.col !== col ? <ChevronDown size={12} className="text-gray-300" />
+      : sort.dir === 'asc' ? <ChevronUp size={12} className="text-blue-500" />
+      : <ChevronDown size={12} className="text-blue-500" />;
 
   const Th = ({ col, label }: { col: keyof SourcingOperator; label: string }) => (
-    <th
-      onClick={() => toggle(col)}
-      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700 select-none whitespace-nowrap"
-    >
+    <th onClick={() => toggle(col)} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700 select-none whitespace-nowrap">
       <div className="flex items-center gap-1">{label} <SortIcon col={col} /></div>
     </th>
   );
@@ -1232,11 +1297,7 @@ const OperatorsTable = ({ operators, onEdit, onDelete }: OperatorsTableProps) =>
             {sorted.map(op => {
               const si = operatorStatus(op.status);
               return (
-                <tr
-                  key={op.id}
-                  onClick={() => onEdit(op)}
-                  className="cursor-pointer hover:bg-blue-50 transition-colors"
-                >
+                <tr key={op.id} onClick={() => onEdit(op)} className="cursor-pointer hover:bg-blue-50 transition-colors">
                   <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{op.name}</td>
                   <td className="px-4 py-3 text-gray-600">{op.firm || '—'}</td>
                   <td className="px-4 py-3">
@@ -1248,10 +1309,7 @@ const OperatorsTable = ({ operators, onEdit, onDelete }: OperatorsTableProps) =>
                   </td>
                   <td className="px-4 py-3 text-gray-400 text-xs max-w-[200px] truncate">{op.notes || '—'}</td>
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                    <button
-                      onClick={() => onDelete(op.id)}
-                      className="text-gray-300 hover:text-red-400 transition-colors"
-                    >
+                    <button onClick={() => onDelete(op.id)} className="text-gray-300 hover:text-red-400 transition-colors">
                       <X size={14} />
                     </button>
                   </td>
@@ -1269,6 +1327,7 @@ const OperatorsTable = ({ operators, onEdit, onDelete }: OperatorsTableProps) =>
 
 interface PropertiesTableProps {
   properties: SourcingProperty[];
+  onRowClick: (p: SourcingProperty) => void;
   onEdit: (p: SourcingProperty) => void;
   onDelete: (id: string) => void;
   highlightPropId?: string | null;
@@ -1276,7 +1335,9 @@ interface PropertiesTableProps {
   startingUwId?: string | null;
 }
 
-const PropertiesTable = ({ properties, onEdit, onDelete, highlightPropId, onStartUnderwriting, startingUwId }: PropertiesTableProps) => {
+const PropertiesTable = ({
+  properties, onRowClick, onEdit, onDelete, highlightPropId, onStartUnderwriting, startingUwId,
+}: PropertiesTableProps) => {
   const [sort, setSort] = useState<{ col: keyof SourcingProperty; dir: SortDir }>({ col: 'address', dir: 'asc' });
   const highlightedRowRef = useRef<HTMLTableRowElement | null>(null);
 
@@ -1296,17 +1357,12 @@ const PropertiesTable = ({ properties, onEdit, onDelete, highlightPropId, onStar
   });
 
   const SortIcon = ({ col }: { col: keyof SourcingProperty }) =>
-    sort.col !== col
-      ? <ChevronDown size={12} className="text-gray-300" />
-      : sort.dir === 'asc'
-        ? <ChevronUp size={12} className="text-blue-500" />
-        : <ChevronDown size={12} className="text-blue-500" />;
+    sort.col !== col ? <ChevronDown size={12} className="text-gray-300" />
+      : sort.dir === 'asc' ? <ChevronUp size={12} className="text-blue-500" />
+      : <ChevronDown size={12} className="text-blue-500" />;
 
   const Th = ({ col, label }: { col: keyof SourcingProperty; label: string }) => (
-    <th
-      onClick={() => toggle(col)}
-      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700 select-none whitespace-nowrap"
-    >
+    <th onClick={() => toggle(col)} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700 select-none whitespace-nowrap">
       <div className="flex items-center gap-1">{label} <SortIcon col={col} /></div>
     </th>
   );
@@ -1324,11 +1380,12 @@ const PropertiesTable = ({ properties, onEdit, onDelete, highlightPropId, onStar
             <tr>
               <Th col="address" label="Address" />
               <Th col="units" label="Units" />
-              <Th col="owner_name" label="Owner" />
+              <Th col="market" label="Market" />
+              <Th col="transaction_type" label="Type" />
               <Th col="status" label="Status" />
               <Th col="priority" label="Priority" />
-              <Th col="last_contact_date" label="Last Contact" />
-              <th className="px-4 py-3 w-10" />
+              <Th col="updated_at" label="Last Activity" />
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -1336,16 +1393,18 @@ const PropertiesTable = ({ properties, onEdit, onDelete, highlightPropId, onStar
               const si = propStatus(p.status);
               const pri = dealPriority(p.priority);
               const isHighlighted = p.id === highlightPropId;
+              const canUw = p.status === 'In Conversation' || p.status === 'LOI';
               return (
                 <tr
                   key={p.id}
                   ref={isHighlighted ? highlightedRowRef : null}
-                  onClick={() => onEdit(p)}
+                  onClick={() => onRowClick(p)}
                   className={`cursor-pointer hover:bg-blue-50 transition-colors ${isHighlighted ? 'ring-2 ring-inset ring-blue-400 bg-blue-50' : ''}`}
                 >
-                  <td className="px-4 py-3 font-medium text-gray-800">{p.address}</td>
+                  <td className="px-4 py-3 font-medium text-gray-800 max-w-[220px] truncate">{p.address}</td>
                   <td className="px-4 py-3 text-gray-600">{p.units || '—'}</td>
-                  <td className="px-4 py-3 text-gray-600">{p.owner_name || '—'}</td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{p.market || '—'}</td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{p.transaction_type || 'Acquisition'}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${si.cls}`}>{si.label}</span>
                   </td>
@@ -1355,29 +1414,28 @@ const PropertiesTable = ({ properties, onEdit, onDelete, highlightPropId, onStar
                       {pri.label}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{p.last_contact_date || '—'}</td>
-                  <td className="px-4 py-3 flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                    {p.deal_id && (
-                      <Link
-                        to={`/deal-execution/${p.deal_id}`}
-                        className="text-xs text-blue-500 hover:text-blue-700 font-medium whitespace-nowrap"
+                  <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{timeAgo(p.updated_at)}</td>
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => onEdit(p)}
+                        className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 font-medium px-2 py-1 rounded hover:bg-gray-100 transition-colors"
                       >
-                        View Deal →
-                      </Link>
-                    )}
-                    <button
-                      onClick={() => onStartUnderwriting(p)}
-                      disabled={startingUwId === p.id}
-                      className="text-xs text-indigo-500 hover:text-indigo-700 font-medium whitespace-nowrap transition-colors disabled:opacity-50"
-                    >
-                      {startingUwId === p.id ? '…' : p.deal_id ? 'Underwriting →' : 'Start Underwriting'}
-                    </button>
-                    <button
-                      onClick={() => onDelete(p.id)}
-                      className="text-gray-300 hover:text-red-400 transition-colors"
-                    >
-                      <X size={14} />
-                    </button>
+                        <Pencil size={11} /> Edit
+                      </button>
+                      {canUw && (
+                        <button
+                          onClick={() => onStartUnderwriting(p)}
+                          disabled={startingUwId === p.id}
+                          className="text-xs text-indigo-500 hover:text-indigo-700 font-medium whitespace-nowrap transition-colors disabled:opacity-50"
+                        >
+                          {startingUwId === p.id ? '…' : p.deal_id ? 'Underwriting →' : 'Start UW'}
+                        </button>
+                      )}
+                      <button onClick={() => onDelete(p.id)} className="text-gray-300 hover:text-red-400 transition-colors">
+                        <X size={14} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -1389,9 +1447,133 @@ const PropertiesTable = ({ properties, onEdit, onDelete, highlightPropId, onStar
   );
 };
 
+// ── PropertyDetailPanel ───────────────────────────────────────────────────────
+
+const DetailField = ({ label, value }: { label: string; value?: string | number | null }) => {
+  if (!value && value !== 0) return null;
+  return (
+    <div>
+      <p className="text-xs text-gray-400 mb-0.5">{label}</p>
+      <p className="text-sm text-gray-800">{String(value)}</p>
+    </div>
+  );
+};
+
+interface PropertyDetailPanelProps {
+  prop: SourcingProperty;
+  onClose: () => void;
+  onEdit: () => void;
+  onStartUnderwriting: () => void;
+  startingUw: boolean;
+}
+
+const PropertyDetailPanel = ({ prop, onClose, onEdit, onStartUnderwriting, startingUw }: PropertyDetailPanelProps) => {
+  const si = propStatus(prop.status);
+  const pri = dealPriority(prop.priority);
+  const canUw = prop.status === 'In Conversation' || prop.status === 'LOI';
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
+      <div className="fixed right-0 top-0 bottom-0 z-50 w-96 bg-white shadow-2xl border-l border-gray-200 flex flex-col">
+        {/* Header */}
+        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200 gap-3">
+          <div className="flex-1 min-w-0">
+            <h2 className="text-sm font-semibold text-gray-800 leading-snug line-clamp-2">
+              {prop.address || 'Property Detail'}
+            </h2>
+            <p className="text-xs text-gray-400 mt-0.5">{prop.market || '—'}</p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={onEdit}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              <Pencil size={11} /> Edit
+            </button>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          {/* Status + Priority */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${si.cls}`}>{si.label}</span>
+            <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border w-fit ${pri.badge}`}>
+              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${pri.dot}`} />
+              {pri.label}
+            </span>
+          </div>
+
+          {/* Core fields */}
+          <div className="grid grid-cols-2 gap-4">
+            <DetailField label="Units" value={prop.units || null} />
+            <DetailField label="Type" value={prop.transaction_type || 'Acquisition'} />
+          </div>
+          <DetailField label="Owner Name" value={prop.owner_name} />
+          <DetailField label="Operator Name" value={prop.operator_name} />
+
+          {/* Contact */}
+          {(prop.contact_name || prop.contact_phone || prop.contact_email) && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Contact</p>
+              <DetailField label="Name" value={prop.contact_name} />
+              <DetailField label="Phone" value={prop.contact_phone} />
+              <DetailField label="Email" value={prop.contact_email} />
+            </div>
+          )}
+
+          {/* Notes */}
+          {prop.notes && (
+            <div>
+              <p className="text-xs text-gray-400 mb-1">Notes</p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{prop.notes}</p>
+            </div>
+          )}
+
+          <p className="text-xs text-gray-400">Last updated {timeAgo(prop.updated_at)}</p>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-200 space-y-2">
+          {prop.deal_id ? (
+            <Link
+              to={`/underwriting?dealId=${prop.deal_id}`}
+              onClick={onClose}
+              className="block w-full py-2 text-sm font-medium text-center bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
+            >
+              View Underwriting →
+            </Link>
+          ) : (
+            <>
+              <button
+                onClick={onStartUnderwriting}
+                disabled={!canUw || startingUw}
+                className="w-full py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              >
+                {startingUw
+                  ? <><Loader2 size={14} className="animate-spin" /> Starting…</>
+                  : 'Start Underwriting'
+                }
+              </button>
+              {!canUw && (
+                <p className="text-xs text-center text-gray-400">
+                  Status must be "In Conversation" or "LOI"
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
 // ── Main Sourcing component ───────────────────────────────────────────────────
 
-// Shared fuzzy address matcher (mirrors the one in Underwriting)
 function addressMatch(a: string, b: string): boolean {
   const norm = (s: string) =>
     s.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
@@ -1416,7 +1598,6 @@ const Sourcing = () => {
   const [activeTab, setActiveTab] = useState<Tab>('properties');
   const [data, setData] = useState<SourcingData>({ properties: [], brokers: [], operators: [] });
   const [loading, setLoading] = useState(true);
-  const [deals, setDeals] = useState<{ id: number; deal_name: string }[]>([]);
 
   // Modal state
   const [showAddProp, setShowAddProp] = useState(false);
@@ -1429,28 +1610,20 @@ const Sourcing = () => {
   const [showImportDeal, setShowImportDeal] = useState(false);
   const [startingUwId, setStartingUwId] = useState<string | null>(null);
 
+  // Detail panel
+  const [selectedProp, setSelectedProp] = useState<SourcingProperty | null>(null);
+
   // Market sidebar state
   const [showAddMarket, setShowAddMarket] = useState(false);
   const [newMarketInput, setNewMarketInput] = useState('');
 
-  // Derived: which property matches the URL ?address= param
   const highlightPropId = useMemo(() => {
     if (!addressParam) return null;
     const match = data.properties.find(p => addressMatch(addressParam, p.address));
     return match?.id ?? null;
   }, [addressParam, data.properties]);
 
-  // ── Fetch deals for "Link to Deal" dropdown ────────────────────────────────
-  useEffect(() => {
-    fetch('/api/v1/deals')
-      .then(r => r.ok ? r.json() : null)
-      .then((d: { deals?: { id: number; deal_name: string }[] } | null) => {
-        if (d?.deals) setDeals(d.deals);
-      })
-      .catch(() => {});
-  }, []);
-
-  // ── On mount: load from API, migrate localStorage if DB is empty ───────────
+  // ── On mount ───────────────────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
       try {
@@ -1465,7 +1638,6 @@ const Sourcing = () => {
           dbBrokers.length === 0 && dbOps.length === 0;
 
         if (dbIsEmpty) {
-          // One-time migration from localStorage
           const lsMarketsRaw = localStorage.getItem(LS_MARKETS);
           const lsDataRaw = localStorage.getItem(LS_DATA);
 
@@ -1491,24 +1663,13 @@ const Sourcing = () => {
               const props: SourcingProperty[] = lsData.properties || [];
               const brokers: SourcingBroker[] = lsData.brokers || [];
               const ops: SourcingOperator[] = lsData.operators || [];
-
-              if (props.length > 0) {
-                await sourcingApi.bulkCreateProperties(props);
-                migratedProps = props;
-              }
-              if (brokers.length > 0) {
-                await sourcingApi.bulkCreateBrokers(brokers);
-                migratedBrokers = brokers;
-              }
-              if (ops.length > 0) {
-                await sourcingApi.bulkCreateOperators(ops);
-                migratedOps = ops;
-              }
+              if (props.length > 0)   { await sourcingApi.bulkCreateProperties(props);  migratedProps   = props; }
+              if (brokers.length > 0) { await sourcingApi.bulkCreateBrokers(brokers);   migratedBrokers = brokers; }
+              if (ops.length > 0)     { await sourcingApi.bulkCreateOperators(ops);     migratedOps     = ops; }
             } catch { /* ignore */ }
             localStorage.removeItem(LS_DATA);
           }
 
-          // If still nothing (fresh install), seed default markets
           if (migratedMarkets.length === 0) {
             await Promise.all(DEFAULT_MARKETS.map(m => sourcingApi.createMarket(m)));
             migratedMarkets = DEFAULT_MARKETS;
@@ -1518,21 +1679,19 @@ const Sourcing = () => {
           setData({ properties: migratedProps, brokers: migratedBrokers, operators: migratedOps });
           setSelectedMarket(migratedMarkets[0] ?? null);
         } else {
-          // Also clear any stale localStorage keys if DB already has data
           localStorage.removeItem(LS_MARKETS);
           localStorage.removeItem(LS_DATA);
-
           setMarkets(dbMarkets);
           setData({ properties: dbProps, brokers: dbBrokers, operators: dbOps });
           setSelectedMarket(dbMarkets[0] ?? null);
         }
-      } catch { /* network error — still show empty state */ }
+      } catch { /* network error */ }
       setLoading(false);
     };
     init();
   }, []);
 
-  // ── Geocode cache update (from SourcingMap) ────────────────────────────────
+  // ── Geocode ────────────────────────────────────────────────────────────────
   const handleGeocode = useCallback((id: string, lat: number, lng: number) => {
     setData(prev => ({
       ...prev,
@@ -1546,6 +1705,7 @@ const Sourcing = () => {
     const exists = data.properties.some(x => x.id === p.id);
     if (exists) {
       setData(prev => ({ ...prev, properties: prev.properties.map(x => x.id === p.id ? p : x) }));
+      setSelectedProp(prev => prev?.id === p.id ? p : prev);
       sourcingApi.updateProperty(p.id, p).catch(() => {});
     } else {
       setData(prev => ({ ...prev, properties: [...prev.properties, p] }));
@@ -1557,6 +1717,7 @@ const Sourcing = () => {
 
   const deleteProp = (id: string) => {
     setData(prev => ({ ...prev, properties: prev.properties.filter(p => p.id !== id) }));
+    setSelectedProp(prev => prev?.id === id ? null : prev);
     sourcingApi.deleteProperty(id).catch(() => {});
   };
 
@@ -1600,7 +1761,6 @@ const Sourcing = () => {
 
   // ── Start Underwriting ─────────────────────────────────────────────────────
   const startUnderwriting = async (p: SourcingProperty) => {
-    // If already linked, open the existing underwriting record
     if (p.deal_id) {
       navigate(`/underwriting?dealId=${p.deal_id}`);
       return;
@@ -1608,7 +1768,6 @@ const Sourcing = () => {
 
     setStartingUwId(p.id);
     try {
-      // Parse asking price from notes (format set by Import Deal: "Asking: $5,200,000")
       let purchasePrice: number | undefined;
       const askingMatch = (p.notes || '').match(/Asking:\s*\$?([\d,]+)/i);
       if (askingMatch) {
@@ -1616,7 +1775,6 @@ const Sourcing = () => {
         if (parsed > 0) purchasePrice = parsed;
       }
 
-      // Create a new deal pre-populated from the sourcing property
       const deal = await dealApi.createDeal({
         dealName: p.address || 'Untitled Deal',
         location: p.market || '',
@@ -1628,16 +1786,16 @@ const Sourcing = () => {
 
       if (!deal.id) throw new Error('No deal ID returned');
 
-      // Link the sourcing property to the new deal
       await sourcingApi.updateProperty(p.id, { deal_id: deal.id });
       setData(prev => ({
         ...prev,
         properties: prev.properties.map(x => x.id === p.id ? { ...x, deal_id: deal.id ?? null } : x),
       }));
+      setSelectedProp(prev => prev?.id === p.id ? { ...prev, deal_id: deal.id ?? null } : prev);
 
       navigate(`/underwriting?dealId=${deal.id}`);
     } catch {
-      // Silently swallow — button just re-enables
+      // Silently swallow — button re-enables
     } finally {
       setStartingUwId(null);
     }
@@ -1685,11 +1843,10 @@ const Sourcing = () => {
   const filterByMarket = <T extends { market: string }>(items: T[]) =>
     selectedMarket ? items.filter(i => i.market === selectedMarket.name) : items;
 
-  const filteredProps = filterByMarket(data.properties);
-  const filteredBrokers = filterByMarket(data.brokers);
-  const filteredOps = filterByMarket(data.operators);
-
-  const currentMarket = selectedMarket?.name ?? 'all markets';
+  const filteredProps    = filterByMarket(data.properties);
+  const filteredBrokers  = filterByMarket(data.brokers);
+  const filteredOps      = filterByMarket(data.operators);
+  const currentMarket    = selectedMarket?.name ?? 'all markets';
 
   const tabConfig: Record<Tab, { label: string; icon: React.ReactNode; count: number }> = {
     properties: { label: 'Properties', icon: <Building2 size={15} />, count: filteredProps.length },
@@ -1706,7 +1863,6 @@ const Sourcing = () => {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  // Level 1 — Market Overview
   if (view === 'list') {
     return (
       <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
@@ -1718,10 +1874,7 @@ const Sourcing = () => {
         {showAddMarket ? (
           <div className="mb-6 bg-white rounded-xl border border-gray-200 p-4 shadow-sm max-w-sm">
             <input
-              autoFocus
-              type="text"
-              placeholder="City, ST"
-              value={newMarketInput}
+              autoFocus type="text" placeholder="City, ST" value={newMarketInput}
               onChange={e => setNewMarketInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') addMarket(); if (e.key === 'Escape') setShowAddMarket(false); }}
               className="w-full text-sm px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 mb-3"
@@ -1789,7 +1942,6 @@ const Sourcing = () => {
     );
   }
 
-  // Level 2 — Market Detail
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {/* Left sidebar */}
@@ -1818,162 +1970,160 @@ const Sourcing = () => {
       </div>
 
       <div className="flex-1 min-w-0">
-      {/* ── Modals ── */}
-      {(showAddProp || editProp) && (
-        <PropertyModal
-          initial={editProp}
-          market={selectedMarket?.name ?? ''}
-          onSave={saveProp}
-          onClose={() => { setShowAddProp(false); setEditProp(null); }}
-          deals={deals}
-        />
-      )}
-      {(showAddBroker || editBroker) && (
-        <BrokerModal
-          initial={editBroker}
-          market={selectedMarket?.name ?? ''}
-          onSave={saveBroker}
-          onClose={() => { setShowAddBroker(false); setEditBroker(null); }}
-        />
-      )}
-      {(showAddOperator || editOperator) && (
-        <OperatorModal
-          initial={editOperator}
-          market={selectedMarket?.name ?? ''}
-          onSave={saveOperator}
-          onClose={() => { setShowAddOperator(false); setEditOperator(null); }}
-        />
-      )}
-      {showImport && (
-        <ImportModal
-          tab={activeTab}
-          market={selectedMarket?.name ?? ''}
-          onImport={handleImport}
-          onClose={() => setShowImport(false)}
-        />
-      )}
-      {showImportDeal && (
-        <ImportDealModal
-          market={selectedMarket?.name ?? ''}
-          markets={markets}
-          onSave={(p) => { saveProp(p); setShowImportDeal(false); }}
-          onClose={() => setShowImportDeal(false)}
-        />
-      )}
+        {/* Detail panel */}
+        {selectedProp && (
+          <PropertyDetailPanel
+            prop={selectedProp}
+            onClose={() => setSelectedProp(null)}
+            onEdit={() => { setEditProp(selectedProp); setSelectedProp(null); }}
+            onStartUnderwriting={() => startUnderwriting(selectedProp)}
+            startingUw={startingUwId === selectedProp.id}
+          />
+        )}
 
-      {/* ── Main Content ── */}
-      <div className="p-4 md:p-6 lg:p-8 min-w-0">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">{selectedMarket?.name ?? 'Sourcing'}</h1>
-          <p className="text-sm text-gray-500 mt-1">Track properties, brokers, and operators</p>
-        </div>
+        {/* Modals */}
+        {(showAddProp || editProp) && (
+          <PropertyModal
+            initial={editProp}
+            market={selectedMarket?.name ?? ''}
+            onSave={saveProp}
+            onClose={() => { setShowAddProp(false); setEditProp(null); }}
+          />
+        )}
+        {(showAddBroker || editBroker) && (
+          <BrokerModal
+            initial={editBroker}
+            market={selectedMarket?.name ?? ''}
+            onSave={saveBroker}
+            onClose={() => { setShowAddBroker(false); setEditBroker(null); }}
+          />
+        )}
+        {(showAddOperator || editOperator) && (
+          <OperatorModal
+            initial={editOperator}
+            market={selectedMarket?.name ?? ''}
+            onSave={saveOperator}
+            onClose={() => { setShowAddOperator(false); setEditOperator(null); }}
+          />
+        )}
+        {showImport && (
+          <ImportModal
+            tab={activeTab}
+            market={selectedMarket?.name ?? ''}
+            onImport={handleImport}
+            onClose={() => setShowImport(false)}
+          />
+        )}
+        {showImportDeal && (
+          <ImportDealModal
+            market={selectedMarket?.name ?? ''}
+            markets={markets}
+            onSave={(p) => { saveProp(p); setShowImportDeal(false); }}
+            onClose={() => setShowImportDeal(false)}
+          />
+        )}
 
-        {/* Tabs + Action buttons */}
-        <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
-          <div className="flex bg-white border border-gray-200 rounded-xl p-1 gap-1 shadow-sm">
-            {(Object.keys(tabConfig) as Tab[]).map(tab => {
-              const cfg = tabConfig[tab];
-              return (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    activeTab === tab
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                  }`}
-                >
-                  {cfg.icon}
-                  {cfg.label}
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                    activeTab === tab ? 'bg-blue-500 text-blue-100' : 'bg-gray-100 text-gray-500'
-                  }`}>
-                    {cfg.count}
-                  </span>
-                </button>
-              );
-            })}
+        {/* Main Content */}
+        <div className="p-4 md:p-6 lg:p-8 min-w-0">
+          <div className="mb-6">
+            <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">{selectedMarket?.name ?? 'Sourcing'}</h1>
+            <p className="text-sm text-gray-500 mt-1">Track properties, brokers, and operators</p>
           </div>
-          <div className="flex items-center gap-2">
-            {activeTab === 'properties' && (
+
+          {/* Tabs + Actions */}
+          <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
+            <div className="flex bg-white border border-gray-200 rounded-xl p-1 gap-1 shadow-sm">
+              {(Object.keys(tabConfig) as Tab[]).map(tab => {
+                const cfg = tabConfig[tab];
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                      activeTab === tab ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                    }`}
+                  >
+                    {cfg.icon}
+                    {cfg.label}
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${activeTab === tab ? 'bg-blue-500 text-blue-100' : 'bg-gray-100 text-gray-500'}`}>
+                      {cfg.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              {activeTab === 'properties' && (
+                <button
+                  onClick={() => setShowImportDeal(true)}
+                  className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <FileText size={15} /> Import Deal
+                </button>
+              )}
               <button
-                onClick={() => setShowImportDeal(true)}
+                onClick={() => setShowImport(true)}
                 className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
               >
-                <FileText size={15} /> Import Deal
+                <Upload size={15} /> Import from Excel
               </button>
-            )}
-            <button
-              onClick={() => setShowImport(true)}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <Upload size={15} /> Import from Excel
-            </button>
-            <button
-              onClick={handleAdd}
-              className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-            >
-              <Plus size={15} /> {addLabel}
-            </button>
+              <button
+                onClick={handleAdd}
+                className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                <Plus size={15} /> {addLabel}
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Quick stats bar */}
-        <div className="flex items-center gap-6 mb-5 px-4 py-3 bg-white border border-gray-200 rounded-xl shadow-sm">
-          <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">{selectedMarket ? selectedMarket.name : 'All Markets'}</span>
-          <div className="flex items-center gap-1.5">
-            <Building2 size={14} className="text-blue-500" />
-            <span className="text-sm font-semibold text-gray-800">{filteredProps.length}</span>
-            <span className="text-xs text-gray-500">properties</span>
+          {/* Stats bar */}
+          <div className="flex items-center gap-6 mb-5 px-4 py-3 bg-white border border-gray-200 rounded-xl shadow-sm">
+            <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">{selectedMarket ? selectedMarket.name : 'All Markets'}</span>
+            <div className="flex items-center gap-1.5">
+              <Building2 size={14} className="text-blue-500" />
+              <span className="text-sm font-semibold text-gray-800">{filteredProps.length}</span>
+              <span className="text-xs text-gray-500">properties</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Users size={14} className="text-purple-500" />
+              <span className="text-sm font-semibold text-gray-800">{filteredBrokers.length}</span>
+              <span className="text-xs text-gray-500">brokers</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Briefcase size={14} className="text-green-500" />
+              <span className="text-sm font-semibold text-gray-800">{filteredOps.length}</span>
+              <span className="text-xs text-gray-500">operators</span>
+            </div>
+            <span className="text-xs text-gray-400 ml-auto">in {currentMarket}</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <Users size={14} className="text-purple-500" />
-            <span className="text-sm font-semibold text-gray-800">{filteredBrokers.length}</span>
-            <span className="text-xs text-gray-500">brokers</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Briefcase size={14} className="text-green-500" />
-            <span className="text-sm font-semibold text-gray-800">{filteredOps.length}</span>
-            <span className="text-xs text-gray-500">operators</span>
-          </div>
-          <span className="text-xs text-gray-400 ml-auto">in {currentMarket}</span>
-        </div>
 
-        {/* Tab content */}
-        {activeTab === 'properties' && (
-          <>
-            <SourcingMap
-              properties={filteredProps}
-              selectedMarket={selectedMarket}
-              onGeocode={handleGeocode}
-              focusPropId={highlightPropId}
-            />
-            <PropertiesTable
-              properties={filteredProps}
-              onEdit={p => setEditProp(p)}
-              onDelete={deleteProp}
-              highlightPropId={highlightPropId}
-              onStartUnderwriting={startUnderwriting}
-              startingUwId={startingUwId}
-            />
-          </>
-        )}
-        {activeTab === 'brokers' && (
-          <BrokersTable
-            brokers={filteredBrokers}
-            onEdit={b => setEditBroker(b)}
-            onDelete={deleteBroker}
-          />
-        )}
-        {activeTab === 'operators' && (
-          <OperatorsTable
-            operators={filteredOps}
-            onEdit={o => setEditOperator(o)}
-            onDelete={deleteOperator}
-          />
-        )}
-      </div>
+          {/* Tab content */}
+          {activeTab === 'properties' && (
+            <>
+              <SourcingMap
+                properties={filteredProps}
+                selectedMarket={selectedMarket}
+                onGeocode={handleGeocode}
+                focusPropId={highlightPropId}
+              />
+              <PropertiesTable
+                properties={filteredProps}
+                onRowClick={p => setSelectedProp(p)}
+                onEdit={p => setEditProp(p)}
+                onDelete={deleteProp}
+                highlightPropId={highlightPropId}
+                onStartUnderwriting={startUnderwriting}
+                startingUwId={startingUwId}
+              />
+            </>
+          )}
+          {activeTab === 'brokers' && (
+            <BrokersTable brokers={filteredBrokers} onEdit={b => setEditBroker(b)} onDelete={deleteBroker} />
+          )}
+          {activeTab === 'operators' && (
+            <OperatorsTable operators={filteredOps} onEdit={o => setEditOperator(o)} onDelete={deleteOperator} />
+          )}
+        </div>
       </div>
     </div>
   );

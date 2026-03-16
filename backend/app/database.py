@@ -1570,10 +1570,14 @@ class SourcingPropertyModel(db.Model):
     market = Column(String(255), nullable=False, index=True)
     address = Column(String(500), nullable=False, default='')
     units = Column(Integer, nullable=False, default=0)
+    transaction_type = Column(String(50), nullable=True, default='Acquisition')
     owner_name = Column(String(255), nullable=False, default='')
-    status = Column(String(50), nullable=False, default='not_contacted')
+    operator_name = Column(String(255), nullable=True, default='')
+    contact_name = Column(String(255), nullable=True, default='')
+    contact_phone = Column(String(50), nullable=True, default='')
+    contact_email = Column(String(255), nullable=True, default='')
+    status = Column(String(50), nullable=False, default='Identified')
     priority = Column(String(20), nullable=False, default='medium')
-    last_contact_date = Column(String(20), nullable=False, default='')
     notes = Column(Text, nullable=False, default='')
     deal_id = Column(Integer, nullable=True)
     lat = Column(Float, nullable=True)
@@ -1587,14 +1591,19 @@ class SourcingPropertyModel(db.Model):
             'market': self.market,
             'address': self.address,
             'units': self.units,
+            'transaction_type': self.transaction_type or 'Acquisition',
             'owner_name': self.owner_name,
+            'operator_name': self.operator_name or '',
+            'contact_name': self.contact_name or '',
+            'contact_phone': self.contact_phone or '',
+            'contact_email': self.contact_email or '',
             'status': self.status,
             'priority': self.priority,
-            'last_contact_date': self.last_contact_date,
             'notes': self.notes,
             'deal_id': self.deal_id,
             'lat': self.lat,
             'lng': self.lng,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'property_legislation': self.property_legislation,
         }
 

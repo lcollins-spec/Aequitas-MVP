@@ -80,9 +80,12 @@ def parse_import():
 
         schemas = {
             'properties': {
-                'fields': ['address', 'units', 'owner_name', 'status', 'last_contact_date', 'notes'],
-                'status_values': 'not_contacted | outreach_sent | in_conversation | passed | active_deal',
-                'notes': 'units should be a number; status must exactly match one of the allowed values',
+                'fields': ['address', 'units', 'market', 'transaction_type', 'owner_name', 'operator_name',
+                           'contact_name', 'contact_phone', 'contact_email', 'status', 'notes'],
+                'status_values': 'Identified | Contacted | In Conversation | LOI | Dead',
+                'notes': ('units should be a number; '
+                          'transaction_type must be Acquisition, Recap, or JV; '
+                          'status must exactly match one of the allowed values'),
             },
             'brokers': {
                 'fields': ['name', 'firm', 'status', 'last_contact_date', 'last_deal_sent', 'notes'],
@@ -220,10 +223,14 @@ def create_property():
         market=data.get('market', ''),
         address=data.get('address', ''),
         units=int(data.get('units') or 0),
+        transaction_type=data.get('transaction_type', 'Acquisition'),
         owner_name=data.get('owner_name', ''),
-        status=data.get('status', 'not_contacted'),
+        operator_name=data.get('operator_name', ''),
+        contact_name=data.get('contact_name', ''),
+        contact_phone=data.get('contact_phone', ''),
+        contact_email=data.get('contact_email', ''),
+        status=data.get('status', 'Identified'),
         priority=data.get('priority', 'medium'),
-        last_contact_date=data.get('last_contact_date', ''),
         notes=data.get('notes', ''),
         deal_id=data.get('deal_id'),
         lat=data.get('lat'),
@@ -247,10 +254,14 @@ def bulk_create_properties():
             market=data.get('market', ''),
             address=data.get('address', ''),
             units=int(data.get('units') or 0),
+            transaction_type=data.get('transaction_type', 'Acquisition'),
             owner_name=data.get('owner_name', ''),
-            status=data.get('status', 'not_contacted'),
+            operator_name=data.get('operator_name', ''),
+            contact_name=data.get('contact_name', ''),
+            contact_phone=data.get('contact_phone', ''),
+            contact_email=data.get('contact_email', ''),
+            status=data.get('status', 'Identified'),
             priority=data.get('priority', 'medium'),
-            last_contact_date=data.get('last_contact_date', ''),
             notes=data.get('notes', ''),
             deal_id=data.get('deal_id'),
             lat=data.get('lat'),
@@ -268,7 +279,8 @@ def update_property(prop_id):
     if not prop:
         return jsonify({'error': 'Not found'}), 404
     data = request.get_json() or {}
-    for field in ['market', 'address', 'owner_name', 'status', 'priority', 'last_contact_date', 'notes']:
+    for field in ['market', 'address', 'transaction_type', 'owner_name', 'operator_name',
+                  'contact_name', 'contact_phone', 'contact_email', 'status', 'priority', 'notes']:
         if field in data:
             setattr(prop, field, data[field])
     if 'units' in data:
@@ -512,7 +524,10 @@ def parse_deal():
             '- unit_count: number of units (as a string, e.g. "48")\n'
             '- asking_price: asking price (as a string, e.g. "$5,200,000")\n'
             '- seller_broker_name: name of the seller or listing broker\n'
-            '- market_city: city and state (e.g. "Austin, TX")\n\n'
+            '- market_city: city and state (e.g. "Austin, TX")\n'
+            '- contact_name: contact person name if present\n'
+            '- contact_phone: contact phone number if present\n'
+            '- contact_email: contact email address if present\n\n'
             f'Deal material:\n{combined[:8000]}'
         )
 
