@@ -1,117 +1,155 @@
-import { useState, useRef, useMemo } from 'react';
-import { Upload, FileText, Trash2, AlertTriangle, CheckCircle2, ChevronDown } from 'lucide-react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { Upload, FileText, Trash2, AlertTriangle, ExternalLink, Loader2, ChevronDown } from 'lucide-react';
 import {
   DOCUMENT_TYPES, EXTRACTABLE_TYPES,
-  type DealDocument, type DocumentType,
+  type DocumentType,
 } from '../types/dealExecution';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-const fmtSize = (bytes: number) => {
-  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
-  if (bytes >= 1_024) return `${(bytes / 1_024).toFixed(0)} KB`;
-  return `${bytes} B`;
-};
+// ─── Types ─────────────────────────────────────────────────────────────────────
+interface DriveDocument {
+  id: string;
+  dealId: number;
+  fileName: string;
+  documentType: DocumentType;
+  driveFileId: string;
+  driveUrl: string;
+  uploadedAt: string;
+}
 
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
-/** Guess document type from filename */
 const guessType = (name: string): DocumentType => {
   const l = name.toLowerCase();
-  if (l.includes('t12') || l.includes('trailing'))                   return 'T12';
+  if (l.includes('offering') || l.includes(' om') || l.startsWith('om ') || l.includes('_om_')) return 'OM';
+  if (l.includes('t12') || l.includes('trailing'))                     return 'T12';
   if (l.includes('rent') && (l.includes('roll') || l.includes('roster'))) return 'Rent Roll';
-  if (l.includes('apprais'))                                          return 'Appraisal';
-  if (l.includes('inspect'))                                          return 'Inspection';
-  if (l.includes('loan') || l.includes('mortgage') || l.includes('note')) return 'Loan Docs';
+  if (l.includes('loi') || l.includes('letter of intent'))             return 'LOI Draft';
+  if (l.includes('psa') || l.includes('purchase') && l.includes('sale')) return 'PSA Draft';
+  if (l.includes('email') || l.endsWith('.eml') || l.endsWith('.msg')) return 'Email';
   return 'Other';
 };
 
-// ─── Status badge ─────────────────────────────────────────────────────────────
-const ExtractionBadge = ({ type }: { type: DocumentType }) => {
-  const isExtractable = EXTRACTABLE_TYPES.includes(type);
-  if (isExtractable) {
-    return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 rounded whitespace-nowrap">
-        <AlertTriangle size={9} />
-        AI-extracted — verify
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold bg-gray-100 text-gray-500 border border-gray-200 rounded whitespace-nowrap">
-      <CheckCircle2 size={9} />
-      Stored
-    </span>
-  );
-};
-
-// ─── Type pill ────────────────────────────────────────────────────────────────
+// ─── Type pill colors ──────────────────────────────────────────────────────────
 const TYPE_COLORS: Record<DocumentType, string> = {
-  'T12':        'bg-blue-50 text-blue-700',
-  'Rent Roll':  'bg-violet-50 text-violet-700',
-  'Appraisal':  'bg-emerald-50 text-emerald-700',
-  'Inspection': 'bg-orange-50 text-orange-700',
-  'Loan Docs':  'bg-teal-50 text-teal-700',
-  'Other':      'bg-gray-100 text-gray-600',
+  'OM':        'bg-sky-50 text-sky-700',
+  'T12':       'bg-blue-50 text-blue-700',
+  'Rent Roll': 'bg-violet-50 text-violet-700',
+  'LOI Draft': 'bg-amber-50 text-amber-700',
+  'PSA Draft': 'bg-orange-50 text-orange-700',
+  'Email':     'bg-rose-50 text-rose-700',
+  'Other':     'bg-gray-100 text-gray-600',
 };
 
-// ─── Component ────────────────────────────────────────────────────────────────
+// ─── Component ─────────────────────────────────────────────────────────────────
 interface DocumentsPanelProps {
-  documents: DealDocument[];
-  onDocumentsChange: (updated: DealDocument[]) => void;
+  dealId: number;
 }
 
-const DocumentsPanel = ({ documents, onDocumentsChange }: DocumentsPanelProps) => {
-  const [showAddForm, setShowAddForm] = useState(false);
+const DocumentsPanel = ({ dealId }: DocumentsPanelProps) => {
+  const [documents, setDocuments] = useState<DriveDocument[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Upload form state
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingType, setPendingType] = useState<DocumentType>('Other');
   const [showTypeMenu, setShowTypeMenu] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Group docs by type, preserving DOCUMENT_TYPES order
+  // ── Fetch documents on mount / dealId change ──────────────────────────────
+  const fetchDocuments = async () => {
+    setLoading(true);
+    setFetchError(null);
+    try {
+      const res = await fetch(`/api/v1/documents/${dealId}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to load documents');
+      setDocuments(json.documents ?? []);
+    } catch (err: unknown) {
+      setFetchError(err instanceof Error ? err.message : 'Failed to load documents');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (dealId) fetchDocuments();
+  }, [dealId]);
+
+  // ── Group by type ─────────────────────────────────────────────────────────
   const grouped = useMemo(() => {
-    const map = new Map<DocumentType, DealDocument[]>();
+    const map = new Map<DocumentType, DriveDocument[]>();
     DOCUMENT_TYPES.forEach(t => map.set(t, []));
-    documents.forEach(d => map.get(d.type)?.push(d));
-    // Only return groups that have at least one doc
+    documents.forEach(d => map.get(d.documentType as DocumentType)?.push(d));
     return DOCUMENT_TYPES
       .map(t => ({ type: t, docs: map.get(t)! }))
       .filter(g => g.docs.length > 0);
   }, [documents]);
 
+  // ── File selection ────────────────────────────────────────────────────────
   const handleFileSelect = (file: File) => {
     setPendingFile(file);
     setPendingType(guessType(file.name));
-    setShowAddForm(true);
+    setUploadError(null);
+    setUploadSuccess(false);
   };
 
-  const confirmAdd = () => {
+  const cancelUpload = () => {
+    setPendingFile(null);
+    setUploadError(null);
+    setUploadSuccess(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // ── Upload ────────────────────────────────────────────────────────────────
+  const confirmUpload = async () => {
     if (!pendingFile) return;
-    const doc: DealDocument = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      name: pendingFile.name,
-      size: pendingFile.size,
-      type: pendingType,
-      uploadedAt: new Date().toISOString(),
-      extractionAttempted: EXTRACTABLE_TYPES.includes(pendingType),
-    };
-    onDocumentsChange([...documents, doc]);
-    setPendingFile(null);
-    setShowAddForm(false);
-    setShowTypeMenu(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    setUploading(true);
+    setUploadError(null);
+    setUploadSuccess(false);
+
+    const formData = new FormData();
+    formData.append('file', pendingFile);
+    formData.append('deal_id', String(dealId));
+    formData.append('document_type', pendingType);
+
+    try {
+      const res = await fetch('/api/v1/documents/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Upload failed');
+      setUploadSuccess(true);
+      setPendingFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      await fetchDocuments();
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
   };
 
-  const cancelAdd = () => {
-    setPendingFile(null);
-    setShowAddForm(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+  // ── Delete ────────────────────────────────────────────────────────────────
+  const deleteDocument = async (docId: string) => {
+    try {
+      const res = await fetch(`/api/v1/documents/doc/${docId}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Delete failed');
+      setDocuments(prev => prev.filter(d => d.id !== docId));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Delete failed');
+    }
   };
 
-  const removeDocument = (id: string) => {
-    onDocumentsChange(documents.filter(d => d.id !== id));
-  };
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="bg-white rounded-xl p-6 shadow-sm">
       {/* Header */}
@@ -119,9 +157,11 @@ const DocumentsPanel = ({ documents, onDocumentsChange }: DocumentsPanelProps) =
         <div>
           <h2 className="text-base font-semibold text-gray-900">Documents</h2>
           <p className="text-xs text-gray-400 mt-0.5">
-            {documents.length === 0
-              ? 'No documents yet'
-              : `${documents.length} document${documents.length !== 1 ? 's' : ''}`}
+            {loading
+              ? 'Loading…'
+              : documents.length === 0
+                ? 'No documents yet'
+                : `${documents.length} document${documents.length !== 1 ? 's' : ''} · stored in Google Drive`}
           </p>
         </div>
         <button
@@ -134,7 +174,7 @@ const DocumentsPanel = ({ documents, onDocumentsChange }: DocumentsPanelProps) =
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,.doc,.docx,.xlsx,.xls,.csv"
+          accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.eml,.msg,.txt,.png,.jpg,.jpeg"
           className="hidden"
           onChange={e => {
             const f = e.target.files?.[0];
@@ -143,9 +183,22 @@ const DocumentsPanel = ({ documents, onDocumentsChange }: DocumentsPanelProps) =
         />
       </div>
 
-      {/* Document list grouped by type */}
-      {documents.length === 0 ? (
-        /* Drop zone / empty state */
+      {/* Fetch error */}
+      {fetchError && (
+        <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg mb-4">
+          <AlertTriangle size={13} className="text-red-500 flex-shrink-0" />
+          <p className="text-xs text-red-700">{fetchError}</p>
+        </div>
+      )}
+
+      {/* Loading state */}
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 py-10 text-gray-400">
+          <Loader2 size={18} className="animate-spin" />
+          <span className="text-sm">Loading documents…</span>
+        </div>
+      ) : documents.length === 0 && !pendingFile ? (
+        /* Empty drop zone */
         <div
           onClick={() => fileInputRef.current?.click()}
           onDragOver={e => e.preventDefault()}
@@ -158,7 +211,7 @@ const DocumentsPanel = ({ documents, onDocumentsChange }: DocumentsPanelProps) =
         >
           <Upload size={22} className="text-gray-300" />
           <p className="text-sm text-gray-400">Drop files here or click Upload</p>
-          <p className="text-xs text-gray-300">PDF, Word, Excel accepted</p>
+          <p className="text-xs text-gray-300">PDF, Word, Excel, Email accepted</p>
         </div>
       ) : (
         <div className="space-y-5">
@@ -178,14 +231,27 @@ const DocumentsPanel = ({ documents, onDocumentsChange }: DocumentsPanelProps) =
                   >
                     <FileText size={15} className="text-gray-400 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-800 font-medium truncate">{doc.name}</p>
-                      <p className="text-xs text-gray-400">
-                        {fmtSize(doc.size)} · {fmtDate(doc.uploadedAt)}
-                      </p>
+                      <p className="text-sm text-gray-800 font-medium truncate">{doc.fileName}</p>
+                      <p className="text-xs text-gray-400">{fmtDate(doc.uploadedAt)}</p>
                     </div>
-                    <ExtractionBadge type={doc.type} />
+                    {EXTRACTABLE_TYPES.includes(doc.documentType as DocumentType) && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 rounded whitespace-nowrap">
+                        <AlertTriangle size={9} />
+                        AI-extracted — verify
+                      </span>
+                    )}
+                    <a
+                      href={doc.driveUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors flex-shrink-0"
+                      title="Open in Google Drive"
+                    >
+                      <ExternalLink size={11} />
+                      Drive
+                    </a>
                     <button
-                      onClick={() => removeDocument(doc.id)}
+                      onClick={() => deleteDocument(doc.id)}
                       className="p-1 text-gray-300 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
                     >
                       <Trash2 size={13} />
@@ -197,30 +263,38 @@ const DocumentsPanel = ({ documents, onDocumentsChange }: DocumentsPanelProps) =
           ))}
 
           {/* Inline drop zone when docs exist */}
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={e => e.preventDefault()}
-            onDrop={e => {
-              e.preventDefault();
-              const f = e.dataTransfer.files[0];
-              if (f) handleFileSelect(f);
-            }}
-            className="flex items-center justify-center gap-2 py-3 border border-dashed border-gray-200 hover:border-blue-300 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"
-          >
-            <Upload size={13} className="text-gray-300" />
-            <span className="text-xs text-gray-400">Drop another file or click Upload</span>
-          </div>
+          {!pendingFile && (
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => {
+                e.preventDefault();
+                const f = e.dataTransfer.files[0];
+                if (f) handleFileSelect(f);
+              }}
+              className="flex items-center justify-center gap-2 py-3 border border-dashed border-gray-200 hover:border-blue-300 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"
+            >
+              <Upload size={13} className="text-gray-300" />
+              <span className="text-xs text-gray-400">Drop another file or click Upload</span>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Add form — shown after file is selected */}
-      {showAddForm && pendingFile && (
+      {/* Upload success banner */}
+      {uploadSuccess && (
+        <div className="mt-3 p-2.5 bg-green-50 border border-green-200 rounded-lg">
+          <p className="text-xs text-green-700 font-medium">File uploaded successfully to Google Drive.</p>
+        </div>
+      )}
+
+      {/* Upload confirm form */}
+      {pendingFile && (
         <div className="mt-4 border border-blue-200 bg-blue-50 rounded-xl p-4 space-y-3">
           <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Confirm document type</p>
           <div className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg">
             <FileText size={14} className="text-gray-400 flex-shrink-0" />
             <span className="text-sm text-gray-700 truncate flex-1">{pendingFile.name}</span>
-            <span className="text-xs text-gray-400 flex-shrink-0">{fmtSize(pendingFile.size)}</span>
           </div>
 
           {/* Type selector */}
@@ -257,29 +331,38 @@ const DocumentsPanel = ({ documents, onDocumentsChange }: DocumentsPanelProps) =
             )}
           </div>
 
-          {/* Extraction notice for extractable types */}
-          {EXTRACTABLE_TYPES.includes(pendingType) && (
-            <div className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-100 rounded-lg">
-              <AlertTriangle size={13} className="text-amber-600 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-700">
-                <strong>{pendingType}</strong> documents are flagged for AI extraction. In Phase 2, Claude will attempt to read this file automatically.
-              </p>
+          {/* Upload error */}
+          {uploadError && (
+            <div className="flex items-center gap-2 p-2.5 bg-red-50 border border-red-200 rounded-lg">
+              <AlertTriangle size={13} className="text-red-500 flex-shrink-0" />
+              <p className="text-xs text-red-700">{uploadError}</p>
             </div>
           )}
 
           <div className="flex gap-2 justify-end pt-1">
             <button
-              onClick={cancelAdd}
-              className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+              onClick={cancelUpload}
+              disabled={uploading}
+              className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-40"
             >
               Cancel
             </button>
             <button
-              onClick={confirmAdd}
-              className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+              onClick={confirmUpload}
+              disabled={uploading}
+              className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-60"
             >
-              <Upload size={12} />
-              Add Document
+              {uploading ? (
+                <>
+                  <Loader2 size={12} className="animate-spin" />
+                  Uploading…
+                </>
+              ) : (
+                <>
+                  <Upload size={12} />
+                  Upload to Drive
+                </>
+              )}
             </button>
           </div>
         </div>

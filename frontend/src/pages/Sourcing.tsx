@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import DocumentsPanel from '../components/DocumentsPanel';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import {
   Plus,
@@ -1630,6 +1631,20 @@ const PropertyDetailPanel = ({ prop, onClose, onEdit, onStartUnderwriting, start
               </ul>
             )}
           </div>
+        </div>
+
+        {/* Documents */}
+        <div className="px-6 pb-5">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Documents</h3>
+          {prop.deal_id ? (
+            <DocumentsPanel dealId={prop.deal_id} />
+          ) : (
+            <div className="flex items-center justify-center py-6 border border-dashed border-gray-200 rounded-xl bg-gray-50">
+              <p className="text-xs text-gray-400 text-center px-4">
+                Start Underwriting to enable<br />document storage
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Footer */}

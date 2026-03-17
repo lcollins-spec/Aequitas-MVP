@@ -266,6 +266,10 @@ def create_app(test_config=None):
     from .api.v1.app_data_routes import app_data_bp
     app.register_blueprint(app_data_bp, url_prefix='/api/v1')
 
+    # Document upload / retrieval (Google Drive backed)
+    from .api.v1.document_routes import documents_bp
+    app.register_blueprint(documents_bp, url_prefix='/api/v1')
+
     # Serve frontend (production/Docker, or any env where the dist was built)
     if serve_spa:
         @app.route('/', defaults={'path': ''})

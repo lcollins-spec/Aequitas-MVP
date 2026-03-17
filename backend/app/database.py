@@ -90,6 +90,50 @@ class DealModel(db.Model):
     regulations_json = Column(Text)   # JSON — regulations for deal's market
     deal_legislation = Column(Text)   # JSON — legislation fetched from Underwriting page
 
+    # ── Deal Execution columns ────────────────────────────────────────────────
+
+    # Section 1 — Deal Overview
+    execution_transaction_type = Column(String(50))   # Acquisition / Recap / JV
+    execution_current_stage    = Column(String(50))   # LOI / PSA / Due Diligence / Closing / Closed
+
+    # Section 2 — LOI Terms
+    loi_offer_price                       = Column(Float)
+    loi_earnest_money                     = Column(Float)
+    loi_earnest_money_refundable          = Column(Boolean, default=True)
+    loi_dd_period_days                    = Column(Integer)
+    loi_financing_contingency             = Column(Boolean, default=True)
+    loi_financing_contingency_period_days = Column(Integer)
+    loi_exclusivity                       = Column(Boolean, default=False)
+    loi_target_closing_date               = Column(Text)   # ISO date string
+    loi_psa_drafted_by                    = Column(String(50))  # Buyer / Seller
+    loi_notes                             = Column(Text)
+
+    # Section 3 — PSA Terms
+    psa_executed_date           = Column(Text)   # ISO date string
+    psa_final_purchase_price    = Column(Float)
+    psa_earnest_money_hard_date = Column(Text)
+    psa_dd_expiration_date      = Column(Text)
+    psa_closing_date            = Column(Text)
+    psa_key_conditions          = Column(Text)
+    psa_notes                   = Column(Text)
+
+    # Section 4 — JV / Partnership Terms
+    jv_operator_equity_share = Column(Float)
+    jv_preferred_return      = Column(Float)
+    jv_promote_structure     = Column(Text)
+    jv_acquisition_fee       = Column(Float)
+    jv_asset_management_fee  = Column(Float)
+    jv_disposition_fee       = Column(Float)
+
+    # Section 5 — Control & Approval Rights
+    approval_major_decision_required = Column(Boolean, default=True)
+    approval_rights                  = Column(Text)   # JSON array of strings
+    approval_major_capex_threshold   = Column(Float)
+    approval_notes                   = Column(Text)
+
+    # Section 6 — Loan Details
+    loan_details = Column(Text)   # JSON array of 3 loan objects
+
     def __repr__(self):
         return f'<Deal {self.id}: {self.deal_name} ({self.status})>'
 
@@ -159,6 +203,48 @@ class DealModel(db.Model):
             'dscrJson': self.dscr_json,
             'regulationsJson': self.regulations_json,
             'dealLegislation': self.deal_legislation,
+
+            # Deal Execution — Section 1
+            'executionTransactionType': self.execution_transaction_type,
+            'executionCurrentStage':    self.execution_current_stage,
+
+            # Deal Execution — Section 2 (LOI Terms)
+            'loiOfferPrice':                    self.loi_offer_price,
+            'loiEarnestMoney':                  self.loi_earnest_money,
+            'loiEarnestMoneyRefundable':        self.loi_earnest_money_refundable,
+            'loiDdPeriodDays':                  self.loi_dd_period_days,
+            'loiFinancingContingency':          self.loi_financing_contingency,
+            'loiFinancingContingencyPeriodDays':self.loi_financing_contingency_period_days,
+            'loiExclusivity':                   self.loi_exclusivity,
+            'loiTargetClosingDate':             self.loi_target_closing_date,
+            'loiPsaDraftedBy':                  self.loi_psa_drafted_by,
+            'loiNotes':                         self.loi_notes,
+
+            # Deal Execution — Section 3 (PSA Terms)
+            'psaExecutedDate':          self.psa_executed_date,
+            'psaFinalPurchasePrice':    self.psa_final_purchase_price,
+            'psaEarnestMoneyHardDate':  self.psa_earnest_money_hard_date,
+            'psaDdExpirationDate':      self.psa_dd_expiration_date,
+            'psaClosingDate':           self.psa_closing_date,
+            'psaKeyConditions':         self.psa_key_conditions,
+            'psaNotes':                 self.psa_notes,
+
+            # Deal Execution — Section 4 (JV Terms)
+            'jvOperatorEquityShare': self.jv_operator_equity_share,
+            'jvPreferredReturn':     self.jv_preferred_return,
+            'jvPromoteStructure':    self.jv_promote_structure,
+            'jvAcquisitionFee':      self.jv_acquisition_fee,
+            'jvAssetManagementFee':  self.jv_asset_management_fee,
+            'jvDispositionFee':      self.jv_disposition_fee,
+
+            # Deal Execution — Section 5 (Approval Rights)
+            'approvalMajorDecisionRequired': self.approval_major_decision_required,
+            'approvalRights':                self.approval_rights,
+            'approvalMajorCapexThreshold':   self.approval_major_capex_threshold,
+            'approvalNotes':                 self.approval_notes,
+
+            # Deal Execution — Section 6 (Loan Details)
+            'loanDetails': self.loan_details,
         }
 
     @staticmethod
@@ -333,6 +419,78 @@ class DealModel(db.Model):
             self.regulations_json = data['regulationsJson']
         if 'dealLegislation' in data:
             self.deal_legislation = data['dealLegislation']
+
+        # Deal Execution — Section 1
+        if 'executionTransactionType' in data:
+            self.execution_transaction_type = data['executionTransactionType']
+        if 'executionCurrentStage' in data:
+            self.execution_current_stage = data['executionCurrentStage']
+
+        # Deal Execution — Section 2 (LOI Terms)
+        if 'loiOfferPrice' in data:
+            self.loi_offer_price = data['loiOfferPrice']
+        if 'loiEarnestMoney' in data:
+            self.loi_earnest_money = data['loiEarnestMoney']
+        if 'loiEarnestMoneyRefundable' in data:
+            self.loi_earnest_money_refundable = data['loiEarnestMoneyRefundable']
+        if 'loiDdPeriodDays' in data:
+            self.loi_dd_period_days = data['loiDdPeriodDays']
+        if 'loiFinancingContingency' in data:
+            self.loi_financing_contingency = data['loiFinancingContingency']
+        if 'loiFinancingContingencyPeriodDays' in data:
+            self.loi_financing_contingency_period_days = data['loiFinancingContingencyPeriodDays']
+        if 'loiExclusivity' in data:
+            self.loi_exclusivity = data['loiExclusivity']
+        if 'loiTargetClosingDate' in data:
+            self.loi_target_closing_date = data['loiTargetClosingDate']
+        if 'loiPsaDraftedBy' in data:
+            self.loi_psa_drafted_by = data['loiPsaDraftedBy']
+        if 'loiNotes' in data:
+            self.loi_notes = data['loiNotes']
+
+        # Deal Execution — Section 3 (PSA Terms)
+        if 'psaExecutedDate' in data:
+            self.psa_executed_date = data['psaExecutedDate']
+        if 'psaFinalPurchasePrice' in data:
+            self.psa_final_purchase_price = data['psaFinalPurchasePrice']
+        if 'psaEarnestMoneyHardDate' in data:
+            self.psa_earnest_money_hard_date = data['psaEarnestMoneyHardDate']
+        if 'psaDdExpirationDate' in data:
+            self.psa_dd_expiration_date = data['psaDdExpirationDate']
+        if 'psaClosingDate' in data:
+            self.psa_closing_date = data['psaClosingDate']
+        if 'psaKeyConditions' in data:
+            self.psa_key_conditions = data['psaKeyConditions']
+        if 'psaNotes' in data:
+            self.psa_notes = data['psaNotes']
+
+        # Deal Execution — Section 4 (JV Terms)
+        if 'jvOperatorEquityShare' in data:
+            self.jv_operator_equity_share = data['jvOperatorEquityShare']
+        if 'jvPreferredReturn' in data:
+            self.jv_preferred_return = data['jvPreferredReturn']
+        if 'jvPromoteStructure' in data:
+            self.jv_promote_structure = data['jvPromoteStructure']
+        if 'jvAcquisitionFee' in data:
+            self.jv_acquisition_fee = data['jvAcquisitionFee']
+        if 'jvAssetManagementFee' in data:
+            self.jv_asset_management_fee = data['jvAssetManagementFee']
+        if 'jvDispositionFee' in data:
+            self.jv_disposition_fee = data['jvDispositionFee']
+
+        # Deal Execution — Section 5 (Approval Rights)
+        if 'approvalMajorDecisionRequired' in data:
+            self.approval_major_decision_required = data['approvalMajorDecisionRequired']
+        if 'approvalRights' in data:
+            self.approval_rights = data['approvalRights']
+        if 'approvalMajorCapexThreshold' in data:
+            self.approval_major_capex_threshold = data['approvalMajorCapexThreshold']
+        if 'approvalNotes' in data:
+            self.approval_notes = data['approvalNotes']
+
+        # Deal Execution — Section 6 (Loan Details)
+        if 'loanDetails' in data:
+            self.loan_details = data['loanDetails']
 
         # Update timestamp
         self.updated_at = datetime.utcnow()
@@ -1684,4 +1842,38 @@ class DealOpPerformanceModel(db.Model):
             'year': self.year,
             'projectedNoi': self.projected_noi,
             'actualNoi': self.actual_noi,
+        }
+
+
+# ============================================================================
+# DEAL DOCUMENTS MODEL
+# ============================================================================
+
+import uuid as _uuid
+
+
+class DealDocumentModel(db.Model):
+    """
+    Stores metadata for documents uploaded to Google Drive for a deal.
+    The actual file lives in Drive; only metadata is persisted here.
+    """
+    __tablename__ = 'deal_documents'
+
+    id = Column(String(64), primary_key=True, default=lambda: str(_uuid.uuid4()))
+    deal_id = Column(Integer, ForeignKey('deals.id'), nullable=False, index=True)
+    file_name = Column(String(500), nullable=False)
+    document_type = Column(String(50), nullable=False)  # OM / T12 / Rent Roll / LOI Draft / PSA Draft / Email / Other
+    drive_file_id = Column(String(255), nullable=False)
+    drive_url = Column(String(1000), nullable=False)
+    uploaded_at = Column(DateTime, default=func.now(), nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'dealId': self.deal_id,
+            'fileName': self.file_name,
+            'documentType': self.document_type,
+            'driveFileId': self.drive_file_id,
+            'driveUrl': self.drive_url,
+            'uploadedAt': self.uploaded_at.isoformat() if self.uploaded_at else None,
         }

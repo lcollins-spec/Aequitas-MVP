@@ -8,7 +8,7 @@ import {
 import {
   getDealExecution, patchDealExecution, getAllDealExecutions,
   loadExecutionFromBackend,
-  type DealExecutionRecord, type CapexItem, type DealDocument,
+  type DealExecutionRecord, type CapexItem,
   type DDItemStatus, type DealStage, type LoanRow,
   DATA_ROOM_ITEMS, CLOSING_ITEMS,
 } from '../types/dealExecution';
@@ -340,9 +340,6 @@ const DealExecution = () => {
   const [projLpNetIrr, setProjLpNetIrr] = useState('');
   const [projEquityMultiple, setProjEquityMultiple] = useState('');
 
-  // Documents
-  const [documents, setDocuments] = useState<DealDocument[]>([]);
-
   // Section D — CapEx
   const [capexItems, setCapexItems] = useState<CapexItem[]>([]);
   const [newCapexDesc, setNewCapexDesc] = useState('');
@@ -457,7 +454,6 @@ const DealExecution = () => {
     setProjLpNetIrr(pf.projectedLpNetIrr ? String(pf.projectedLpNetIrr) : '');
     setProjEquityMultiple(pf.projectedEquityMultiple ? String(pf.projectedEquityMultiple) : '');
 
-    setDocuments(rec.documents ?? []);
     setCapexItems(rec.capexItems ?? []);
     setDdChecklist(rec.ddChecklist ?? {});
     setDdUploads(rec.ddUploads ?? {});
@@ -637,12 +633,6 @@ const DealExecution = () => {
     setCapexItems(updated);
     patchDealExecution(numericId, { capexItems: updated });
   };
-
-  // ── Document operations ──────────────────────────────────────────────────
-  const handleDocumentsChange = useCallback((updated: DealDocument[]) => {
-    setDocuments(updated);
-    patchDealExecution(numericId, { documents: updated });
-  }, [numericId]);
 
   // ── Stage 1 — Data Room checklist ────────────────────────────────────────
   const cycleDataRoomStatus = (itemId: string) => {
@@ -963,10 +953,7 @@ const DealExecution = () => {
 
             {/* Documents panel */}
             <div className="mb-4">
-              <DocumentsPanel
-                documents={documents}
-                onDocumentsChange={handleDocumentsChange}
-              />
+              <DocumentsPanel dealId={numericId} />
             </div>
 
             {/* Data Room checklist */}

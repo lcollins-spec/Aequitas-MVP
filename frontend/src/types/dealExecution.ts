@@ -3,9 +3,9 @@
  * Keyed in localStorage as: aequitas_deal_executions → Record<dealId, DealExecutionRecord>
  */
 
-export type DocumentType = 'T12' | 'Rent Roll' | 'Appraisal' | 'Inspection' | 'Loan Docs' | 'Other';
+export type DocumentType = 'OM' | 'T12' | 'Rent Roll' | 'LOI Draft' | 'PSA Draft' | 'Email' | 'Other';
 
-export const DOCUMENT_TYPES: DocumentType[] = ['T12', 'Rent Roll', 'Appraisal', 'Inspection', 'Loan Docs', 'Other'];
+export const DOCUMENT_TYPES: DocumentType[] = ['OM', 'T12', 'Rent Roll', 'LOI Draft', 'PSA Draft', 'Email', 'Other'];
 
 /** Documents that Claude will attempt to extract from */
 export const EXTRACTABLE_TYPES: DocumentType[] = ['T12', 'Rent Roll'];
