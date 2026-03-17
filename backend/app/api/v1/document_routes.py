@@ -42,73 +42,79 @@ def upload_document():
       - deal_id    : integer deal ID
       - document_type : one of the valid document types
     """
-    # ── Validate inputs ───────────────────────────────────────────────────────
-    if 'file' not in request.files:
-        return jsonify({'success': False, 'error': 'No file provided'}), 400
-
-    file = request.files['file']
-    if not file or not file.filename:
-        return jsonify({'success': False, 'error': 'Empty file'}), 400
-
-    deal_id_raw = request.form.get('deal_id')
-    if not deal_id_raw:
-        return jsonify({'success': False, 'error': 'deal_id is required'}), 400
-
     try:
-        deal_id = int(deal_id_raw)
-    except ValueError:
-        return jsonify({'success': False, 'error': 'deal_id must be an integer'}), 400
+        # ── Validate inputs ───────────────────────────────────────────────────
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
 
-    document_type = request.form.get('document_type', 'Other')
-    if document_type not in VALID_DOCUMENT_TYPES:
-        document_type = 'Other'
+        file = request.files['file']
+        if not file or not file.filename:
+            return jsonify({'success': False, 'error': 'Empty file'}), 400
 
-    # ── Look up the deal ──────────────────────────────────────────────────────
-    deal = db.session.get(DealModel, deal_id)
-    if not deal:
-        return jsonify({'success': False, 'error': f'Deal {deal_id} not found'}), 404
+        deal_id_raw = request.form.get('deal_id')
+        if not deal_id_raw:
+            return jsonify({'success': False, 'error': 'deal_id is required'}), 400
 
-    deal_name = deal.deal_name
+        try:
+            deal_id = int(deal_id_raw)
+        except ValueError:
+            return jsonify({'success': False, 'error': 'deal_id must be an integer'}), 400
 
-    # ── Read file bytes ───────────────────────────────────────────────────────
-    file_bytes = file.read()
-    if len(file_bytes) == 0:
-        return jsonify({'success': False, 'error': 'Uploaded file is empty'}), 400
+        document_type = request.form.get('document_type', 'Other')
+        if document_type not in VALID_DOCUMENT_TYPES:
+            document_type = 'Other'
 
-    mime_type = file.content_type or 'application/octet-stream'
+        # ── Look up the deal ──────────────────────────────────────────────────
+        deal = db.session.get(DealModel, deal_id)
+        if not deal:
+            return jsonify({'success': False, 'error': f'Deal {deal_id} not found'}), 404
 
-    # ── Upload to Drive ───────────────────────────────────────────────────────
-    try:
-        result = google_drive.upload_file(
-            file_bytes=file_bytes,
-            filename=file.filename,
-            mime_type=mime_type,
-            deal_name=deal_name,
+        deal_name = deal.deal_name
+
+        # ── Read file bytes ───────────────────────────────────────────────────
+        file_bytes = file.read()
+        if len(file_bytes) == 0:
+            return jsonify({'success': False, 'error': 'Uploaded file is empty'}), 400
+
+        mime_type = file.content_type or 'application/octet-stream'
+
+        # ── Upload to Drive ───────────────────────────────────────────────────
+        try:
+            result = google_drive.upload_file(
+                file_bytes=file_bytes,
+                filename=file.filename,
+                mime_type=mime_type,
+                deal_name=deal_name,
+                document_type=document_type,
+            )
+        except RuntimeError as e:
+            logger.error("Google Drive upload failed: %s", e)
+            return jsonify({'success': False, 'error': str(e)}), 502
+
+        # ── Persist metadata ──────────────────────────────────────────────────
+        doc = DealDocumentModel(
+            id=str(uuid.uuid4()),
+            deal_id=deal_id,
+            file_name=file.filename,
             document_type=document_type,
+            drive_file_id=result['file_id'],
+            drive_url=result['web_view_link'],
         )
-    except RuntimeError as e:
-        logger.error("Google Drive upload failed: %s", e)
-        return jsonify({'success': False, 'error': str(e)}), 502
+        db.session.add(doc)
+        db.session.commit()
 
-    # ── Persist metadata ──────────────────────────────────────────────────────
-    doc = DealDocumentModel(
-        id=str(uuid.uuid4()),
-        deal_id=deal_id,
-        file_name=file.filename,
-        document_type=document_type,
-        drive_file_id=result['file_id'],
-        drive_url=result['web_view_link'],
-    )
-    db.session.add(doc)
-    db.session.commit()
+        return jsonify({
+            'success': True,
+            'file_id': result['file_id'],
+            'file_name': result['file_name'],
+            'drive_url': result['web_view_link'],
+            'document': doc.to_dict(),
+        }), 201
 
-    return jsonify({
-        'success': True,
-        'file_id': result['file_id'],
-        'file_name': result['file_name'],
-        'drive_url': result['web_view_link'],
-        'document': doc.to_dict(),
-    }), 201
+    except Exception as e:
+        logger.exception("Unhandled error in upload_document")
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @documents_bp.route('/documents/<int:deal_id>', methods=['GET'])

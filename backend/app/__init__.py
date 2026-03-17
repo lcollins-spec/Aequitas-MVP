@@ -1,7 +1,7 @@
 import os
 import sys
 import logging
-from flask import Flask, send_from_directory, session, request, redirect, url_for, make_response
+from flask import Flask, send_from_directory, session, request, redirect, url_for, make_response, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 from app.database import db
@@ -215,6 +215,8 @@ def create_app(test_config=None):
         if not APP_PASSWORD:
             return
         if not session.get('authenticated'):
+            if request.path.startswith('/api/'):
+                return jsonify({'success': False, 'error': 'Unauthorized'}), 401
             return redirect(f'/__auth__/login?next={request.path}')
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -298,6 +300,20 @@ def create_app(test_config=None):
         if request.path.startswith('/api/'):
             return _jsonify({'success': False, 'error': 'Method not allowed', 'method': request.method, 'path': request.path}), 405
         return e
+
+    @app.errorhandler(500)
+    def _api_internal_error(e):
+        if request.path.startswith('/api/'):
+            logger.error("Internal server error on %s: %s", request.path, e)
+            return _jsonify({'success': False, 'error': 'Internal server error', 'detail': str(e)}), 500
+        return e
+
+    @app.errorhandler(Exception)
+    def _api_unhandled_exception(e):
+        if request.path.startswith('/api/'):
+            logger.exception("Unhandled exception on %s", request.path)
+            return _jsonify({'success': False, 'error': str(e)}), 500
+        raise e
 
     logger.info("CREATE_APP COMPLETED SUCCESSFULLY")
     return app
