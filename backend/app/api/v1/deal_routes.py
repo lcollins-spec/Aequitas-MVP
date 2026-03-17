@@ -102,7 +102,7 @@ def get_deal(deal_id):
         }), 500
 
 
-@deals_bp.route('/deals/<int:deal_id>', methods=['PUT'])
+@deals_bp.route('/deals/<int:deal_id>', methods=['PUT', 'PATCH'])
 def update_deal(deal_id):
     """
     Update an existing deal
