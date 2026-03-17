@@ -99,11 +99,11 @@ class DealModel(db.Model):
     # Section 2 — LOI Terms
     loi_offer_price                       = Column(Float)
     loi_earnest_money                     = Column(Float)
-    loi_earnest_money_refundable          = Column(Boolean, default=True)
+    loi_earnest_money_refundable          = Column(Integer, default=1)
     loi_dd_period_days                    = Column(Integer)
-    loi_financing_contingency             = Column(Boolean, default=True)
+    loi_financing_contingency             = Column(Integer, default=1)
     loi_financing_contingency_period_days = Column(Integer)
-    loi_exclusivity                       = Column(Boolean, default=False)
+    loi_exclusivity                       = Column(Integer, default=0)
     loi_target_closing_date               = Column(Text)   # ISO date string
     loi_psa_drafted_by                    = Column(String(50))  # Buyer / Seller
     loi_notes                             = Column(Text)
@@ -126,7 +126,7 @@ class DealModel(db.Model):
     jv_disposition_fee       = Column(Float)
 
     # Section 5 — Control & Approval Rights
-    approval_major_decision_required = Column(Boolean, default=True)
+    approval_major_decision_required = Column(Integer, default=1)
     approval_rights                  = Column(Text)   # JSON array of strings
     approval_major_capex_threshold   = Column(Float)
     approval_notes                   = Column(Text)
@@ -432,15 +432,15 @@ class DealModel(db.Model):
         if 'loiEarnestMoney' in data:
             self.loi_earnest_money = data['loiEarnestMoney']
         if 'loiEarnestMoneyRefundable' in data:
-            self.loi_earnest_money_refundable = data['loiEarnestMoneyRefundable']
+            self.loi_earnest_money_refundable = int(bool(data['loiEarnestMoneyRefundable']))
         if 'loiDdPeriodDays' in data:
             self.loi_dd_period_days = data['loiDdPeriodDays']
         if 'loiFinancingContingency' in data:
-            self.loi_financing_contingency = data['loiFinancingContingency']
+            self.loi_financing_contingency = int(bool(data['loiFinancingContingency']))
         if 'loiFinancingContingencyPeriodDays' in data:
             self.loi_financing_contingency_period_days = data['loiFinancingContingencyPeriodDays']
         if 'loiExclusivity' in data:
-            self.loi_exclusivity = data['loiExclusivity']
+            self.loi_exclusivity = int(bool(data['loiExclusivity']))
         if 'loiTargetClosingDate' in data:
             self.loi_target_closing_date = data['loiTargetClosingDate']
         if 'loiPsaDraftedBy' in data:
@@ -480,7 +480,7 @@ class DealModel(db.Model):
 
         # Deal Execution — Section 5 (Approval Rights)
         if 'approvalMajorDecisionRequired' in data:
-            self.approval_major_decision_required = data['approvalMajorDecisionRequired']
+            self.approval_major_decision_required = int(bool(data['approvalMajorDecisionRequired']))
         if 'approvalRights' in data:
             self.approval_rights = data['approvalRights']
         if 'approvalMajorCapexThreshold' in data:
