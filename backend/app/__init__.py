@@ -272,6 +272,32 @@ def create_app(test_config=None):
     from .api.v1.document_routes import documents_bp
     app.register_blueprint(documents_bp, url_prefix='/api/v1')
 
+    # Asset Management (quarterly actuals vs underwriting)
+    from .api.v1.asset_management import asset_mgmt_bp
+    app.register_blueprint(asset_mgmt_bp, url_prefix='/api')
+
+    # Inline migration: create asset_reports table columns if the table already
+    # exists but is missing newer columns (safe no-op on fresh installs because
+    # db.create_all() above will have already built the full schema).
+    try:
+        with app.app_context():
+            from sqlalchemy import text, inspect as sa_inspect
+            inspector = sa_inspect(db.engine)
+            if 'asset_reports' in inspector.get_table_names():
+                existing_cols = {c['name'] for c in inspector.get_columns('asset_reports')}
+                new_cols = {
+                    'pdf_drive_url': 'VARCHAR(1000)',
+                    'updated_at': 'TIMESTAMP',
+                }
+                with db.engine.connect() as conn:
+                    for col, col_type in new_cols.items():
+                        if col not in existing_cols:
+                            conn.execute(text(f"ALTER TABLE asset_reports ADD COLUMN {col} {col_type}"))
+                            conn.commit()
+                            logger.info("Added '%s' column to asset_reports", col)
+    except Exception as e:
+        logger.warning(f"asset_reports migration note: {e}")
+
     # Serve frontend (production/Docker, or any env where the dist was built)
     if serve_spa:
         @app.route('/', defaults={'path': ''})

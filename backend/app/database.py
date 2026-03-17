@@ -1877,3 +1877,54 @@ class DealDocumentModel(db.Model):
             'driveUrl': self.drive_url,
             'uploadedAt': self.uploaded_at.isoformat() if self.uploaded_at else None,
         }
+
+
+# ============================================================================
+# ASSET MANAGEMENT MODELS
+# ============================================================================
+
+class AssetReportModel(db.Model):
+    """
+    Quarterly actuals for a closed/active deal, compared against underwriting assumptions.
+    One row per (deal_id, quarter). Upserted on POST.
+    """
+    __tablename__ = 'asset_reports'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    deal_id = Column(Integer, ForeignKey('deals.id'), nullable=False, index=True)
+    quarter = Column(String(20), nullable=False)          # e.g. "2026-Q1"
+    gross_potential_rent = Column(Float)
+    vacancy_loss = Column(Float)
+    effective_gross_income = Column(Float)
+    operating_expenses = Column(Float)
+    noi = Column(Float)
+    debt_service = Column(Float)
+    occupancy_pct = Column(Float)
+    notes = Column(Text)
+    pdf_filename = Column(String(500))
+    pdf_drive_url = Column(String(1000))
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('deal_id', 'quarter', name='uq_asset_report_deal_quarter'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'deal_id': self.deal_id,
+            'quarter': self.quarter,
+            'gross_potential_rent': self.gross_potential_rent,
+            'vacancy_loss': self.vacancy_loss,
+            'effective_gross_income': self.effective_gross_income,
+            'operating_expenses': self.operating_expenses,
+            'noi': self.noi,
+            'debt_service': self.debt_service,
+            'occupancy_pct': self.occupancy_pct,
+            'notes': self.notes,
+            'pdf_filename': self.pdf_filename,
+            'pdf_drive_url': self.pdf_drive_url,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
