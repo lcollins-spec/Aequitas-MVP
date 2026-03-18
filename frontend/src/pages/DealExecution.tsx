@@ -13,6 +13,7 @@ import {
   DATA_ROOM_ITEMS, CLOSING_ITEMS,
 } from '../types/dealExecution';
 import DocumentsPanel from '../components/DocumentsPanel';
+import ClimateCheckUpload from '../components/ClimateCheckUpload';
 import {
   getPipelineStatus, setPipelineStatus, syncPipelineStatusesFromBackend,
   type PipelineStatus, PIPELINE_STATUSES, PIPELINE_STATUS_STYLES,
@@ -737,6 +738,17 @@ const DealExecution = () => {
       ddUploads,
       ddPhases: DD_PHASES,
       dealApi,
+      climateCheck: dealApi.climateConfirmed ? {
+        confirmed: true,
+        overall_score:      dealApi.climateOverallScore,
+        wildfire_score:     dealApi.climateWildfireScore,
+        flood_score:        dealApi.climateFloodScore,
+        overall_risk_label: dealApi.climateOverallLabel,
+        wildfire_risk_label: dealApi.climateWildfireLabel,
+        flood_risk_label:   dealApi.climateFloodLabel,
+        key_risks:          (() => { try { return JSON.parse(dealApi.climateKeyRisks as string ?? '[]'); } catch { return []; } })(),
+        property_address:   dealApi.climatePropertyAddress,
+      } : { confirmed: false },
     };
 
     try {
@@ -954,6 +966,11 @@ const DealExecution = () => {
             {/* Documents panel */}
             <div className="mb-4">
               <DocumentsPanel dealId={numericId} />
+            </div>
+
+            {/* Climate Risk (ClimateCheck PDF) */}
+            <div className="mb-4 bg-white rounded-xl p-5 shadow-sm">
+              <ClimateCheckUpload dealId={numericId} />
             </div>
 
             {/* Data Room checklist */}

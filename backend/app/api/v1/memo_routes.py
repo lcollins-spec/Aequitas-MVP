@@ -104,6 +104,26 @@ def _build_memo_prompt(data: dict) -> str:
     climate_risk = risk_raw.get('climateRiskLevel', '')
     arb_opp = risk_raw.get('arbitrageOpportunityLevel', '')
 
+    # ClimateCheck PDF data (confirmed only)
+    cc_raw = data.get('climateCheck', {}) or {}
+    cc_confirmed = cc_raw.get('confirmed', False)
+    cc_overall_score   = cc_raw.get('overall_score')   if cc_confirmed else None
+    cc_wildfire_score  = cc_raw.get('wildfire_score')  if cc_confirmed else None
+    cc_flood_score     = cc_raw.get('flood_score')     if cc_confirmed else None
+    cc_overall_label   = cc_raw.get('overall_risk_label')  if cc_confirmed else None
+    cc_wildfire_label  = cc_raw.get('wildfire_risk_label') if cc_confirmed else None
+    cc_flood_label     = cc_raw.get('flood_risk_label')    if cc_confirmed else None
+    cc_key_risks       = cc_raw.get('key_risks', [])       if cc_confirmed else []
+    cc_address         = cc_raw.get('property_address')    if cc_confirmed else None
+
+    def _fmt_score(score, label):
+        if score is None:
+            return 'N/A'
+        lbl = f' ({label})' if label else ''
+        return f'{score:.0f}/100{lbl}'
+
+    cc_risks_text = '\n'.join(f'  - {r}' for r in cc_key_risks) if cc_key_risks else '  None identified'
+
     # Regulations
     regulations = data.get('regulations', []) or []
     reg_lines = []
@@ -190,6 +210,14 @@ Net Yield: {fmt_pct(net_yield)}
 Climate Risk Level: {climate_risk or 'N/A'}
 Arbitrage Opportunity: {arb_opp or 'N/A'}
 
+CLIMATECHECK PHYSICAL RISK (Property-Level)
+{'(Not yet uploaded — section omitted)' if not cc_confirmed else f'''Property Address Verified: {cc_address or 'N/A'}
+Overall Climate Risk: {_fmt_score(cc_overall_score, cc_overall_label)}
+Wildfire Risk: {_fmt_score(cc_wildfire_score, cc_wildfire_label)}
+Flood Risk: {_fmt_score(cc_flood_score, cc_flood_label)}
+Key Physical Risks:
+{cc_risks_text}'''}
+
 MARKET ANALYSIS
 {market_analysis or 'No market analysis data available.'}
 
@@ -208,9 +236,10 @@ Now write the investment memo using EXACTLY these section headers (use ## for ea
 ## Market Context
 ## Regulatory Environment
 ## Risk Summary
+## Climate Risk
 ## Due Diligence Status
 
-Each section should be 3–6 sentences or a short structured list. Be specific with numbers where available. End with a one-sentence investment thesis in bold under the final section.
+Each section should be 3–6 sentences or a short structured list. Be specific with numbers where available. For ## Climate Risk: if ClimateCheck data is not available, write one sentence noting it has not been uploaded. End with a one-sentence investment thesis in bold under the final section.
 """
     return prompt
 

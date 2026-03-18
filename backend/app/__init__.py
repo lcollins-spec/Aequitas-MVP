@@ -276,6 +276,10 @@ def create_app(test_config=None):
     from .api.v1.asset_management import asset_mgmt_bp
     app.register_blueprint(asset_mgmt_bp, url_prefix='/api')
 
+    # ClimateCheck PDF upload + extraction
+    from .api.v1.climate_check_routes import climate_check_bp
+    app.register_blueprint(climate_check_bp, url_prefix='/api/v1')
+
     # Inline migration: create asset_reports table columns if the table already
     # exists but is missing newer columns (safe no-op on fresh installs because
     # db.create_all() above will have already built the full schema).
@@ -297,6 +301,36 @@ def create_app(test_config=None):
                             logger.info("Added '%s' column to asset_reports", col)
     except Exception as e:
         logger.warning(f"asset_reports migration note: {e}")
+
+    # Inline migration: add ClimateCheck columns to deals table if not present.
+    try:
+        with app.app_context():
+            from sqlalchemy import text, inspect as sa_inspect
+            inspector = sa_inspect(db.engine)
+            if 'deals' in inspector.get_table_names():
+                existing_cols = {c['name'] for c in inspector.get_columns('deals')}
+                climate_cols = {
+                    'climate_overall_score':    'NUMERIC',
+                    'climate_wildfire_score':   'NUMERIC',
+                    'climate_flood_score':      'NUMERIC',
+                    'climate_overall_label':    'VARCHAR(50)',
+                    'climate_wildfire_label':   'VARCHAR(50)',
+                    'climate_flood_label':      'VARCHAR(50)',
+                    'climate_key_risks':        'TEXT',
+                    'climate_property_address': 'VARCHAR(500)',
+                    'climate_pdf_filename':     'VARCHAR(500)',
+                    'climate_pdf_drive_url':    'VARCHAR(1000)',
+                    'climate_raw_extracted':    'TEXT',
+                    'climate_confirmed':        'INTEGER DEFAULT 0',
+                }
+                with db.engine.connect() as conn:
+                    for col, col_type in climate_cols.items():
+                        if col not in existing_cols:
+                            conn.execute(text(f"ALTER TABLE deals ADD COLUMN {col} {col_type}"))
+                            conn.commit()
+                            logger.info("Added '%s' column to deals", col)
+    except Exception as e:
+        logger.warning(f"ClimateCheck column migration note: {e}")
 
     # Serve frontend (production/Docker, or any env where the dist was built)
     if serve_spa:

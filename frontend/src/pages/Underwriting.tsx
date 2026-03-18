@@ -20,6 +20,7 @@ import type { DealDocument, LoiExtractedData } from '../types/dealExecution';
 import { scrapingApi } from '../services/scrapingApi';
 import type { UnitMixEntry, OmExtractedData } from '../types/scraping';
 import * as sourcingApi from '../services/sourcingApi';
+import ClimateCheckUpload, { ClimateScoreSummary } from '../components/ClimateCheckUpload';
 
 // --- FINANCIAL CALCULATION UTILITIES ---
 const calculatePMT = (rate: number, nper: number, pv: number) => {
@@ -1587,6 +1588,11 @@ const Underwriting = () => {
 
             </div>
 
+            {/* ── Climate Risk (ClimateCheck PDF) ── */}
+            <div className="pt-1 border-t border-gray-100">
+              <ClimateCheckUpload dealId={currentDealId} />
+            </div>
+
             {/* ── OR divider + Link to URL ── */}
             {!omUploading && (
               <div className="flex flex-col items-center gap-2">
@@ -2405,6 +2411,9 @@ const Underwriting = () => {
                 </div>
                 <p className="text-[10px] text-gray-400 mt-1">LTV auto-calculates from Loan Amount ÷ Offer Price</p>
               </div>
+
+              {/* Climate Risk Summary (read-only, only after confirmation) */}
+              <ClimateScoreSummary dealId={currentDealId} />
 
             </div>
           </div>

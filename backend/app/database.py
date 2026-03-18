@@ -134,6 +134,20 @@ class DealModel(db.Model):
     # Section 6 — Loan Details
     loan_details = Column(Text)   # JSON array of 3 loan objects
 
+    # ── ClimateCheck PDF data ────────────────────────────────────────────────
+    climate_overall_score   = Column(Float)        # 0-100
+    climate_wildfire_score  = Column(Float)        # 0-100
+    climate_flood_score     = Column(Float)        # 0-100
+    climate_overall_label   = Column(String(50))   # e.g. 'Moderate', 'High', 'Severe'
+    climate_wildfire_label  = Column(String(50))
+    climate_flood_label     = Column(String(50))
+    climate_key_risks       = Column(Text)         # JSON array of strings
+    climate_property_address = Column(String(500)) # address from the report
+    climate_pdf_filename    = Column(String(500))
+    climate_pdf_drive_url   = Column(String(1000))
+    climate_raw_extracted   = Column(Text)         # full JSON extraction from Claude
+    climate_confirmed       = Column(Integer, default=0)  # 0 = unconfirmed, 1 = confirmed
+
     def __repr__(self):
         return f'<Deal {self.id}: {self.deal_name} ({self.status})>'
 
@@ -245,6 +259,20 @@ class DealModel(db.Model):
 
             # Deal Execution — Section 6 (Loan Details)
             'loanDetails': self.loan_details,
+
+            # ClimateCheck PDF data
+            'climateOverallScore':    self.climate_overall_score,
+            'climateWildfireScore':   self.climate_wildfire_score,
+            'climateFloodScore':      self.climate_flood_score,
+            'climateOverallLabel':    self.climate_overall_label,
+            'climateWildfireLabel':   self.climate_wildfire_label,
+            'climateFloodLabel':      self.climate_flood_label,
+            'climateKeyRisks':        self.climate_key_risks,
+            'climatePropertyAddress': self.climate_property_address,
+            'climatePdfFilename':     self.climate_pdf_filename,
+            'climatePdfDriveUrl':     self.climate_pdf_drive_url,
+            'climateRawExtracted':    self.climate_raw_extracted,
+            'climateConfirmed':       bool(self.climate_confirmed),
         }
 
     @staticmethod
@@ -491,6 +519,32 @@ class DealModel(db.Model):
         # Deal Execution — Section 6 (Loan Details)
         if 'loanDetails' in data:
             self.loan_details = data['loanDetails']
+
+        # ClimateCheck PDF data
+        if 'climateOverallScore' in data:
+            self.climate_overall_score = data['climateOverallScore']
+        if 'climateWildfireScore' in data:
+            self.climate_wildfire_score = data['climateWildfireScore']
+        if 'climateFloodScore' in data:
+            self.climate_flood_score = data['climateFloodScore']
+        if 'climateOverallLabel' in data:
+            self.climate_overall_label = data['climateOverallLabel']
+        if 'climateWildfireLabel' in data:
+            self.climate_wildfire_label = data['climateWildfireLabel']
+        if 'climateFloodLabel' in data:
+            self.climate_flood_label = data['climateFloodLabel']
+        if 'climateKeyRisks' in data:
+            self.climate_key_risks = data['climateKeyRisks']
+        if 'climatePropertyAddress' in data:
+            self.climate_property_address = data['climatePropertyAddress']
+        if 'climatePdfFilename' in data:
+            self.climate_pdf_filename = data['climatePdfFilename']
+        if 'climatePdfDriveUrl' in data:
+            self.climate_pdf_drive_url = data['climatePdfDriveUrl']
+        if 'climateRawExtracted' in data:
+            self.climate_raw_extracted = data['climateRawExtracted']
+        if 'climateConfirmed' in data:
+            self.climate_confirmed = int(bool(data['climateConfirmed']))
 
         # Update timestamp
         self.updated_at = datetime.utcnow()
