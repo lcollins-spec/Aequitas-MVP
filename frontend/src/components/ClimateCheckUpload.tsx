@@ -52,12 +52,6 @@ const scoreBg = (score: number | null): string => {
   return 'bg-red-50';
 };
 
-const fmt = (score: number | null, label: string | null): string => {
-  if (score === null || score === undefined) return '—';
-  const l = label ? ` (${label})` : '';
-  return `${Math.round(score)}${l}`;
-};
-
 // ── component ─────────────────────────────────────────────────────────────────
 
 export default function ClimateCheckUpload({ dealId, onConfirmed }: Props) {
