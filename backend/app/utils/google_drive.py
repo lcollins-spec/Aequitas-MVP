@@ -6,6 +6,7 @@ GOOGLE_REFRESH_TOKEN). Never uses a service account.
 
 All Drive errors raise exceptions with clear messages — never fail silently.
 """
+from __future__ import annotations  # allows str | None on Python 3.9
 
 import os
 from functools import lru_cache

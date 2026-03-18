@@ -15,6 +15,8 @@ POST /api/asset-management/deals/<deal_id>/reports/<quarter>/upload-pdf
     Accepts a multipart PDF, uploads to Google Drive in the deal's folder,
     and saves pdf_filename + pdf_drive_url to the matching asset_report row.
 """
+from __future__ import annotations  # allows X | None on Python 3.9
+
 import json
 import logging
 from datetime import datetime
