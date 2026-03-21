@@ -69,6 +69,8 @@ def _do_export(deal_id):
         return jsonify({'error': f'Excel template not found at: {os.path.abspath(TEMPLATE_PATH)}'}), 500
 
     wb = load_workbook(TEMPLATE_PATH)
+    wb.calculation.calcMode = 'auto'
+    wb.calculation.fullCalcOnLoad = True
     ws = wb.worksheets[0]
 
     # --- D5: Property Name ---
