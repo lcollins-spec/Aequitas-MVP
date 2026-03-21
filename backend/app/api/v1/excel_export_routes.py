@@ -61,7 +61,7 @@ def _do_export(deal_id):
 
     financing        = data.get('financing', {}) or {}
     exit_assumptions = data.get('exitAssumptions', {}) or {}
-    op_expenses      = data.get('operatingExpenses', {}) or {}
+    op_expenses      = data.get('omOperatingExpenses') or data.get('operatingExpenses', {}) or {}
     op_projections   = data.get('operatingProjections', {}) or {}
     unit_mix_list    = data.get('unitMix', []) or []
 
@@ -185,12 +185,8 @@ def _do_export(deal_id):
     ws['H24'] = _to_decimal(exit_cap or 0.06)
 
     # --- F17: Hold period in months (integer) ---
-    hold_years = (
-        exit_assumptions.get('holdPeriodYears')
-        or financing.get('loanTermYears')
-        or deal.loan_term_years
-        or 0
-    )
+    # Read holdingPeriod directly from underwriting_json; do not fall through to loan_term_years
+    hold_years = data.get('holdingPeriod') or exit_assumptions.get('holdPeriodYears') or 0
     ws['F17'] = int(hold_years * 12)
 
     # --- Save and return ---
