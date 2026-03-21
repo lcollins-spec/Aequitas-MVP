@@ -8,6 +8,7 @@ from io import BytesIO
 import json
 import os
 
+import numpy_financial as npf
 from openpyxl import load_workbook
 from app.database import db, DealModel
 
@@ -188,6 +189,93 @@ def _do_export(deal_id):
     # Read holdingPeriod directly from underwriting_json; do not fall through to loan_term_years
     hold_years = data.get('holdingPeriod') or exit_assumptions.get('holdPeriodYears') or 0
     ws['F17'] = int(hold_years * 12)
+
+    # --- Compute IRR / Equity Multiple and write to M88, M89, M105, M106, M118, M119 ---
+    # Mirrors the three cash flow series in the template:
+    #   Row 85  (V85:EX85)  — Unlevered CF  → M88 IRR,  M89 EM
+    #   Row 101 (V101:EX101)— Levered CF    → M105 IRR, M106 EM
+    #   Row 115 (V115:EX115)— Aequitas (LP) → M118 IRR, M119 EM (levered × lp_share)
+    try:
+        rent_growth      = float(data.get('rentGrowthRate') or 0.02)
+        closing_costs_pct = _to_decimal(data.get('closingCostsPct') or 0.01)
+        closing_costs    = purchase_price * closing_costs_pct
+        loan_amount      = purchase_price * ltv
+        equity_invested  = purchase_price * (1.0 - ltv) + closing_costs
+        monthly_rate     = _to_decimal(interest_rate) / 12.0
+        loan_term_months = 360
+        hold_months      = int(hold_years * 12)
+        lp_share         = round(1.0 - aeq_pct, 6)
+
+        # Monthly mortgage payment (positive = outflow)
+        if monthly_rate > 0:
+            monthly_pmt = monthly_rate * loan_amount / (1 - (1 + monthly_rate) ** -loan_term_months)
+        else:
+            monthly_pmt = loan_amount / loan_term_months
+
+        # Remaining loan balance after hold_months payments
+        if monthly_rate > 0:
+            remaining_balance = (
+                loan_amount * (1 + monthly_rate) ** hold_months
+                - monthly_pmt * ((1 + monthly_rate) ** hold_months - 1) / monthly_rate
+            )
+        else:
+            remaining_balance = loan_amount - monthly_pmt * hold_months
+
+        # Exit value and net proceeds
+        exit_noi_annual   = ttm_noi * (1 + rent_growth) ** (hold_months / 12.0)
+        exit_value        = exit_noi_annual / exit_cap if exit_cap else 0.0
+        net_sale_proceeds = exit_value - remaining_balance  # levered exit net
+
+        monthly_noi_0 = ttm_noi / 12.0
+
+        # Build monthly cash flow arrays (month 0 … hold_months)
+        unlevered_cfs = []
+        levered_cfs   = []
+        for m in range(hold_months + 1):
+            noi_m = monthly_noi_0 * (1 + rent_growth) ** (m / 12.0)
+            if m == 0:
+                unlevered_cfs.append(-(purchase_price + closing_costs))
+                levered_cfs.append(-equity_invested)
+            elif m == hold_months:
+                unlevered_cfs.append(noi_m + exit_value)
+                levered_cfs.append(noi_m - monthly_pmt + net_sale_proceeds)
+            else:
+                unlevered_cfs.append(noi_m)
+                levered_cfs.append(noi_m - monthly_pmt)
+
+        aequitas_cfs = [cf * lp_share for cf in levered_cfs]
+
+        def _annualized_irr(cfs):
+            r = npf.irr(cfs)
+            if r is None or r != r:  # nan guard
+                return None
+            return (1.0 + r) ** 12 - 1.0
+
+        def _equity_multiple(cfs):
+            peak = sum(cf for cf in cfs if cf < 0)
+            if not peak:
+                return None
+            return (sum(cfs) - peak) / (-peak)
+
+        irr_unlev = _annualized_irr(unlevered_cfs)
+        em_unlev  = _equity_multiple(unlevered_cfs)
+        irr_lev   = _annualized_irr(levered_cfs)
+        em_lev    = _equity_multiple(levered_cfs)
+        irr_aeq   = _annualized_irr(aequitas_cfs)
+        em_aeq    = _equity_multiple(aequitas_cfs)
+
+        if irr_unlev is not None: ws['M88']  = irr_unlev
+        if em_unlev  is not None: ws['M89']  = em_unlev
+        if irr_lev   is not None: ws['M105'] = irr_lev
+        if em_lev    is not None: ws['M106'] = em_lev
+        if irr_aeq   is not None: ws['M118'] = irr_aeq
+        if em_aeq    is not None: ws['M119'] = em_aeq
+
+        print(f"[IRR] Unlevered: IRR={irr_unlev:.2%} EM={em_unlev:.2f}x  "
+              f"Levered: IRR={irr_lev:.2%} EM={em_lev:.2f}x  "
+              f"Aequitas: IRR={irr_aeq:.2%} EM={em_aeq:.2f}x")
+    except Exception as irr_err:
+        print(f"[IRR] Skipped due to error: {irr_err}")
 
     # --- Save and return ---
     buf = BytesIO()

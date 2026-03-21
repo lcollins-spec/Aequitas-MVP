@@ -21,3 +21,4 @@ scipy>=1.11.0
 shapely>=2.0.0
 geopandas>=0.14.0
 pyproj>=3.6.0
+numpy_financial>=1.0.0
