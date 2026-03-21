@@ -271,9 +271,10 @@ def _do_export(deal_id):
         if irr_aeq   is not None: ws['M118'] = irr_aeq
         if em_aeq    is not None: ws['M119'] = em_aeq
 
-        print(f"[IRR] Unlevered: IRR={irr_unlev:.2%} EM={em_unlev:.2f}x  "
-              f"Levered: IRR={irr_lev:.2%} EM={em_lev:.2f}x  "
-              f"Aequitas: IRR={irr_aeq:.2%} EM={em_aeq:.2f}x")
+        # Read back immediately to confirm writes stuck
+        print(f"[IRR write-verify] M88={ws['M88'].value!r} M89={ws['M89'].value!r} "
+              f"M105={ws['M105'].value!r} M106={ws['M106'].value!r} "
+              f"M118={ws['M118'].value!r} M119={ws['M119'].value!r}")
     except Exception as irr_err:
         print(f"[IRR] Skipped due to error: {irr_err}")
 
