@@ -75,10 +75,14 @@ def _do_export(deal_id):
     ws = wb.worksheets[0]
 
     # --- D5: Property Name ---
-    ws['D5'] = data.get('propertyName') or deal.deal_name or ''
+    _v = data.get('propertyName') or deal.deal_name or ''
+    print(f"[cell-write] D5  = {_v!r}")
+    ws['D5'] = _v
 
     # --- D6: Address ---
-    ws['D6'] = data.get('address') or deal.property_address or ''
+    _v = data.get('address') or deal.property_address or ''
+    print(f"[cell-write] D6  = {_v!r}")
+    ws['D6'] = _v
 
     # --- E16: Acquisition Date (Python date object) ---
     acq_date_raw = data.get('acquisitionDate')
@@ -92,6 +96,7 @@ def _do_export(deal_id):
         acq_date = getattr(deal, 'acquisition_date', None)
     if acq_date is None:
         acq_date = date.today()
+    print(f"[cell-write] E16 = {acq_date!r}")
     ws['E16'] = acq_date
 
     # --- D61: 1BR unit count, E61: 1BR rent per unit ---
@@ -111,16 +116,20 @@ def _do_export(deal_id):
         else:
             one_br_count = data.get('totalUnits') or sum(u.get('count', 0) for u in unit_mix_list) or 0
             one_br_rent = data.get('avgMonthlyRent') or 0
+    print(f"[cell-write] D61 = {one_br_count!r}")
     ws['D61'] = one_br_count
+    print(f"[cell-write] E61 = {one_br_rent!r}")
     ws['E61'] = one_br_rent
 
     # --- D25: Asking Price ---
     purchase_price = data.get('purchasePrice') or deal.purchase_price or 0
+    print(f"[cell-write] D25 = {purchase_price!r}")
     ws['D25'] = purchase_price
 
     # --- E24: Aequitas entry cap rate (decimal) ---
     exit_cap = exit_assumptions.get('exitCapRate') or data.get('exitCapRate') or 0
     entry_cap = _to_decimal(data.get('entryCapRate') or exit_cap or 0.06)
+    print(f"[cell-write] E24 = {entry_cap!r}")
     ws['E24'] = entry_cap
 
     # --- D23: TTM NOI ---
@@ -158,6 +167,7 @@ def _do_export(deal_id):
         + mgmt_fee_pct * egi
     )
     ttm_noi = max(egi - total_opex, 0)
+    print(f"[cell-write] D23 = {round(ttm_noi)!r}")
     ws['D23'] = round(ttm_noi)
 
     # --- D47: LTV (decimal) ---
@@ -166,6 +176,7 @@ def _do_export(deal_id):
         ltv = 1.0 - (_to_decimal(deal.down_payment_percent) if deal.down_payment_percent else 0.35)
     else:
         ltv = _to_decimal(ltv)
+    print(f"[cell-write] D47 = {ltv!r}")
     ws['D47'] = ltv
 
     # --- E49: Senior loan interest rate (decimal) ---
@@ -175,19 +186,23 @@ def _do_export(deal_id):
         or deal.loan_interest_rate
         or 0
     )
+    print(f"[cell-write] E49 = {_to_decimal(interest_rate)!r}")
     ws['E49'] = _to_decimal(interest_rate)
 
     # --- G8: LP equity share (decimal) ---
     # aequitasEquityPct is Aequitas (GP) share; LP = 1 - GP share
     aeq_pct = _to_decimal(data.get('aequitasEquityPct', 0.5))
+    print(f"[cell-write] G8  = {round(1.0 - aeq_pct, 6)!r}")
     ws['G8'] = round(1.0 - aeq_pct, 6)
 
     # --- H24: Exit cap rate (decimal) ---
+    print(f"[cell-write] H24 = {_to_decimal(exit_cap or 0.06)!r}")
     ws['H24'] = _to_decimal(exit_cap or 0.06)
 
     # --- F17: Hold period in months (integer) ---
     # Read holdingPeriod directly from underwriting_json; do not fall through to loan_term_years
     hold_years = data.get('holdingPeriod') or exit_assumptions.get('holdPeriodYears') or 0
+    print(f"[cell-write] F17 = {int(hold_years * 12)!r}")
     ws['F17'] = int(hold_years * 12)
 
     # --- Compute IRR / Equity Multiple and write to M88, M89, M105, M106, M118, M119 ---
