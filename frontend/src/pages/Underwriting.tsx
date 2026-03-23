@@ -307,6 +307,35 @@ const Underwriting = () => {
   const [refiTermYearsInput, setRefiTermYearsInput] = useState(10);
   const [refiAmortYearsInput, setRefiAmortYearsInput] = useState(30);
   const [refiIOMonthsInput, setRefiIOMonthsInput] = useState(0);
+
+  // Template-specific underwriting inputs (Excel cell mappings)
+  const [acquisitionDate, setAcquisitionDate] = useState('');
+  const [lossToLeaseRate, setLossToLeaseRate] = useState(0);
+  const [concessionsRate, setConcessionsRate] = useState(0);
+  const [opexPayrollPerUnit, setOpexPayrollPerUnit] = useState(0);
+  const [opexAdminPerUnit, setOpexAdminPerUnit] = useState(0);
+  const [opexMarketingPerUnit, setOpexMarketingPerUnit] = useState(0);
+  const [opexRmPerUnit, setOpexRmPerUnit] = useState(0);
+  const [opexContractServicePerUnit, setOpexContractServicePerUnit] = useState(0);
+  const [opexTurnoverPerUnit, setOpexTurnoverPerUnit] = useState(0);
+  const [opexInsurancePerUnit, setOpexInsurancePerUnit] = useState(0);
+  const [opexUtilitiesPerUnit, setOpexUtilitiesPerUnit] = useState(0);
+  const [opexPropertyTaxPerUnit, setOpexPropertyTaxPerUnit] = useState(0);
+  const [capexPerUnit, setCapexPerUnit] = useState(0);
+  const [parkingIncomePerUnit, setParkingIncomePerUnit] = useState(0);
+  const [rubsPct, setRubsPct] = useState(0);
+  const [otherIncomePerUnit, setOtherIncomePerUnit] = useState(0);
+  const [refiLtv, setRefiLtv] = useState(0);
+  const [refiInterestRate, setRefiInterestRate] = useState(0);
+  const [refiFinancingCostsPct, setRefiFinancingCostsPct] = useState(0);
+  const [refiIoPeriods, setRefiIoPeriods] = useState(0);
+  const [refiTermMonths, setRefiTermMonths] = useState(0);
+  const [seniorIoPeriods, setSeniorIoPeriods] = useState(0);
+  const [seniorFinancingCostsPct, setSeniorFinancingCostsPct] = useState(0);
+  const [opexGrowthRate, setOpexGrowthRate] = useState(3);
+  const [propertyTaxGrowthRate, setPropertyTaxGrowthRate] = useState(2);
+  const [gpEquitySplitPct, setGpEquitySplitPct] = useState(10);
+
   const [gpPartner, setGpPartner] = useState('Aequitas Housing');
   const [gpPartners, setGpPartners] = useState<string[]>(GP_PARTNERS_FALLBACK);
 
@@ -523,6 +552,32 @@ const Underwriting = () => {
         if (uw.omRentStabilized != null) setOmRentStabilized(uw.omRentStabilized);
         if (uw.omAnnualRentGrowthCap != null) setOmAnnualRentGrowthCap(uw.omAnnualRentGrowthCap);
         if (uw.rentGrowthRate != null) setRentGrowthRate(uw.rentGrowthRate);
+        if (uw.acquisitionDate) setAcquisitionDate(uw.acquisitionDate);
+        if (uw.lossToLeaseRate != null) setLossToLeaseRate(uw.lossToLeaseRate);
+        if (uw.concessionsRate != null) setConcessionsRate(uw.concessionsRate);
+        if (uw.opexPayrollPerUnit != null) setOpexPayrollPerUnit(uw.opexPayrollPerUnit);
+        if (uw.opexAdminPerUnit != null) setOpexAdminPerUnit(uw.opexAdminPerUnit);
+        if (uw.opexMarketingPerUnit != null) setOpexMarketingPerUnit(uw.opexMarketingPerUnit);
+        if (uw.opexRmPerUnit != null) setOpexRmPerUnit(uw.opexRmPerUnit);
+        if (uw.opexContractServicePerUnit != null) setOpexContractServicePerUnit(uw.opexContractServicePerUnit);
+        if (uw.opexTurnoverPerUnit != null) setOpexTurnoverPerUnit(uw.opexTurnoverPerUnit);
+        if (uw.opexInsurancePerUnit != null) setOpexInsurancePerUnit(uw.opexInsurancePerUnit);
+        if (uw.opexUtilitiesPerUnit != null) setOpexUtilitiesPerUnit(uw.opexUtilitiesPerUnit);
+        if (uw.opexPropertyTaxPerUnit != null) setOpexPropertyTaxPerUnit(uw.opexPropertyTaxPerUnit);
+        if (uw.capexPerUnit != null) setCapexPerUnit(uw.capexPerUnit);
+        if (uw.parkingIncomePerUnit != null) setParkingIncomePerUnit(uw.parkingIncomePerUnit);
+        if (uw.rubsPct != null) setRubsPct(uw.rubsPct);
+        if (uw.otherIncomePerUnit != null) setOtherIncomePerUnit(uw.otherIncomePerUnit);
+        if (uw.refiLtv != null) setRefiLtv(uw.refiLtv);
+        if (uw.refiInterestRate != null) setRefiInterestRate(uw.refiInterestRate);
+        if (uw.refiFinancingCostsPct != null) setRefiFinancingCostsPct(uw.refiFinancingCostsPct);
+        if (uw.refiIoPeriods != null) setRefiIoPeriods(uw.refiIoPeriods);
+        if (uw.refiTermMonths != null) setRefiTermMonths(uw.refiTermMonths);
+        if (uw.seniorIoPeriods != null) setSeniorIoPeriods(uw.seniorIoPeriods);
+        if (uw.seniorFinancingCostsPct != null) setSeniorFinancingCostsPct(uw.seniorFinancingCostsPct);
+        if (uw.opexGrowthRate != null) setOpexGrowthRate(uw.opexGrowthRate);
+        if (uw.propertyTaxGrowthRate != null) setPropertyTaxGrowthRate(uw.propertyTaxGrowthRate);
+        if (uw.gpEquitySplitPct != null) setGpEquitySplitPct(uw.gpEquitySplitPct);
         if (uw.marketAnalysisDemographics) {
           setMarketAnalysisDemographics(uw.marketAnalysisDemographics);
           setMarketAnalysisOpen(true);
@@ -868,6 +923,32 @@ const Underwriting = () => {
           omRentStabilized: omRentStabilized ?? undefined,
           omAnnualRentGrowthCap: omAnnualRentGrowthCap ?? undefined,
           rentGrowthRate,
+          acquisitionDate,
+          lossToLeaseRate,
+          concessionsRate,
+          opexPayrollPerUnit,
+          opexAdminPerUnit,
+          opexMarketingPerUnit,
+          opexRmPerUnit,
+          opexContractServicePerUnit,
+          opexTurnoverPerUnit,
+          opexInsurancePerUnit,
+          opexUtilitiesPerUnit,
+          opexPropertyTaxPerUnit,
+          capexPerUnit,
+          parkingIncomePerUnit,
+          rubsPct,
+          otherIncomePerUnit,
+          refiLtv,
+          refiInterestRate,
+          refiFinancingCostsPct,
+          refiIoPeriods,
+          refiTermMonths,
+          seniorIoPeriods,
+          seniorFinancingCostsPct,
+          opexGrowthRate,
+          propertyTaxGrowthRate,
+          gpEquitySplitPct,
           marketAnalysisDemographics: demoData ?? undefined,
           marketAnalysisStats: statsData ?? undefined,
         }),
@@ -1012,7 +1093,7 @@ const Underwriting = () => {
         parkingSpaces: Math.round(totalUnits * 1.5), // Estimate 1.5 spaces per unit
 
         purchasePrice: purchasePrice,
-        acquisitionDate: new Date().toISOString(),
+        acquisitionDate: acquisitionDate || new Date().toISOString(),
         earnestMoneyPct: 0.02,
         constructionCostPct: constructionCostPct / 100,
         closingCostsPct: closingCostsPct / 100,
@@ -1115,7 +1196,35 @@ const Underwriting = () => {
           countyTaxRate: 0.011,
           prop13Cap: 0.02,
           specialAssessments: 0
-        }
+        },
+
+        // New template input fields
+        lossToLeaseRate,
+        concessionsRate,
+        rentGrowthRate,
+        opexGrowthRate,
+        propertyTaxGrowthRate,
+        opexPayrollPerUnit,
+        opexAdminPerUnit,
+        opexMarketingPerUnit,
+        opexRmPerUnit,
+        opexContractServicePerUnit,
+        opexTurnoverPerUnit,
+        opexInsurancePerUnit,
+        opexUtilitiesPerUnit,
+        opexPropertyTaxPerUnit,
+        capexPerUnit,
+        rubsPct,
+        parkingIncomePerUnit,
+        otherIncomePerUnit,
+        seniorIoPeriods,
+        seniorFinancingCostsPct,
+        refiLtv,
+        refiInterestRate,
+        refiFinancingCostsPct,
+        refiIoPeriods,
+        refiTermMonths,
+        gpEquitySplitPct,
       };
 
       await dealApi.exportMultifamilyToExcel(currentDealId, underwritingData);
@@ -1901,6 +2010,162 @@ const Underwriting = () => {
                       <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                     </div>
                   </div>
+
+                  {/* ── Acquisition Date ── */}
+                  <div className="border-t border-gray-100 pt-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Acquisition Date</label>
+                    <input type="date" value={acquisitionDate} onChange={(e) => setAcquisitionDate(e.target.value)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                  </div>
+
+                  {/* ── Income Adjustments ── */}
+                  <div className="border-t border-gray-100 pt-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Income Adjustments</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Loss to Lease (%)</label>
+                        <input type="number" step="0.1" value={lossToLeaseRate * 100} onChange={(e) => setLossToLeaseRate((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Concessions (%)</label>
+                        <input type="number" step="0.1" value={concessionsRate * 100} onChange={(e) => setConcessionsRate((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Opex Growth Rate (%/yr)</label>
+                        <input type="number" step="0.1" value={opexGrowthRate} onChange={(e) => setOpexGrowthRate(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Property Tax Growth Rate (%/yr)</label>
+                        <input type="number" step="0.1" value={propertyTaxGrowthRate} onChange={(e) => setPropertyTaxGrowthRate(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── Other Income ── */}
+                  <div className="border-t border-gray-100 pt-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Other Income</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">RUBS % of Utility Expense</label>
+                        <input type="number" step="0.1" value={rubsPct * 100} onChange={(e) => setRubsPct((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Parking $/unit/mo</label>
+                        <input type="number" step="1" value={parkingIncomePerUnit} onChange={(e) => setParkingIncomePerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Other Income $/unit/mo</label>
+                        <input type="number" step="1" value={otherIncomePerUnit} onChange={(e) => setOtherIncomePerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── Controllable Opex ── */}
+                  <div className="border-t border-gray-100 pt-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Controllable Opex ($/unit/yr)</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Payroll</label>
+                        <input type="number" step="1" value={opexPayrollPerUnit} onChange={(e) => setOpexPayrollPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Admin</label>
+                        <input type="number" step="1" value={opexAdminPerUnit} onChange={(e) => setOpexAdminPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Marketing</label>
+                        <input type="number" step="1" value={opexMarketingPerUnit} onChange={(e) => setOpexMarketingPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Repairs &amp; Maintenance</label>
+                        <input type="number" step="1" value={opexRmPerUnit} onChange={(e) => setOpexRmPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Contract Services</label>
+                        <input type="number" step="1" value={opexContractServicePerUnit} onChange={(e) => setOpexContractServicePerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Turnover</label>
+                        <input type="number" step="1" value={opexTurnoverPerUnit} onChange={(e) => setOpexTurnoverPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── Non-controllable Opex ── */}
+                  <div className="border-t border-gray-100 pt-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Non-controllable Opex ($/unit/yr)</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Insurance</label>
+                        <input type="number" step="1" value={opexInsurancePerUnit} onChange={(e) => setOpexInsurancePerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Utilities</label>
+                        <input type="number" step="1" value={opexUtilitiesPerUnit} onChange={(e) => setOpexUtilitiesPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Property Tax</label>
+                        <input type="number" step="1" value={opexPropertyTaxPerUnit} onChange={(e) => setOpexPropertyTaxPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── CapEx ── */}
+                  <div className="border-t border-gray-100 pt-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">CapEx</p>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1.5">CapEx $/unit/yr</label>
+                      <input type="number" step="1" value={capexPerUnit} onChange={(e) => setCapexPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                    </div>
+                  </div>
+
+                  {/* ── Senior Financing ── */}
+                  <div className="border-t border-gray-100 pt-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Senior Financing</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">IO Periods (months)</label>
+                        <input type="number" step="1" value={seniorIoPeriods} onChange={(e) => setSeniorIoPeriods(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Financing Costs (%)</label>
+                        <input type="number" step="0.1" value={seniorFinancingCostsPct * 100} onChange={(e) => setSeniorFinancingCostsPct((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── Refinance ── */}
+                  <div className="border-t border-gray-100 pt-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Refinance</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Refi LTV (%)</label>
+                        <input type="number" step="0.1" value={refiLtv * 100} onChange={(e) => setRefiLtv((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Refi Interest Rate (%)</label>
+                        <input type="number" step="0.1" value={refiInterestRate * 100} onChange={(e) => setRefiInterestRate((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Refi Financing Costs (%)</label>
+                        <input type="number" step="0.1" value={refiFinancingCostsPct * 100} onChange={(e) => setRefiFinancingCostsPct((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Refi IO Periods (months)</label>
+                        <input type="number" step="1" value={refiIoPeriods} onChange={(e) => setRefiIoPeriods(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Refi Term (months)</label>
+                        <input type="number" step="1" value={refiTermMonths} onChange={(e) => setRefiTermMonths(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── GP Equity Split ── */}
+                  <div className="border-t border-gray-100 pt-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5">GP Equity Split (%)</label>
+                    <input type="number" step="0.1" value={gpEquitySplitPct} onChange={(e) => setGpEquitySplitPct(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                  </div>
+
                 </div>
               )}
             </div>

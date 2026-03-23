@@ -148,6 +148,34 @@ class DealModel(db.Model):
     climate_raw_extracted   = Column(Text)         # full JSON extraction from Claude
     climate_confirmed       = Column(Integer, default=0)  # 0 = unconfirmed, 1 = confirmed
 
+    # ── Template-specific underwriting inputs ─────────────────────────────────
+    acquisition_date              = Column(Date)
+    loss_to_lease_rate            = Column(Float)
+    concessions_rate              = Column(Float)
+    opex_payroll_per_unit         = Column(Float)
+    opex_admin_per_unit           = Column(Float)
+    opex_marketing_per_unit       = Column(Float)
+    opex_rm_per_unit              = Column(Float)
+    opex_contract_service_per_unit = Column(Float)
+    opex_turnover_per_unit        = Column(Float)
+    opex_insurance_per_unit       = Column(Float)
+    opex_utilities_per_unit       = Column(Float)
+    opex_property_tax_per_unit    = Column(Float)
+    capex_per_unit                = Column(Float)
+    parking_income_per_unit       = Column(Float)
+    rubs_pct                      = Column(Float)
+    other_income_per_unit         = Column(Float)
+    refi_ltv                      = Column(Float)
+    refi_interest_rate            = Column(Float)
+    refi_financing_costs_pct      = Column(Float)
+    refi_io_periods               = Column(Integer)
+    refi_term_months              = Column(Integer)
+    senior_io_periods             = Column(Integer)
+    senior_financing_costs_pct    = Column(Float)
+    opex_growth_rate              = Column(Float)
+    property_tax_growth_rate      = Column(Float)
+    gp_equity_split_pct           = Column(Float)
+
     def __repr__(self):
         return f'<Deal {self.id}: {self.deal_name} ({self.status})>'
 

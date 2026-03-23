@@ -77,7 +77,7 @@ def _do_export(deal_id):
     # --- D6: Address ---
     ws['D6'] = data.get('address') or deal.property_address or ''
 
-    # --- E16: Acquisition Date (Python date object) ---
+    # --- E14: Acquisition Date (Python date object) ---
     acq_date_raw = data.get('acquisitionDate')
     acq_date = None
     if acq_date_raw:
@@ -89,7 +89,7 @@ def _do_export(deal_id):
         acq_date = getattr(deal, 'acquisition_date', None)
     if acq_date is None:
         acq_date = date.today()
-    ws['E16'] = acq_date
+    ws['E14'] = acq_date
 
     # --- D61: 1BR unit count, E61: 1BR rent per unit ---
     # Find 1BR entry in unit mix; fall back to total units / avg rent
@@ -190,6 +190,98 @@ def _do_export(deal_id):
         or 0
     )
     ws['F17'] = int(hold_years * 12)
+
+    # ── New template input cells ──────────────────────────────────────────────
+
+    # --- D73: Loss to lease (decimal) ---
+    ws['D73'] = _to_decimal(data.get('lossToLeaseRate') or getattr(deal, 'loss_to_lease_rate', None) or 0)
+
+    # --- D74–H74: Vacancy rate (same value across Year 1–5 columns) ---
+    vac = _to_decimal(
+        data.get('vacancyRate')
+        or op_projections.get('stabilizedVacancy')
+        or deal.vacancy_rate
+        or 0.05
+    )
+    for col in ('D', 'E', 'F', 'G', 'H'):
+        ws[f'{col}74'] = vac
+
+    # --- D75: Bad debt (decimal) ---
+    ws['D75'] = _to_decimal(data.get('badDebtRate') or 0)
+
+    # --- D76: Concessions (decimal) ---
+    ws['D76'] = _to_decimal(data.get('concessionsRate') or getattr(deal, 'concessions_rate', None) or 0)
+
+    # --- D79: Rent growth (decimal) ---
+    ws['D79'] = _to_decimal(
+        data.get('rentGrowthRate')
+        or op_projections.get('marketRentGrowth')
+        or 0.02
+    )
+
+    # --- D81: Opex growth rate (decimal) ---
+    ws['D81'] = _to_decimal(
+        data.get('opexGrowthRate')
+        or op_projections.get('opexGrowth')
+        or getattr(deal, 'opex_growth_rate', None)
+        or 0.03
+    )
+
+    # --- D82: Property tax growth rate (decimal) ---
+    ws['D82'] = _to_decimal(
+        data.get('propertyTaxGrowthRate')
+        or getattr(deal, 'property_tax_growth_rate', None)
+        or 0.02
+    )
+
+    # --- K39–K44: Controllable opex $/unit/yr ---
+    ws['K39'] = float(data.get('opexPayrollPerUnit') or getattr(deal, 'opex_payroll_per_unit', None) or 0)
+    ws['K40'] = float(data.get('opexAdminPerUnit') or getattr(deal, 'opex_admin_per_unit', None) or 0)
+    ws['K41'] = float(data.get('opexMarketingPerUnit') or getattr(deal, 'opex_marketing_per_unit', None) or 0)
+    ws['K42'] = float(data.get('opexRmPerUnit') or getattr(deal, 'opex_rm_per_unit', None) or 0)
+    ws['K43'] = float(data.get('opexContractServicePerUnit') or getattr(deal, 'opex_contract_service_per_unit', None) or 0)
+    ws['K44'] = float(data.get('opexTurnoverPerUnit') or getattr(deal, 'opex_turnover_per_unit', None) or 0)
+
+    # --- K52–K55: Non-controllable opex $/unit/yr ---
+    ws['K52'] = float(data.get('opexInsurancePerUnit') or getattr(deal, 'opex_insurance_per_unit', None) or 0)
+    ws['K53'] = float(data.get('opexUtilitiesPerUnit') or getattr(deal, 'opex_utilities_per_unit', None) or 0)
+    ws['K55'] = float(data.get('opexPropertyTaxPerUnit') or getattr(deal, 'opex_property_tax_per_unit', None) or 0)
+
+    # --- K64: CapEx $/unit/yr ---
+    ws['K64'] = float(data.get('capexPerUnit') or getattr(deal, 'capex_per_unit', None) or 0)
+
+    # --- K24: RUBS % (decimal) ---
+    ws['K24'] = _to_decimal(data.get('rubsPct') or getattr(deal, 'rubs_pct', None) or 0)
+
+    # --- K25: Parking $/unit/mo ---
+    ws['K25'] = float(data.get('parkingIncomePerUnit') or getattr(deal, 'parking_income_per_unit', None) or 0)
+
+    # --- K26: Other income $/unit/mo ---
+    ws['K26'] = float(data.get('otherIncomePerUnit') or getattr(deal, 'other_income_per_unit', None) or 0)
+
+    # --- D51: Senior IO periods (months) ---
+    ws['D51'] = int(data.get('seniorIoPeriods') or getattr(deal, 'senior_io_periods', None) or 0)
+
+    # --- D50: Senior financing costs % (decimal) ---
+    ws['D50'] = _to_decimal(data.get('seniorFinancingCostsPct') or getattr(deal, 'senior_financing_costs_pct', None) or 0)
+
+    # --- G55: Refi LTV (decimal) ---
+    ws['G55'] = _to_decimal(data.get('refiLtv') or getattr(deal, 'refi_ltv', None) or 0)
+
+    # --- G49: Refi interest rate (decimal) ---
+    ws['G49'] = _to_decimal(data.get('refiInterestRate') or getattr(deal, 'refi_interest_rate', None) or 0)
+
+    # --- G50: Refi financing costs % (decimal) ---
+    ws['G50'] = _to_decimal(data.get('refiFinancingCostsPct') or getattr(deal, 'refi_financing_costs_pct', None) or 0)
+
+    # --- G51: Refi IO periods (months) ---
+    ws['G51'] = int(data.get('refiIoPeriods') or getattr(deal, 'refi_io_periods', None) or 0)
+
+    # --- G48: Refi term (months) ---
+    ws['G48'] = int(data.get('refiTermMonths') or getattr(deal, 'refi_term_months', None) or 0)
+
+    # --- G6: GP equity split % (decimal) ---
+    ws['G6'] = _to_decimal(data.get('gpEquitySplitPct') or getattr(deal, 'gp_equity_split_pct', None) or 0.10)
 
     # --- Save and return ---
     buf = BytesIO()
