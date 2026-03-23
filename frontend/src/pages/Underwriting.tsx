@@ -247,7 +247,7 @@ const Underwriting = () => {
   const [currentDealId, setCurrentDealId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [excelMetrics, setExcelMetrics] = useState<ExcelMetrics | null>(null);
+  const [_excelMetrics, setExcelMetrics] = useState<ExcelMetrics | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -1120,9 +1120,9 @@ const Underwriting = () => {
         }
       };
 
-      const { excelMetrics: metrics } = await dealApi.exportMultifamilyToExcel(currentDealId, underwritingData);
-      setExcelMetrics(metrics);
-      console.log('[excelMetrics]', metrics);
+      const { excelMetrics: exportedMetrics } = await dealApi.exportMultifamilyToExcel(currentDealId, underwritingData);
+      setExcelMetrics(exportedMetrics);
+      console.log('[excelMetrics]', exportedMetrics);
     } catch (error) {
       console.error('Error exporting to Excel:', error);
       alert('Failed to export to Excel');
