@@ -8,7 +8,6 @@ from io import BytesIO
 import json
 import os
 
-import numpy_financial as npf
 from openpyxl import load_workbook
 from app.database import db, DealModel
 
@@ -26,11 +25,16 @@ def _to_decimal(value, fallback=0):
 
 
 def _classify_unit_type(unit_type_str):
-    """Return '1br' if the unit type is a 1-bedroom, otherwise 'other'."""
+    """Return 'studio', '1br', '2br', '3br', or 'other'."""
     s = (unit_type_str or '').lower()
-    # Match explicit 1BR patterns; avoid '1b' shortcut which falsely matches '2br/1ba'
-    if '1br' in s or '1/1' in s or s.startswith('1b'):
+    if 'studio' in s or 'eff' in s or '0br' in s or '0/1' in s or s.startswith('0b'):
+        return 'studio'
+    if '1br' in s or '1/1' in s or '1 br' in s or s.startswith('1b'):
         return '1br'
+    if '2br' in s or '2/1' in s or '2/2' in s or '2 br' in s or s.startswith('2b'):
+        return '2br'
+    if '3br' in s or '3/2' in s or '3/3' in s or '3 br' in s or s.startswith('3b'):
+        return '3br'
     return 'other'
 
 
@@ -99,27 +103,40 @@ def _do_export(deal_id):
     print(f"[cell-write] E16 = {acq_date!r}")
     ws['E16'] = acq_date
 
-    # --- D61: 1BR unit count, E61: 1BR rent per unit ---
-    # Find 1BR entry in unit mix; fall back to total units / avg rent
-    one_br_count = 0
-    one_br_rent = 0
+    # --- D60/E60, D61/E61, D62/E62, D63/E63: Unit mix (Studio, 1BR, 2BR, 3BR) ---
+    # Bucket each unit-mix entry by type; last non-zero rent wins within each bucket
+    unit_buckets = {'studio': [0, 0], '1br': [0, 0], '2br': [0, 0], '3br': [0, 0]}
     for u in unit_mix_list:
-        if _classify_unit_type(u.get('unitType', '')) == '1br':
-            one_br_count += u.get('count', 0)
-            one_br_rent = u.get('askingRent') or u.get('marketRent') or u.get('currentRent') or 0
-    if one_br_count == 0:
-        # No 1BR found — use the first unit type as the primary, or fall back to totals
+        t = _classify_unit_type(u.get('unitType', ''))
+        if t not in unit_buckets:
+            t = 'other'
+        if t == 'other':
+            continue
+        cnt  = u.get('count', 0)
+        rent = u.get('askingRent') or u.get('marketRent') or u.get('currentRent') or 0
+        unit_buckets[t][0] += cnt
+        if rent:
+            unit_buckets[t][1] = rent
+
+    # Fallback: if nothing classified as 1BR, promote first unit in list
+    if unit_buckets['1br'][0] == 0:
         if unit_mix_list:
             primary = unit_mix_list[0]
-            one_br_count = primary.get('count', 0)
-            one_br_rent = primary.get('askingRent') or primary.get('marketRent') or primary.get('currentRent') or 0
+            unit_buckets['1br'][0] = primary.get('count', 0)
+            unit_buckets['1br'][1] = (
+                primary.get('askingRent') or primary.get('marketRent') or primary.get('currentRent') or 0
+            )
         else:
-            one_br_count = data.get('totalUnits') or sum(u.get('count', 0) for u in unit_mix_list) or 0
-            one_br_rent = data.get('avgMonthlyRent') or 0
-    print(f"[cell-write] D61 = {one_br_count!r}")
-    ws['D61'] = one_br_count
-    print(f"[cell-write] E61 = {one_br_rent!r}")
-    ws['E61'] = one_br_rent
+            unit_buckets['1br'][0] = data.get('totalUnits') or 0
+            unit_buckets['1br'][1] = data.get('avgMonthlyRent') or 0
+
+    _unit_rows = {'studio': (60, 'D60', 'E60'), '1br': (61, 'D61', 'E61'),
+                  '2br': (62, 'D62', 'E62'), '3br': (63, 'D63', 'E63')}
+    for t, (_, cnt_cell, rent_cell) in _unit_rows.items():
+        print(f"[cell-write] {cnt_cell} = {unit_buckets[t][0]!r}")
+        ws[cnt_cell] = unit_buckets[t][0]
+        print(f"[cell-write] {rent_cell} = {unit_buckets[t][1]!r}")
+        ws[rent_cell] = unit_buckets[t][1]
 
     # --- D25: Asking Price ---
     purchase_price = data.get('purchasePrice') or deal.purchase_price or 0
@@ -202,104 +219,93 @@ def _do_export(deal_id):
     # --- F17: Hold period in months (integer) ---
     # Read holdingPeriod directly from underwriting_json; do not fall through to loan_term_years
     hold_years = data.get('holdingPeriod') or exit_assumptions.get('holdPeriodYears') or 0
-    print(f"[cell-write] F17 = {int(hold_years * 12)!r}")
-    ws['F17'] = int(hold_years * 12)
+    hold_months_int = int(hold_years * 12)
+    print(f"[cell-write] F17 = {hold_months_int!r}")
+    ws['F17'] = hold_months_int
 
-    # --- Compute IRR / Equity Multiple and write to M88, M89, M105, M106, M118, M119 ---
-    # Mirrors the three cash flow series in the template:
-    #   Row 85  (V85:EX85)  — Unlevered CF  → M88 IRR,  M89 EM
-    #   Row 101 (V101:EX101)— Levered CF    → M105 IRR, M106 EM
-    #   Row 115 (V115:EX115)— Aequitas (LP) → M118 IRR, M119 EM (levered × lp_share)
-    try:
-        rent_growth      = float(data.get('rentGrowthRate') or 0.02)
-        closing_costs_pct = _to_decimal(data.get('closingCostsPct') or 0.01)
-        closing_costs    = purchase_price * closing_costs_pct
-        loan_amount      = purchase_price * ltv
-        equity_invested  = purchase_price * (1.0 - ltv) + closing_costs
-        monthly_rate     = _to_decimal(interest_rate) / 12.0
-        loan_term_months = 360
-        hold_months      = int(hold_years * 12)
-        lp_share         = round(1.0 - aeq_pct, 6)
+    # --- D48: Senior loan term (months) ---
+    loan_term_years = financing.get('loanTermYears') or 5
+    loan_term_months = int(float(loan_term_years) * 12)
+    print(f"[cell-write] D48 = {loan_term_months!r}")
+    ws['D48'] = loan_term_months
 
-        # Monthly mortgage payment (positive = outflow)
-        if monthly_rate > 0:
-            monthly_pmt = monthly_rate * loan_amount / (1 - (1 + monthly_rate) ** -loan_term_months)
-        else:
-            monthly_pmt = loan_amount / loan_term_months
+    # --- D74: Vacancy rate (decimal, all 5 time-period columns) ---
+    _vac = round(vacancy_rate, 6)
+    for _col in ('D74', 'E74', 'F74', 'G74', 'H74'):
+        print(f"[cell-write] {_col} = {_vac!r}")
+        ws[_col] = _vac
 
-        # Remaining loan balance after hold_months payments
-        if monthly_rate > 0:
-            remaining_balance = (
-                loan_amount * (1 + monthly_rate) ** hold_months
-                - monthly_pmt * ((1 + monthly_rate) ** hold_months - 1) / monthly_rate
-            )
-        else:
-            remaining_balance = loan_amount - monthly_pmt * hold_months
+    # --- D105: General inflation / rent growth rate (decimal) ---
+    rent_growth_raw = float(data.get('rentGrowthRate') or 0.02)
+    rent_growth_decimal = _to_decimal(rent_growth_raw)
+    print(f"[cell-write] D105 = {rent_growth_decimal!r}")
+    ws['D105'] = rent_growth_decimal
 
-        # Exit value and net proceeds
-        exit_noi_annual   = ttm_noi * (1 + rent_growth) ** (hold_months / 12.0)
-        exit_value        = exit_noi_annual / exit_cap if exit_cap else 0.0
-        net_sale_proceeds = exit_value - remaining_balance  # levered exit net
+    # --- K42–K55: Individual opex line items ($/unit/yr) ---
+    # Template stores $/unit/yr; platform has annual totals → divide by total_units
+    _tu = max(total_units, 1)
+    _opex_map = {
+        'K42': (op_expenses.get('payroll') or 0) / _tu,
+        'K43': (op_expenses.get('administrative') or op_expenses.get('legalProfessional') or 0) / _tu,
+        'K44': (op_expenses.get('marketing') or 0) / _tu,
+        'K45': (op_expenses.get('repairsMaintenance') or op_expenses.get('repairsMaintenanceAnnual') or 0) / _tu,
+        'K52': (op_expenses.get('insurance') or op_expenses.get('insuranceAnnual') or deal.insurance_annual or 0) / _tu,
+        'K53': utilities_annual / _tu,
+        'K55': (op_expenses.get('propertyTax') or op_expenses.get('propertyTaxAnnual') or deal.property_tax_annual or 0) / _tu,
+    }
+    for _cell, _val in _opex_map.items():
+        if _val > 0:
+            print(f"[cell-write] {_cell} = {round(_val, 2)!r}")
+            ws[_cell] = round(_val, 2)
 
-        monthly_noi_0 = ttm_noi / 12.0
-
-        # Build monthly cash flow arrays (month 0 … hold_months)
-        unlevered_cfs = []
-        levered_cfs   = []
-        for m in range(hold_months + 1):
-            noi_m = monthly_noi_0 * (1 + rent_growth) ** (m / 12.0)
-            if m == 0:
-                unlevered_cfs.append(-(purchase_price + closing_costs))
-                levered_cfs.append(-equity_invested)
-            elif m == hold_months:
-                unlevered_cfs.append(noi_m + exit_value)
-                levered_cfs.append(noi_m - monthly_pmt + net_sale_proceeds)
-            else:
-                unlevered_cfs.append(noi_m)
-                levered_cfs.append(noi_m - monthly_pmt)
-
-        aequitas_cfs = [cf * lp_share for cf in levered_cfs]
-
-        def _annualized_irr(cfs):
-            r = npf.irr(cfs)
-            if r is None or r != r:  # nan guard
-                return None
-            return (1.0 + r) ** 12 - 1.0
-
-        def _equity_multiple(cfs):
-            peak = sum(cf for cf in cfs if cf < 0)
-            if not peak:
-                return None
-            return (sum(cfs) - peak) / (-peak)
-
-        irr_unlev = _annualized_irr(unlevered_cfs)
-        em_unlev  = _equity_multiple(unlevered_cfs)
-        irr_lev   = _annualized_irr(levered_cfs)
-        em_lev    = _equity_multiple(levered_cfs)
-        irr_aeq   = _annualized_irr(aequitas_cfs)
-        em_aeq    = _equity_multiple(aequitas_cfs)
-
-        if irr_unlev is not None: ws['M88']  = irr_unlev
-        if em_unlev  is not None: ws['M89']  = em_unlev
-        if irr_lev   is not None: ws['M105'] = irr_lev
-        if em_lev    is not None: ws['M106'] = em_lev
-        if irr_aeq   is not None: ws['M118'] = irr_aeq
-        if em_aeq    is not None: ws['M119'] = em_aeq
-
-        # Read back immediately to confirm writes stuck
-        print(f"[IRR write-verify] M88={ws['M88'].value!r} M89={ws['M89'].value!r} "
-              f"M105={ws['M105'].value!r} M106={ws['M106'].value!r} "
-              f"M118={ws['M118'].value!r} M119={ws['M119'].value!r}")
-    except Exception as irr_err:
-        print(f"[IRR] Skipped due to error: {irr_err}")
+    # M88, M89, M105, M106, M118, M119 are left as template formulas.
+    # LibreOffice recalculates them from the cash flow rows (V85:EX85, V101:EX101, V115:EX115).
 
     # --- Save and return ---
-    buf = BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-
     property_name = (data.get('propertyName') or deal.deal_name or 'Property').replace(' ', '_')
     filename = f"{property_name}_ProForma.xlsx"
+
+    # Try LibreOffice headless recalc to force full formula evaluation
+    lo_path = (
+        '/Applications/LibreOffice.app/Contents/MacOS/soffice'
+        if os.path.exists('/Applications/LibreOffice.app/Contents/MacOS/soffice')
+        else None
+    )
+    if lo_path:
+        import tempfile, subprocess, shutil
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_in  = os.path.join(tmpdir, filename)
+            tmp_out = os.path.join(tmpdir, 'out')
+            os.makedirs(tmp_out, exist_ok=True)
+            wb.save(tmp_in)
+            try:
+                result = subprocess.run(
+                    [lo_path, '--headless', '--convert-to', 'xlsx',
+                     '--outdir', tmp_out, tmp_in],
+                    capture_output=True, text=True, timeout=60
+                )
+                print(f"[LibreOffice] rc={result.returncode} stdout={result.stdout.strip()} stderr={result.stderr.strip()}")
+                converted = os.path.join(tmp_out, filename)
+                if result.returncode == 0 and os.path.exists(converted):
+                    with open(converted, 'rb') as f:
+                        buf = BytesIO(f.read())
+                    buf.seek(0)
+                    print("[LibreOffice] Using recalculated file")
+                else:
+                    print("[LibreOffice] Conversion failed, falling back to openpyxl save")
+                    buf = BytesIO()
+                    wb.save(buf)
+                    buf.seek(0)
+            except Exception as lo_err:
+                print(f"[LibreOffice] Error: {lo_err} — falling back to openpyxl save")
+                buf = BytesIO()
+                wb.save(buf)
+                buf.seek(0)
+    else:
+        print("[LibreOffice] Not found — saving with openpyxl only")
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
 
     return send_file(
         buf,
