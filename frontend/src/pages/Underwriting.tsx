@@ -758,6 +758,21 @@ const Underwriting = () => {
       if (data.badDebtRate != null) setBadDebtRate(data.badDebtRate);
       if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
       if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
+      // New OM-extracted template inputs
+      if (data.lossToLeaseRate != null) setLossToLeaseRate(data.lossToLeaseRate);
+      if (data.concessionsRate != null) setConcessionsRate(data.concessionsRate);
+      if (data.parkingIncomePerUnit != null) setParkingIncomePerUnit(data.parkingIncomePerUnit);
+      if (data.rubsPct != null) setRubsPct(data.rubsPct);
+      if (data.otherIncomePerUnit != null) setOtherIncomePerUnit(data.otherIncomePerUnit);
+      if (data.opexPayrollPerUnit != null) setOpexPayrollPerUnit(data.opexPayrollPerUnit);
+      if (data.opexAdminPerUnit != null) setOpexAdminPerUnit(data.opexAdminPerUnit);
+      if (data.opexMarketingPerUnit != null) setOpexMarketingPerUnit(data.opexMarketingPerUnit);
+      if (data.opexRmPerUnit != null) setOpexRmPerUnit(data.opexRmPerUnit);
+      if (data.opexContractServicePerUnit != null) setOpexContractServicePerUnit(data.opexContractServicePerUnit);
+      if (data.opexTurnoverPerUnit != null) setOpexTurnoverPerUnit(data.opexTurnoverPerUnit);
+      if (data.capexPerUnit != null) setCapexPerUnit(data.capexPerUnit);
+      if (data.opexGrowthRate != null) setOpexGrowthRate(data.opexGrowthRate * 100); // stored as % for the input
+      if (data.propertyTaxGrowthRate != null) setPropertyTaxGrowthRate(data.propertyTaxGrowthRate * 100);
 
       // Always create a new deal record on OM upload — never overwrite an existing deal
       const dealLocation = data.city && data.state

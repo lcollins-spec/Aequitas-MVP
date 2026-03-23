@@ -135,6 +135,20 @@ export interface OmExtractedData {
   } | null;
   vacancyRate?: number | null;
   badDebtRate?: number | null;
+  lossToLeaseRate?: number | null;
+  concessionsRate?: number | null;
+  parkingIncomePerUnit?: number | null;
+  rubsPct?: number | null;
+  otherIncomePerUnit?: number | null;
+  opexPayrollPerUnit?: number | null;
+  opexAdminPerUnit?: number | null;
+  opexMarketingPerUnit?: number | null;
+  opexRmPerUnit?: number | null;
+  opexContractServicePerUnit?: number | null;
+  opexTurnoverPerUnit?: number | null;
+  capexPerUnit?: number | null;
+  opexGrowthRate?: number | null;
+  propertyTaxGrowthRate?: number | null;
   rentStabilized?: boolean | null;
   annualRentGrowthCap?: number | null;
 }
