@@ -13,6 +13,15 @@ import type {
   ApiError
 } from '../types/deal';
 
+export interface ExcelMetrics {
+  leveredIRR: number | null;
+  leveredEM: number | null;
+  unleveredIRR: number | null;
+  unleveredEM: number | null;
+  lpIRR: number | null;
+  lpEM: number | null;
+}
+
 const API_BASE_URL = '/api/v1';
 
 class DealApiClient {
@@ -190,42 +199,41 @@ class DealApiClient {
   }
 
   /**
-   * Export multifamily underwriting to Excel
-   * Downloads comprehensive multifamily underwriting model
+   * Export multifamily underwriting to Excel (two-step flow).
+   * Step 1: POST → server recalculates, saves temp file, returns JSON with downloadUrl + excelMetrics.
+   * Step 2: GET downloadUrl → blob → trigger browser download.
    */
-  async exportMultifamilyToExcel(dealId: number, underwritingData: any): Promise<void> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/underwriting/${dealId}/export-excel`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(underwritingData)
-      });
+  async exportMultifamilyToExcel(dealId: number, underwritingData: any): Promise<{ excelMetrics: ExcelMetrics }> {
+    // Step 1: trigger export and get metrics + download URL
+    const postResponse = await fetch(`${API_BASE_URL}/underwriting/${dealId}/export-excel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(underwritingData)
+    });
 
-      if (!response.ok) {
-        const error: ApiError = await response.json();
-        throw new Error(error.error || 'Failed to export multifamily underwriting');
-      }
-
-      // Get the blob from the response
-      const blob = await response.blob();
-
-      // Create a download link
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${underwritingData.propertyName?.replace(/\s+/g, '_') || 'Property'}_Underwriting_${new Date().toISOString().split('T')[0]}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-
-      // Cleanup
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
-      console.error(`Error exporting multifamily underwriting ${dealId}:`, error);
-      throw error;
+    if (!postResponse.ok) {
+      const error: ApiError = await postResponse.json();
+      throw new Error(error.error || 'Failed to export multifamily underwriting');
     }
+
+    const { downloadUrl, excelMetrics }: { downloadUrl: string; excelMetrics: ExcelMetrics } = await postResponse.json();
+
+    // Step 2: fetch the file and trigger browser download
+    const fileResponse = await fetch(downloadUrl);
+    if (!fileResponse.ok) {
+      throw new Error('Failed to download exported Excel file');
+    }
+    const blob = await fileResponse.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${underwritingData.propertyName?.replace(/\s+/g, '_') || 'Property'}_Underwriting_${new Date().toISOString().split('T')[0]}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+
+    return { excelMetrics };
   }
 }
 

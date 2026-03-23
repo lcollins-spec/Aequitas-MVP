@@ -265,14 +265,20 @@ def _do_export(deal_id):
     property_name = (data.get('propertyName') or deal.deal_name or 'Property').replace(' ', '_')
     filename = f"{property_name}_ProForma.xlsx"
 
-    # Try LibreOffice headless recalc to force full formula evaluation
+    # --- Save to temp file, optionally recalc with LibreOffice, read back metrics ---
+    import subprocess, time
+    timestamp = int(time.time())
+    tmp_filename = f"aequitas_export_{deal_id}_{timestamp}.xlsx"
+    tmp_path = os.path.join('/tmp', tmp_filename)
+
     lo_path = (
         '/Applications/LibreOffice.app/Contents/MacOS/soffice'
         if os.path.exists('/Applications/LibreOffice.app/Contents/MacOS/soffice')
         else None
     )
+
     if lo_path:
-        import tempfile, subprocess, shutil
+        import tempfile
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_in  = os.path.join(tmpdir, filename)
             tmp_out = os.path.join(tmpdir, 'out')
@@ -287,31 +293,75 @@ def _do_export(deal_id):
                 print(f"[LibreOffice] rc={result.returncode} stdout={result.stdout.strip()} stderr={result.stderr.strip()}")
                 converted = os.path.join(tmp_out, filename)
                 if result.returncode == 0 and os.path.exists(converted):
-                    with open(converted, 'rb') as f:
-                        buf = BytesIO(f.read())
-                    buf.seek(0)
-                    print("[LibreOffice] Using recalculated file")
+                    import shutil
+                    shutil.copy2(converted, tmp_path)
+                    print(f"[LibreOffice] Recalculated file saved to {tmp_path}")
                 else:
-                    print("[LibreOffice] Conversion failed, falling back to openpyxl save")
-                    buf = BytesIO()
-                    wb.save(buf)
-                    buf.seek(0)
+                    print("[LibreOffice] Conversion failed, saving openpyxl file")
+                    wb.save(tmp_path)
             except Exception as lo_err:
-                print(f"[LibreOffice] Error: {lo_err} — falling back to openpyxl save")
-                buf = BytesIO()
-                wb.save(buf)
-                buf.seek(0)
+                print(f"[LibreOffice] Error: {lo_err} — saving openpyxl file")
+                wb.save(tmp_path)
     else:
         print("[LibreOffice] Not found — saving with openpyxl only")
-        buf = BytesIO()
-        wb.save(buf)
-        buf.seek(0)
+        wb.save(tmp_path)
 
-    return send_file(
-        buf,
+    # --- Read back recalculated metrics ---
+    excel_metrics = {'leveredIRR': None, 'leveredEM': None,
+                     'unleveredIRR': None, 'unleveredEM': None,
+                     'lpIRR': None, 'lpEM': None}
+    try:
+        wb_out = load_workbook(tmp_path, data_only=True)
+        ws_out = wb_out.worksheets[0]
+        excel_metrics['leveredIRR']   = ws_out['M105'].value
+        excel_metrics['leveredEM']    = ws_out['M106'].value
+        excel_metrics['unleveredIRR'] = ws_out['M88'].value
+        excel_metrics['unleveredEM']  = ws_out['M89'].value
+        excel_metrics['lpIRR']        = ws_out['M118'].value
+        excel_metrics['lpEM']         = ws_out['M119'].value
+        print(f"[metrics] leveredIRR={excel_metrics['leveredIRR']!r}")
+        print(f"[metrics] leveredEM={excel_metrics['leveredEM']!r}")
+        print(f"[metrics] unleveredIRR={excel_metrics['unleveredIRR']!r}")
+        print(f"[metrics] unleveredEM={excel_metrics['unleveredEM']!r}")
+        print(f"[metrics] lpIRR={excel_metrics['lpIRR']!r}")
+        print(f"[metrics] lpEM={excel_metrics['lpEM']!r}")
+    except Exception as read_err:
+        print(f"[metrics] Failed to read back metrics: {read_err}")
+
+    download_url = f"/api/v1/underwriting/{deal_id}/export-excel/download/{tmp_filename}"
+    return jsonify({'downloadUrl': download_url, 'excelMetrics': excel_metrics})
+
+
+@excel_export_bp.route('/underwriting/<int:deal_id>/export-excel/download/<filename>', methods=['GET'])
+def download_export(deal_id, filename):
+    """Serve a previously generated export file from /tmp and delete it after sending."""
+    # Restrict to safe filenames: only allow the pattern we generate
+    import re
+    if not re.match(r'^aequitas_export_\d+_\d+\.xlsx$', filename):
+        return jsonify({'error': 'Invalid filename'}), 400
+    tmp_path = os.path.join('/tmp', filename)
+    if not os.path.exists(tmp_path):
+        return jsonify({'error': 'Export file not found or already downloaded'}), 404
+
+    def stream_and_delete():
+        try:
+            with open(tmp_path, 'rb') as f:
+                data = f.read()
+            yield data
+        finally:
+            try:
+                os.remove(tmp_path)
+                print(f"[download] Deleted temp file {tmp_path}")
+            except Exception:
+                pass
+
+    from flask import Response, stream_with_context
+    display_name = filename.replace(f'aequitas_export_{deal_id}_', '').replace('.xlsx', '')
+    download_name = f"ProForma_{deal_id}_{display_name}.xlsx"
+    return Response(
+        stream_with_context(stream_and_delete()),
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        as_attachment=True,
-        download_name=filename
+        headers={'Content-Disposition': f'attachment; filename="{download_name}"'}
     )
 
 

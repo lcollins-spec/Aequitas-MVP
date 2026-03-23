@@ -5,6 +5,7 @@ import { fredApi } from '../services/fredApi';
 import { rentcastApi } from '../services/rentcastApi';
 import { censusApi } from '../services/censusApi';
 import { dealApi } from '../services/dealApi';
+import type { ExcelMetrics } from '../services/dealApi';
 import type { RentEstimateData, RentalComparable, MarketStatistics } from '../types/rentcast';
 import type { DemographicData } from '../types/census';
 import type { Deal, DealStatus } from '../types/deal';
@@ -246,6 +247,7 @@ const Underwriting = () => {
   const [currentDealId, setCurrentDealId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [excelMetrics, setExcelMetrics] = useState<ExcelMetrics | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -1118,7 +1120,9 @@ const Underwriting = () => {
         }
       };
 
-      await dealApi.exportMultifamilyToExcel(currentDealId, underwritingData);
+      const { excelMetrics: metrics } = await dealApi.exportMultifamilyToExcel(currentDealId, underwritingData);
+      setExcelMetrics(metrics);
+      console.log('[excelMetrics]', metrics);
     } catch (error) {
       console.error('Error exporting to Excel:', error);
       alert('Failed to export to Excel');
