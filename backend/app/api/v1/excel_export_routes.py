@@ -25,16 +25,11 @@ def _to_decimal(value, fallback=0):
 
 
 def _classify_unit_type(unit_type_str):
-    """Return 'studio', '1br', '2br', '3br', or 'other'."""
+    """Return '1br' if the unit type is a 1-bedroom, otherwise 'other'."""
     s = (unit_type_str or '').lower()
-    if 'studio' in s or 'eff' in s or '0br' in s or '0/1' in s or s.startswith('0b'):
-        return 'studio'
-    if '1br' in s or '1/1' in s or '1 br' in s or s.startswith('1b'):
+    # Match explicit 1BR patterns; avoid '1b' shortcut which falsely matches '2br/1ba'
+    if '1br' in s or '1/1' in s or s.startswith('1b'):
         return '1br'
-    if '2br' in s or '2/1' in s or '2/2' in s or '2 br' in s or s.startswith('2b'):
-        return '2br'
-    if '3br' in s or '3/2' in s or '3/3' in s or '3 br' in s or s.startswith('3b'):
-        return '3br'
     return 'other'
 
 
@@ -66,7 +61,7 @@ def _do_export(deal_id):
 
     financing        = data.get('financing', {}) or {}
     exit_assumptions = data.get('exitAssumptions', {}) or {}
-    op_expenses      = data.get('omOperatingExpenses') or data.get('operatingExpenses', {}) or {}
+    op_expenses      = data.get('operatingExpenses', {}) or {}
     op_projections   = data.get('operatingProjections', {}) or {}
     unit_mix_list    = data.get('unitMix', []) or []
 
@@ -74,19 +69,13 @@ def _do_export(deal_id):
         return jsonify({'error': f'Excel template not found at: {os.path.abspath(TEMPLATE_PATH)}'}), 500
 
     wb = load_workbook(TEMPLATE_PATH)
-    wb.calculation.calcMode = 'auto'
-    wb.calculation.fullCalcOnLoad = True
     ws = wb.worksheets[0]
 
     # --- D5: Property Name ---
-    _v = data.get('propertyName') or deal.deal_name or ''
-    print(f"[cell-write] D5  = {_v!r}")
-    ws['D5'] = _v
+    ws['D5'] = data.get('propertyName') or deal.deal_name or ''
 
     # --- D6: Address ---
-    _v = data.get('address') or deal.property_address or ''
-    print(f"[cell-write] D6  = {_v!r}")
-    ws['D6'] = _v
+    ws['D6'] = data.get('address') or deal.property_address or ''
 
     # --- E16: Acquisition Date (Python date object) ---
     acq_date_raw = data.get('acquisitionDate')
@@ -100,53 +89,35 @@ def _do_export(deal_id):
         acq_date = getattr(deal, 'acquisition_date', None)
     if acq_date is None:
         acq_date = date.today()
-    print(f"[cell-write] E16 = {acq_date!r}")
     ws['E16'] = acq_date
 
-    # --- D60/E60, D61/E61, D62/E62, D63/E63: Unit mix (Studio, 1BR, 2BR, 3BR) ---
-    # Bucket each unit-mix entry by type; last non-zero rent wins within each bucket
-    unit_buckets = {'studio': [0, 0], '1br': [0, 0], '2br': [0, 0], '3br': [0, 0]}
+    # --- D61: 1BR unit count, E61: 1BR rent per unit ---
+    # Find 1BR entry in unit mix; fall back to total units / avg rent
+    one_br_count = 0
+    one_br_rent = 0
     for u in unit_mix_list:
-        t = _classify_unit_type(u.get('unitType', ''))
-        if t not in unit_buckets:
-            t = 'other'
-        if t == 'other':
-            continue
-        cnt  = u.get('count', 0)
-        rent = u.get('askingRent') or u.get('marketRent') or u.get('currentRent') or 0
-        unit_buckets[t][0] += cnt
-        if rent:
-            unit_buckets[t][1] = rent
-
-    # Fallback: if nothing classified as 1BR, promote first unit in list
-    if unit_buckets['1br'][0] == 0:
+        if _classify_unit_type(u.get('unitType', '')) == '1br':
+            one_br_count += u.get('count', 0)
+            one_br_rent = u.get('askingRent') or u.get('marketRent') or u.get('currentRent') or 0
+    if one_br_count == 0:
+        # No 1BR found — use the first unit type as the primary, or fall back to totals
         if unit_mix_list:
             primary = unit_mix_list[0]
-            unit_buckets['1br'][0] = primary.get('count', 0)
-            unit_buckets['1br'][1] = (
-                primary.get('askingRent') or primary.get('marketRent') or primary.get('currentRent') or 0
-            )
+            one_br_count = primary.get('count', 0)
+            one_br_rent = primary.get('askingRent') or primary.get('marketRent') or primary.get('currentRent') or 0
         else:
-            unit_buckets['1br'][0] = data.get('totalUnits') or 0
-            unit_buckets['1br'][1] = data.get('avgMonthlyRent') or 0
-
-    _unit_rows = {'studio': (60, 'D60', 'E60'), '1br': (61, 'D61', 'E61'),
-                  '2br': (62, 'D62', 'E62'), '3br': (63, 'D63', 'E63')}
-    for t, (_, cnt_cell, rent_cell) in _unit_rows.items():
-        print(f"[cell-write] {cnt_cell} = {unit_buckets[t][0]!r}")
-        ws[cnt_cell] = unit_buckets[t][0]
-        print(f"[cell-write] {rent_cell} = {unit_buckets[t][1]!r}")
-        ws[rent_cell] = unit_buckets[t][1]
+            one_br_count = data.get('totalUnits') or sum(u.get('count', 0) for u in unit_mix_list) or 0
+            one_br_rent = data.get('avgMonthlyRent') or 0
+    ws['D61'] = one_br_count
+    ws['E61'] = one_br_rent
 
     # --- D25: Asking Price ---
     purchase_price = data.get('purchasePrice') or deal.purchase_price or 0
-    print(f"[cell-write] D25 = {purchase_price!r}")
     ws['D25'] = purchase_price
 
     # --- E24: Aequitas entry cap rate (decimal) ---
     exit_cap = exit_assumptions.get('exitCapRate') or data.get('exitCapRate') or 0
     entry_cap = _to_decimal(data.get('entryCapRate') or exit_cap or 0.06)
-    print(f"[cell-write] E24 = {entry_cap!r}")
     ws['E24'] = entry_cap
 
     # --- D23: TTM NOI ---
@@ -184,7 +155,6 @@ def _do_export(deal_id):
         + mgmt_fee_pct * egi
     )
     ttm_noi = max(egi - total_opex, 0)
-    print(f"[cell-write] D23 = {round(ttm_noi)!r}")
     ws['D23'] = round(ttm_noi)
 
     # --- D47: LTV (decimal) ---
@@ -193,7 +163,6 @@ def _do_export(deal_id):
         ltv = 1.0 - (_to_decimal(deal.down_payment_percent) if deal.down_payment_percent else 0.35)
     else:
         ltv = _to_decimal(ltv)
-    print(f"[cell-write] D47 = {ltv!r}")
     ws['D47'] = ltv
 
     # --- E49: Senior loan interest rate (decimal) ---
@@ -203,169 +172,38 @@ def _do_export(deal_id):
         or deal.loan_interest_rate
         or 0
     )
-    print(f"[cell-write] E49 = {_to_decimal(interest_rate)!r}")
     ws['E49'] = _to_decimal(interest_rate)
 
     # --- G8: LP equity share (decimal) ---
     # aequitasEquityPct is Aequitas (GP) share; LP = 1 - GP share
     aeq_pct = _to_decimal(data.get('aequitasEquityPct', 0.5))
-    print(f"[cell-write] G8  = {round(1.0 - aeq_pct, 6)!r}")
     ws['G8'] = round(1.0 - aeq_pct, 6)
 
     # --- H24: Exit cap rate (decimal) ---
-    print(f"[cell-write] H24 = {_to_decimal(exit_cap or 0.06)!r}")
     ws['H24'] = _to_decimal(exit_cap or 0.06)
 
     # --- F17: Hold period in months (integer) ---
-    # Read holdingPeriod directly from underwriting_json; do not fall through to loan_term_years
-    hold_years = data.get('holdingPeriod') or exit_assumptions.get('holdPeriodYears') or 0
-    hold_months_int = int(hold_years * 12)
-    print(f"[cell-write] F17 = {hold_months_int!r}")
-    ws['F17'] = hold_months_int
-
-    # --- D48: Senior loan term (months) ---
-    loan_term_years = financing.get('loanTermYears') or 5
-    loan_term_months = int(float(loan_term_years) * 12)
-    print(f"[cell-write] D48 = {loan_term_months!r}")
-    ws['D48'] = loan_term_months
-
-    # --- D74: Vacancy rate (decimal, all 5 time-period columns) ---
-    _vac = round(vacancy_rate, 6)
-    for _col in ('D74', 'E74', 'F74', 'G74', 'H74'):
-        print(f"[cell-write] {_col} = {_vac!r}")
-        ws[_col] = _vac
-
-    # --- D105: General inflation / rent growth rate (decimal) ---
-    rent_growth_raw = float(data.get('rentGrowthRate') or 0.02)
-    rent_growth_decimal = _to_decimal(rent_growth_raw)
-    print(f"[cell-write] D105 = {rent_growth_decimal!r}")
-    ws['D105'] = rent_growth_decimal
-
-    # --- K42–K55: Individual opex line items ($/unit/yr) ---
-    # Template stores $/unit/yr; platform has annual totals → divide by total_units
-    _tu = max(total_units, 1)
-    _opex_map = {
-        'K42': (op_expenses.get('payroll') or 0) / _tu,
-        'K43': (op_expenses.get('administrative') or op_expenses.get('legalProfessional') or 0) / _tu,
-        'K44': (op_expenses.get('marketing') or 0) / _tu,
-        'K45': (op_expenses.get('repairsMaintenance') or op_expenses.get('repairsMaintenanceAnnual') or 0) / _tu,
-        'K52': (op_expenses.get('insurance') or op_expenses.get('insuranceAnnual') or deal.insurance_annual or 0) / _tu,
-        'K53': utilities_annual / _tu,
-        'K55': (op_expenses.get('propertyTax') or op_expenses.get('propertyTaxAnnual') or deal.property_tax_annual or 0) / _tu,
-    }
-    for _cell, _val in _opex_map.items():
-        if _val > 0:
-            print(f"[cell-write] {_cell} = {round(_val, 2)!r}")
-            ws[_cell] = round(_val, 2)
-
-    # M88, M89, M105, M106, M118, M119 are left as template formulas.
-    # LibreOffice recalculates them from the cash flow rows (V85:EX85, V101:EX101, V115:EX115).
+    hold_years = (
+        exit_assumptions.get('holdPeriodYears')
+        or financing.get('loanTermYears')
+        or deal.loan_term_years
+        or 0
+    )
+    ws['F17'] = int(hold_years * 12)
 
     # --- Save and return ---
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
     property_name = (data.get('propertyName') or deal.deal_name or 'Property').replace(' ', '_')
     filename = f"{property_name}_ProForma.xlsx"
 
-    # --- Save to temp file, optionally recalc with LibreOffice, read back metrics ---
-    import subprocess, time
-    timestamp = int(time.time())
-    tmp_filename = f"aequitas_export_{deal_id}_{timestamp}.xlsx"
-    tmp_path = os.path.join('/tmp', tmp_filename)
-
-    lo_path = (
-        '/Applications/LibreOffice.app/Contents/MacOS/soffice'
-        if os.path.exists('/Applications/LibreOffice.app/Contents/MacOS/soffice')
-        else None
-    )
-
-    if lo_path:
-        import tempfile, traceback
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                tmp_in  = os.path.join(tmpdir, filename)
-                tmp_out = os.path.join(tmpdir, 'out')
-                os.makedirs(tmp_out, exist_ok=True)
-                wb.save(tmp_in)
-                cmd = [lo_path, '--headless', '--convert-to', 'xlsx', '--outdir', tmp_out, tmp_in]
-                print(f"[LibreOffice] Running: {' '.join(cmd)}")
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-                print(f"[LibreOffice] rc={result.returncode}")
-                print(f"[LibreOffice] stdout={result.stdout.strip()!r}")
-                print(f"[LibreOffice] stderr={result.stderr.strip()!r}")
-                converted = os.path.join(tmp_out, filename)
-                print(f"[LibreOffice] Expected output path: {converted}")
-                print(f"[LibreOffice] Output file exists: {os.path.exists(converted)}")
-                print(f"[LibreOffice] Files in outdir: {os.listdir(tmp_out)}")
-                if result.returncode == 0 and os.path.exists(converted):
-                    import shutil
-                    shutil.copy2(converted, tmp_path)
-                    print(f"[LibreOffice] Recalculated file saved to {tmp_path}")
-                else:
-                    print("[LibreOffice] Conversion failed or output missing — saving openpyxl file")
-                    wb.save(tmp_path)
-        except Exception as lo_err:
-            print(f"[LibreOffice] Exception in LO block:")
-            traceback.print_exc()
-            wb.save(tmp_path)
-    else:
-        print("[LibreOffice] Not found — saving with openpyxl only")
-        wb.save(tmp_path)
-
-    # --- Read back recalculated metrics ---
-    excel_metrics = {'leveredIRR': None, 'leveredEM': None,
-                     'unleveredIRR': None, 'unleveredEM': None,
-                     'lpIRR': None, 'lpEM': None}
-    try:
-        wb_out = load_workbook(tmp_path, data_only=True)
-        ws_out = wb_out.worksheets[0]
-        excel_metrics['leveredIRR']   = ws_out['M105'].value
-        excel_metrics['leveredEM']    = ws_out['M106'].value
-        excel_metrics['unleveredIRR'] = ws_out['M88'].value
-        excel_metrics['unleveredEM']  = ws_out['M89'].value
-        excel_metrics['lpIRR']        = ws_out['M118'].value
-        excel_metrics['lpEM']         = ws_out['M119'].value
-        print(f"[metrics] leveredIRR={excel_metrics['leveredIRR']!r}")
-        print(f"[metrics] leveredEM={excel_metrics['leveredEM']!r}")
-        print(f"[metrics] unleveredIRR={excel_metrics['unleveredIRR']!r}")
-        print(f"[metrics] unleveredEM={excel_metrics['unleveredEM']!r}")
-        print(f"[metrics] lpIRR={excel_metrics['lpIRR']!r}")
-        print(f"[metrics] lpEM={excel_metrics['lpEM']!r}")
-    except Exception as read_err:
-        print(f"[metrics] Failed to read back metrics: {read_err}")
-
-    download_url = f"/api/v1/underwriting/{deal_id}/export-excel/download/{tmp_filename}"
-    return jsonify({'downloadUrl': download_url, 'excelMetrics': excel_metrics})
-
-
-@excel_export_bp.route('/underwriting/<int:deal_id>/export-excel/download/<filename>', methods=['GET'])
-def download_export(deal_id, filename):
-    """Serve a previously generated export file from /tmp and delete it after sending."""
-    # Restrict to safe filenames: only allow the pattern we generate
-    import re
-    if not re.match(r'^aequitas_export_\d+_\d+\.xlsx$', filename):
-        return jsonify({'error': 'Invalid filename'}), 400
-    tmp_path = os.path.join('/tmp', filename)
-    if not os.path.exists(tmp_path):
-        return jsonify({'error': 'Export file not found or already downloaded'}), 404
-
-    def stream_and_delete():
-        try:
-            with open(tmp_path, 'rb') as f:
-                data = f.read()
-            yield data
-        finally:
-            try:
-                os.remove(tmp_path)
-                print(f"[download] Deleted temp file {tmp_path}")
-            except Exception:
-                pass
-
-    from flask import Response, stream_with_context
-    display_name = filename.replace(f'aequitas_export_{deal_id}_', '').replace('.xlsx', '')
-    download_name = f"ProForma_{deal_id}_{display_name}.xlsx"
-    return Response(
-        stream_with_context(stream_and_delete()),
+    return send_file(
+        buf,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        headers={'Content-Disposition': f'attachment; filename="{download_name}"'}
+        as_attachment=True,
+        download_name=filename
     )
 
 

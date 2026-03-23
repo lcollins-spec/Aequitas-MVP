@@ -70,8 +70,12 @@ class ExcelExportService:
 
     @staticmethod
     def _compute_metrics(deal):
-        """Recalculate all financial metrics from underwriting_json when available,
-        falling back to flat DB columns for fields not present in the JSON.
+        """Recalculate all financial metrics inline from raw assumption fields.
+
+        This deliberately avoids reading any stored computed field
+        (irr, equity_multiple, cap_rate, cash_on_cash_return, roi, npv,
+        monthly_cash_flow, total_monthly_expenses) so that the export always
+        reflects the current assumptions, not stale DB values.
 
         Returns a dict with the following keys:
             monthly_payment, total_monthly_income, total_monthly_expenses,
@@ -82,86 +86,54 @@ class ExcelExportService:
         _pmt    = ExcelExportService._calculate_pmt
         _irr    = ExcelExportService._calculate_irr
 
-        # --- Parse underwriting_json ---
-        uw = {}
-        if deal.underwriting_json:
-            try:
-                uw = json.loads(deal.underwriting_json)
-            except (ValueError, TypeError):
-                uw = {}
-        op_expenses = uw.get('omOperatingExpenses') or uw.get('operatingExpenses') or {}
-        unit_mix    = uw.get('unitMix') or []
+        # --- Raw assumption fields ---
+        purchase_price      = deal.purchase_price or 0.0
+        monthly_rent        = deal.monthly_rent or 0.0
+        other_income        = deal.other_monthly_income or 0.0
+        closing_costs       = deal.closing_costs or 0.0
+        loan_term_years     = deal.loan_term_years or 30
 
-        # --- Inputs: purchase price and interest rate always from DB ---
-        purchase_price = deal.purchase_price or 0.0
-        interest_rate  = _to_pct(deal.loan_interest_rate, 0.065)
-        closing_costs  = deal.closing_costs or 0.0
+        vacancy_rate        = _to_pct(deal.vacancy_rate,                 0.05)
+        annual_rent_inc     = _to_pct(deal.annual_rent_increase,         0.02)
+        down_pct            = _to_pct(deal.down_payment_percent,         0.20)
+        interest_rate       = _to_pct(deal.loan_interest_rate,           0.065)
+        maintenance_pct     = _to_pct(deal.maintenance_percent,          0.0)
+        mgmt_pct            = _to_pct(deal.property_management_percent,  0.0)
 
-        # --- Inputs: prefer underwriting_json, fall back to DB ---
-        vacancy_rate   = _to_pct(uw.get('vacancyRate') or deal.vacancy_rate, 0.05)
-        annual_rent_inc = _to_pct(uw.get('rentGrowthRate') or deal.annual_rent_increase, 0.02)
-        hold_years     = float(uw.get('holdingPeriod') or deal.loan_term_years or 10)
-        ltv            = _to_pct(uw.get('ltv') or (1.0 - _to_pct(deal.down_payment_percent, 0.20)), 0.65)
-        exit_cap_rate  = _to_pct(uw.get('exitCapRate') or 0.06, 0.06)
-
-        # --- Gross potential rent from unit mix; fall back to deal.monthly_rent ---
-        if unit_mix:
-            annual_gross_rent = sum(
-                u.get('count', 0) * (
-                    u.get('askingRent') or u.get('marketRent') or u.get('currentRent') or 0
-                ) * 12
-                for u in unit_mix
-            )
-            total_units = max(sum(u.get('count', 0) for u in unit_mix), 1)
-        else:
-            annual_gross_rent = (deal.monthly_rent or 0.0) * 12
-            total_units = 1
-
-        # --- EGI ---
-        egi = annual_gross_rent * (1.0 - vacancy_rate)
-
-        # --- OpEx: mirror the D23 logic in the Excel export route ---
-        utilities_annual = (
-            (op_expenses.get('utilitiesElectric') or 0)
-            + (op_expenses.get('utilitiesGas') or 0)
-            + (op_expenses.get('utilitiesWaterSewer') or 0)
-            + (op_expenses.get('utilitiesTrash') or 0)
-            or op_expenses.get('utilitiesAnnual')
-            or (deal.utilities_monthly or 0) * 12
-        )
-        mgmt_fee_pct = _to_pct(
-            op_expenses.get('managementFeePct')
-            or (deal.property_management_percent if deal.property_management_percent else None)
-            or 0.04
-        )
-        total_opex = (
-            (op_expenses.get('payroll') or 0)
-            + (op_expenses.get('administrative') or op_expenses.get('legalProfessional') or 0)
-            + (op_expenses.get('marketing') or 0)
-            + (op_expenses.get('repairsMaintenance') or op_expenses.get('repairsMaintenanceAnnual') or 0)
-            + (op_expenses.get('insurance') or op_expenses.get('insuranceAnnual') or deal.insurance_annual or 0)
-            + utilities_annual
-            + (op_expenses.get('propertyTax') or op_expenses.get('propertyTaxAnnual') or deal.property_tax_annual or 0)
-            + mgmt_fee_pct * egi
-        )
-
-        # --- Annual NOI ---
-        annual_noi = max(egi - total_opex, 0.0)
-
-        # --- Monthly equivalents (for return dict compatibility) ---
-        total_monthly_income   = egi / 12.0
-        total_monthly_expenses = total_opex / 12.0
+        property_tax_annual = deal.property_tax_annual or 0.0
+        insurance_annual    = deal.insurance_annual or 0.0
+        hoa_monthly         = deal.hoa_monthly or 0.0
+        utilities_monthly   = deal.utilities_monthly or 0.0
+        other_exp_monthly   = deal.other_expenses_monthly or 0.0
 
         # --- Loan ---
-        loan_amount     = purchase_price * ltv
-        down_payment    = purchase_price * (1.0 - ltv)
+        loan_amount     = purchase_price * (1.0 - down_pct)
+        down_payment    = purchase_price * down_pct
         monthly_rate    = interest_rate / 12.0
-        # Amortise over the hold period (interest-only-style: use hold_years for nper)
-        nper            = 360  # 30-year amortization; hold period determines balloon, not amort schedule
-        monthly_payment = _pmt(monthly_rate, nper, loan_amount) if nper else 0.0
+        nper            = loan_term_years * 12
+        monthly_payment = _pmt(monthly_rate, nper, loan_amount)
+
+        # --- Income ---
+        gross_monthly        = monthly_rent + other_income
+        vacancy_loss         = gross_monthly * vacancy_rate
+        total_monthly_income = gross_monthly - vacancy_loss
+
+        # --- Expenses (monthly) ---
+        total_monthly_expenses = (
+            property_tax_annual / 12.0
+            + insurance_annual / 12.0
+            + hoa_monthly
+            + monthly_rent * maintenance_pct
+            + monthly_rent * mgmt_pct
+            + utilities_monthly
+            + other_exp_monthly
+        )
 
         # --- Monthly cash flow ---
         monthly_cash_flow = total_monthly_income - total_monthly_expenses - monthly_payment
+
+        # --- Annual NOI (before debt service) ---
+        annual_noi = (total_monthly_income - total_monthly_expenses) * 12.0
 
         # --- Cap rate ---
         cap_rate = (annual_noi / purchase_price * 100.0) if purchase_price else 0.0
@@ -176,25 +148,15 @@ class ExcelExportService:
         # --- ROI (single-year, same basis as CoC) ---
         roi = cash_on_cash_return
 
-        # --- IRR / NPV cash flow stream over hold period with terminal sale ---
+        # --- 30-year IRR / NPV cash flow stream ---
+        # Income grows at annual_rent_increase; expenses grow at the same rate.
         expense_growth = annual_rent_inc
         irr_flows = [-total_investment]
-        for year in range(1, int(hold_years) + 1):
-            growth          = (1.0 + annual_rent_inc) ** (year - 1)
-            yr_noi          = annual_noi * growth
-            yr_debt         = monthly_payment * 12.0
-            yr_cash_flow    = yr_noi - yr_debt
-            if year == int(hold_years):
-                # Terminal sale: exit NOI / exit cap rate, net of remaining loan balance
-                exit_noi          = annual_noi * (1.0 + annual_rent_inc) ** year
-                terminal_value    = exit_noi / exit_cap_rate if exit_cap_rate else 0.0
-                # Approximate remaining loan balance (outstanding principal)
-                remaining_balance = loan_amount * (
-                    ((1.0 + monthly_rate) ** nper - (1.0 + monthly_rate) ** (year * 12))
-                    / ((1.0 + monthly_rate) ** nper - 1.0)
-                ) if monthly_rate and nper else loan_amount
-                yr_cash_flow += terminal_value - remaining_balance
-            irr_flows.append(yr_cash_flow)
+        for year in range(1, 31):
+            yr_income   = total_monthly_income  * 12.0 * (1.0 + annual_rent_inc) ** (year - 1)
+            yr_expenses = total_monthly_expenses * 12.0 * (1.0 + expense_growth)  ** (year - 1)
+            yr_debt     = monthly_payment * 12.0
+            irr_flows.append(yr_income - yr_expenses - yr_debt)
 
         # NPV at 10 % discount rate
         discount_rate = 0.10
@@ -205,7 +167,7 @@ class ExcelExportService:
         irr     = irr_raw * 100.0 if irr_raw == irr_raw else 0.0  # guard NaN
 
         # Equity multiple
-        total_returned  = sum(irr_flows[1:])
+        total_returned = sum(irr_flows[1:])
         equity_multiple = (total_returned / total_investment) if total_investment else 0.0
 
         return {
