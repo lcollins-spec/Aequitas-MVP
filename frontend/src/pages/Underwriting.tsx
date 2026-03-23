@@ -754,6 +754,19 @@ const Underwriting = () => {
       }
       if (data.laundryIncome != null) setOmLaundryIncome(data.laundryIncome);
       if (data.operatingExpenses != null) setOmOperatingExpenses(data.operatingExpenses);
+
+      // Derive per-unit opex from annual totals in operatingExpenses ÷ unit count.
+      // opexRmPerUnit uses the direct per-unit field if Claude returned one; falls back here.
+      const unitCount = data.numUnits || (data.unitMix?.reduce((s, u) => s + u.count, 0) ?? 0);
+      if (data.operatingExpenses && unitCount > 0) {
+        const oe = data.operatingExpenses;
+        if (oe.insuranceAnnual != null) setOpexInsurancePerUnit(Math.round(oe.insuranceAnnual / unitCount));
+        if (oe.utilitiesAnnual != null) setOpexUtilitiesPerUnit(Math.round(oe.utilitiesAnnual / unitCount));
+        if (oe.propertyTaxAnnual != null) setOpexPropertyTaxPerUnit(Math.round(oe.propertyTaxAnnual / unitCount));
+        if (oe.repairsMaintenanceAnnual != null && data.opexRmPerUnit == null)
+          setOpexRmPerUnit(Math.round(oe.repairsMaintenanceAnnual / unitCount));
+      }
+
       if (data.vacancyRate != null) setVacancyRate(data.vacancyRate);
       if (data.badDebtRate != null) setBadDebtRate(data.badDebtRate);
       if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
