@@ -278,30 +278,34 @@ def _do_export(deal_id):
     )
 
     if lo_path:
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_in  = os.path.join(tmpdir, filename)
-            tmp_out = os.path.join(tmpdir, 'out')
-            os.makedirs(tmp_out, exist_ok=True)
-            wb.save(tmp_in)
-            try:
-                result = subprocess.run(
-                    [lo_path, '--headless', '--convert-to', 'xlsx',
-                     '--outdir', tmp_out, tmp_in],
-                    capture_output=True, text=True, timeout=60
-                )
-                print(f"[LibreOffice] rc={result.returncode} stdout={result.stdout.strip()} stderr={result.stderr.strip()}")
+        import tempfile, traceback
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmp_in  = os.path.join(tmpdir, filename)
+                tmp_out = os.path.join(tmpdir, 'out')
+                os.makedirs(tmp_out, exist_ok=True)
+                wb.save(tmp_in)
+                cmd = [lo_path, '--headless', '--convert-to', 'xlsx', '--outdir', tmp_out, tmp_in]
+                print(f"[LibreOffice] Running: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                print(f"[LibreOffice] rc={result.returncode}")
+                print(f"[LibreOffice] stdout={result.stdout.strip()!r}")
+                print(f"[LibreOffice] stderr={result.stderr.strip()!r}")
                 converted = os.path.join(tmp_out, filename)
+                print(f"[LibreOffice] Expected output path: {converted}")
+                print(f"[LibreOffice] Output file exists: {os.path.exists(converted)}")
+                print(f"[LibreOffice] Files in outdir: {os.listdir(tmp_out)}")
                 if result.returncode == 0 and os.path.exists(converted):
                     import shutil
                     shutil.copy2(converted, tmp_path)
                     print(f"[LibreOffice] Recalculated file saved to {tmp_path}")
                 else:
-                    print("[LibreOffice] Conversion failed, saving openpyxl file")
+                    print("[LibreOffice] Conversion failed or output missing — saving openpyxl file")
                     wb.save(tmp_path)
-            except Exception as lo_err:
-                print(f"[LibreOffice] Error: {lo_err} — saving openpyxl file")
-                wb.save(tmp_path)
+        except Exception as lo_err:
+            print(f"[LibreOffice] Exception in LO block:")
+            traceback.print_exc()
+            wb.save(tmp_path)
     else:
         print("[LibreOffice] Not found — saving with openpyxl only")
         wb.save(tmp_path)
