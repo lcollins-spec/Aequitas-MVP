@@ -65,8 +65,9 @@ def create_underwriting_model(data=None):
     # Build each tab (pass data to populate with real values)
     build_assumptions_tab(ws_assumptions, data)
     build_sources_uses_tab(ws_sources_uses)
-    build_debt_schedule_tab(ws_debt)
-    build_annual_cashflow_tab(ws_annual_cf)
+    loan_term_years = (data or {}).get('loan_term_years') or 30
+    build_debt_schedule_tab(ws_debt, loan_term_years)
+    build_annual_cashflow_tab(ws_annual_cf, loan_term_years)
     build_reference_tab(ws_reference)
 
     # Hide reference tab
@@ -626,7 +627,7 @@ def build_sources_uses_tab(ws):
     ws[f'B{row}'].number_format = '$#,##0'
     ws[f'B{row}'].font = BOLD_FONT
 
-def build_debt_schedule_tab(ws):
+def build_debt_schedule_tab(ws, loan_term_years=30):
     """Build the DEBT SCHEDULE tab with loan amortization"""
 
     ws.column_dimensions['A'].width = 8
@@ -682,9 +683,10 @@ def build_debt_schedule_tab(ws):
     header_row = row
     row += 1
 
-    # Monthly schedule for 360 months (30 years)
+    # Monthly schedule for actual loan term
+    num_months = int(loan_term_years * 12)
     debt_start_row = row
-    for month in range(1, 361):
+    for month in range(1, num_months + 1):
         year = (month - 1) // 12 + 1
         month_in_year = ((month - 1) % 12) + 1
 
@@ -730,9 +732,10 @@ def build_debt_schedule_tab(ws):
 
         row += 1
 
-def build_annual_cashflow_tab(ws):
+def build_annual_cashflow_tab(ws, loan_term_years=30):
     """Build the ANNUAL CASH FLOW tab with 10-year pro forma"""
 
+    num_months = int(loan_term_years * 12)
     ws.column_dimensions['A'].width = 35
     for col in range(2, 13):  # Columns B through L (Year 0-10)
         ws.column_dimensions[get_column_letter(col)].width = 13
@@ -1035,7 +1038,7 @@ def build_annual_cashflow_tab(ws):
         # Lookup ending balance from debt schedule
         # Year X corresponds to month X*12 in debt schedule
         debt_month = year * 12
-        if debt_month > 0 and debt_month <= 360:
+        if debt_month > 0 and debt_month <= num_months:
             ws.cell(row, col, f'="DEBT SCHEDULE"!G{9+debt_month}')  # Adjust row offset
         else:
             ws.cell(row, col, '=Loan_Amount')
