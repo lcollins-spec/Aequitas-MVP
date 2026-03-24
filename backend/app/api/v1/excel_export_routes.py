@@ -48,11 +48,7 @@ def export_underwriting_excel(deal_id):
 
 
 def _do_export(deal_id):
-    print("EXPORT HANDLER RUNNING - excel_export_routes.py")
     raw_body = request.get_json(silent=True)
-    print(f'\n===== [export-excel deal={deal_id}] RAW REQUEST BODY =====')
-    print(json.dumps(raw_body, indent=2, default=str))
-    print(f'===== END RAW REQUEST BODY =====\n')
 
     deal = DealModel.query.get(deal_id)
     if deal is None:
@@ -111,8 +107,11 @@ def _do_export(deal_id):
     ws['D61'] = one_br_count
     ws['E61'] = one_br_rent
 
-    # --- D25: Asking Price ---
+    # --- D21: Asking/listing price (valuation analysis) ---
     purchase_price = data.get('purchasePrice') or deal.purchase_price or 0
+    ws['D21'] = purchase_price
+
+    # --- D25: Asking Price ---
     ws['D25'] = purchase_price
 
     # --- E24: Aequitas entry cap rate (decimal) ---
@@ -165,6 +164,10 @@ def _do_export(deal_id):
         ltv = _to_decimal(ltv)
     ws['D47'] = ltv
 
+    # --- D48: Senior loan term (months) ---
+    loan_term_years = financing.get('loanTermYears') or deal.loan_term_years or 30
+    ws['D48'] = int(loan_term_years * 12)
+
     # --- E49: Senior loan interest rate (decimal) ---
     interest_rate = (
         financing.get('interestRate')
@@ -178,6 +181,9 @@ def _do_export(deal_id):
     # aequitasEquityPct is Aequitas (GP) share; LP = 1 - GP share
     aeq_pct = _to_decimal(data.get('aequitasEquityPct', 0.5))
     ws['G8'] = round(1.0 - aeq_pct, 6)
+
+    # --- H21: Exit cap rate (valuation analysis) ---
+    ws['H21'] = _to_decimal(exit_cap or 0.06)
 
     # --- H24: Exit cap rate (decimal) ---
     ws['H24'] = _to_decimal(exit_cap or 0.06)

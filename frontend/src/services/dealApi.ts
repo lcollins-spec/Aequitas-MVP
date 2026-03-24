@@ -199,41 +199,30 @@ class DealApiClient {
   }
 
   /**
-   * Export multifamily underwriting to Excel (two-step flow).
-   * Step 1: POST → server recalculates, saves temp file, returns JSON with downloadUrl + excelMetrics.
-   * Step 2: GET downloadUrl → blob → trigger browser download.
+   * Export multifamily underwriting to Excel.
+   * POST → server returns the Excel file directly as binary.
    */
-  async exportMultifamilyToExcel(dealId: number, underwritingData: any): Promise<{ excelMetrics: ExcelMetrics }> {
-    // Step 1: trigger export and get metrics + download URL
-    const postResponse = await fetch(`${API_BASE_URL}/underwriting/${dealId}/export-excel`, {
+  async exportMultifamilyToExcel(dealId: number, underwritingData: any): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/underwriting/${dealId}/export-excel`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(underwritingData)
     });
 
-    if (!postResponse.ok) {
-      const error: ApiError = await postResponse.json();
+    if (!response.ok) {
+      const error: ApiError = await response.json();
       throw new Error(error.error || 'Failed to export multifamily underwriting');
     }
 
-    const { downloadUrl, excelMetrics }: { downloadUrl: string; excelMetrics: ExcelMetrics } = await postResponse.json();
-
-    // Step 2: fetch the file and trigger browser download
-    const fileResponse = await fetch(downloadUrl);
-    if (!fileResponse.ok) {
-      throw new Error('Failed to download exported Excel file');
-    }
-    const blob = await fileResponse.blob();
+    const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${underwritingData.propertyName?.replace(/\s+/g, '_') || 'Property'}_Underwriting_${new Date().toISOString().split('T')[0]}.xlsx`;
     document.body.appendChild(a);
     a.click();
-    window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
-
-    return { excelMetrics };
+    setTimeout(() => window.URL.revokeObjectURL(url), 100);
   }
 }
 
