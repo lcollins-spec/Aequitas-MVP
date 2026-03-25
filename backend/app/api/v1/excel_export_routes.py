@@ -64,7 +64,9 @@ def _do_export(deal_id):
     if not os.path.exists(TEMPLATE_PATH):
         return jsonify({'error': f'Excel template not found at: {os.path.abspath(TEMPLATE_PATH)}'}), 500
 
-    wb = load_workbook(TEMPLATE_PATH)
+    with open(TEMPLATE_PATH, 'rb') as f:
+        template_bytes = BytesIO(f.read())
+    wb = load_workbook(template_bytes)
     ws = wb.worksheets[0]
 
     # --- D5: Property Name ---
@@ -85,7 +87,7 @@ def _do_export(deal_id):
         acq_date = getattr(deal, 'acquisition_date', None)
     if acq_date is None:
         acq_date = date.today()
-    ws['E14'] = acq_date
+    ws['E16'] = acq_date
 
     # --- D61: 1BR unit count, E61: 1BR rent per unit ---
     # Find 1BR entry in unit mix; fall back to total units / avg rent
@@ -256,14 +258,14 @@ def _do_export(deal_id):
     # --- K64: CapEx $/unit/yr ---
     ws['K64'] = float(data.get('capexPerUnit') or getattr(deal, 'capex_per_unit', None) or 0)
 
-    # --- K24: RUBS % (decimal) ---
-    ws['K24'] = _to_decimal(data.get('rubsPct') or getattr(deal, 'rubs_pct', None) or 0)
+    # --- E67: RUBS % (decimal) ---
+    ws['E67'] = _to_decimal(data.get('rubsPct') or getattr(deal, 'rubs_pct', None) or 0)
 
-    # --- K25: Parking $/unit/mo ---
-    ws['K25'] = float(data.get('parkingIncomePerUnit') or getattr(deal, 'parking_income_per_unit', None) or 0)
+    # --- G68: Parking $/unit/mo ---
+    ws['G68'] = float(data.get('parkingIncomePerUnit') or getattr(deal, 'parking_income_per_unit', None) or 0)
 
-    # --- K26: Other income $/unit/mo ---
-    ws['K26'] = float(data.get('otherIncomePerUnit') or getattr(deal, 'other_income_per_unit', None) or 0)
+    # --- G69: Other income $/unit/mo ---
+    ws['G69'] = float(data.get('otherIncomePerUnit') or getattr(deal, 'other_income_per_unit', None) or 0)
 
     # --- D51: Senior IO periods (months) ---
     ws['D51'] = int(data.get('seniorIoPeriods') or getattr(deal, 'senior_io_periods', None) or 0)
