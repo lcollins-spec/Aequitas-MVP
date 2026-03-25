@@ -158,13 +158,13 @@ def _do_export(deal_id):
     ttm_noi = max(egi - total_opex, 0)
     ws['D23'] = round(ttm_noi)
 
-    # --- D47: LTV (decimal) ---
+    # --- E47: LTV (decimal) ---
     ltv = financing.get('ltv') or data.get('ltv')
     if ltv is None:
         ltv = 1.0 - (_to_decimal(deal.down_payment_percent) if deal.down_payment_percent else 0.35)
     else:
         ltv = _to_decimal(ltv)
-    ws['D47'] = ltv
+    ws['E47'] = ltv
 
     # --- D48: Senior loan term (months) ---
     loan_term_years = financing.get('loanTermYears') or deal.loan_term_years or 30
@@ -242,13 +242,13 @@ def _do_export(deal_id):
         or 0.02
     )
 
-    # --- K39–K44: Controllable opex $/unit/yr ---
-    ws['K39'] = float(data.get('opexPayrollPerUnit') or getattr(deal, 'opex_payroll_per_unit', None) or 0)
-    ws['K40'] = float(data.get('opexAdminPerUnit') or getattr(deal, 'opex_admin_per_unit', None) or 0)
-    ws['K41'] = float(data.get('opexMarketingPerUnit') or getattr(deal, 'opex_marketing_per_unit', None) or 0)
-    ws['K42'] = float(data.get('opexRmPerUnit') or getattr(deal, 'opex_rm_per_unit', None) or 0)
-    ws['K43'] = float(data.get('opexContractServicePerUnit') or getattr(deal, 'opex_contract_service_per_unit', None) or 0)
-    ws['K44'] = float(data.get('opexTurnoverPerUnit') or getattr(deal, 'opex_turnover_per_unit', None) or 0)
+    # --- K42–K47: Controllable opex $/unit/yr ---
+    ws['K42'] = float(data.get('opexPayrollPerUnit') or getattr(deal, 'opex_payroll_per_unit', None) or 0)
+    ws['K43'] = float(data.get('opexAdminPerUnit') or getattr(deal, 'opex_admin_per_unit', None) or 0)
+    ws['K44'] = float(data.get('opexMarketingPerUnit') or getattr(deal, 'opex_marketing_per_unit', None) or 0)
+    ws['K45'] = float(data.get('opexRmPerUnit') or getattr(deal, 'opex_rm_per_unit', None) or 0)
+    ws['K46'] = float(data.get('opexContractServicePerUnit') or getattr(deal, 'opex_contract_service_per_unit', None) or 0)
+    ws['K47'] = float(data.get('opexTurnoverPerUnit') or getattr(deal, 'opex_turnover_per_unit', None) or 0)
 
     # --- K52–K55: Non-controllable opex $/unit/yr ---
     ws['K52'] = float(data.get('opexInsurancePerUnit') or getattr(deal, 'opex_insurance_per_unit', None) or 0)
@@ -272,6 +272,15 @@ def _do_export(deal_id):
 
     # --- D50: Senior financing costs % (decimal) ---
     ws['D50'] = _to_decimal(data.get('seniorFinancingCostsPct') or getattr(deal, 'senior_financing_costs_pct', None) or 0)
+
+    # --- E51: Senior PMT (dynamic term from D48) ---
+    ws['E51'] = '=PMT(E49/12,D48,-E47,0,)'
+
+    # --- H51: Refi PMT (dynamic term from D48) ---
+    ws['H51'] = '=PMT(H49/12,D48,-H47,0,)'
+
+    # --- E53: DSCR (dynamic term from D48) ---
+    ws['E53'] = '=D23/(PMT(E49/12,D48,-E47,0)*12)'
 
     # --- G55: Refi LTV (decimal) ---
     ws['G55'] = _to_decimal(data.get('refiLtv') or getattr(deal, 'refi_ltv', None) or 0)
