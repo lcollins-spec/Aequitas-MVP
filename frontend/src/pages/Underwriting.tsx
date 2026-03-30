@@ -335,6 +335,10 @@ const Underwriting = () => {
   const [opexGrowthRate, setOpexGrowthRate] = useState(3);
   const [propertyTaxGrowthRate, setPropertyTaxGrowthRate] = useState(2);
   const [gpEquitySplitPct, setGpEquitySplitPct] = useState(10);
+  const [ttmNoi, setTtmNoi] = useState(0);
+  const [nonRevenueUnits, setNonRevenueUnits] = useState(0);
+  const [millageRate, setMillageRate] = useState(0.01184);
+  const [specialAssessments, setSpecialAssessments] = useState(0);
 
   const [gpPartner, setGpPartner] = useState('Aequitas Housing');
   const [gpPartners, setGpPartners] = useState<string[]>(GP_PARTNERS_FALLBACK);
@@ -578,6 +582,10 @@ const Underwriting = () => {
         if (uw.opexGrowthRate != null) setOpexGrowthRate(uw.opexGrowthRate);
         if (uw.propertyTaxGrowthRate != null) setPropertyTaxGrowthRate(uw.propertyTaxGrowthRate);
         if (uw.gpEquitySplitPct != null) setGpEquitySplitPct(uw.gpEquitySplitPct);
+        if (uw.ttmNoi != null) setTtmNoi(uw.ttmNoi);
+        if (uw.nonRevenueUnits != null) setNonRevenueUnits(uw.nonRevenueUnits);
+        if (uw.millageRate != null) setMillageRate(uw.millageRate);
+        if (uw.specialAssessments != null) setSpecialAssessments(uw.specialAssessments);
         if (uw.marketAnalysisDemographics) {
           setMarketAnalysisDemographics(uw.marketAnalysisDemographics);
           setMarketAnalysisOpen(true);
@@ -786,6 +794,8 @@ const Underwriting = () => {
       if (data.capexPerUnit != null) setCapexPerUnit(data.capexPerUnit);
       if (data.opexGrowthRate != null) setOpexGrowthRate(data.opexGrowthRate * 100); // stored as % for the input
       if (data.propertyTaxGrowthRate != null) setPropertyTaxGrowthRate(data.propertyTaxGrowthRate * 100);
+      if (data.ttmNoi != null) setTtmNoi(data.ttmNoi);
+      else if (data.netOperatingIncome != null) setTtmNoi(data.netOperatingIncome);
 
       // Always create a new deal record on OM upload — never overwrite an existing deal
       const dealLocation = data.city && data.state
@@ -977,6 +987,10 @@ const Underwriting = () => {
           opexGrowthRate,
           propertyTaxGrowthRate,
           gpEquitySplitPct,
+          ttmNoi,
+          nonRevenueUnits,
+          millageRate,
+          specialAssessments,
           marketAnalysisDemographics: demoData ?? undefined,
           marketAnalysisStats: statsData ?? undefined,
         }),
@@ -1107,152 +1121,88 @@ const Underwriting = () => {
 
     setExporting(true);
     try {
-      // Build comprehensive multifamily underwriting data
+      // Normalize unit mix to exactly 4 rows; zero-pad unused rows
+      const normalizedUnitMix = Array.from({ length: 4 }, (_, i) => {
+        const u = unitMix[i];
+        return {
+          unitType: u?.unitType ?? '',
+          count: u?.count ?? 0,
+          askingRent: u?.askingRent ?? 0,
+          avgSf: (u as any)?.avgSf ?? 0,
+        };
+      });
+
       const underwritingData = {
+        // Property info
         propertyName: dealName,
         address: location,
-        city: location.split(',')[0]?.trim() || '',
-        county: county,
-        state: location.split(',')[1]?.trim() || 'CA',
-        zipCode: zipCode,
-        yearBuilt: yearBuilt,
-        buildingType: buildingType,
-        numberOfBuildings: numberOfBuildings,
-        parkingSpaces: Math.round(totalUnits * 1.5), // Estimate 1.5 spaces per unit
-
-        purchasePrice: purchasePrice,
         acquisitionDate: acquisitionDate || new Date().toISOString(),
-        earnestMoneyPct: 0.02,
-        constructionCostPct: constructionCostPct / 100,
-        closingCostsPct: closingCostsPct / 100,
-        dueDiligenceCosts: 50000,
 
-        // Use OM-extracted unit mix if available, otherwise generate from totals
-        unitMix: unitMix.length > 0 ? unitMix : [
-          {
-            unitType: '1BR/1BA',
-            count: Math.floor(totalUnits * 0.3),
-            avgSf: 650,
-            currentRent: avgMonthlyRent * 0.85,
-            marketRent: avgMonthlyRent,
-            renovationCostPerUnit: 8000
-          },
-          {
-            unitType: '2BR/2BA',
-            count: Math.floor(totalUnits * 0.5),
-            avgSf: 900,
-            currentRent: avgMonthlyRent,
-            marketRent: avgMonthlyRent * 1.15,
-            renovationCostPerUnit: 10000
-          },
-          {
-            unitType: '3BR/2BA',
-            count: Math.floor(totalUnits * 0.2),
-            avgSf: 1100,
-            currentRent: avgMonthlyRent * 1.2,
-            marketRent: avgMonthlyRent * 1.4,
-            renovationCostPerUnit: 12000
-          }
-        ],
+        // Timeline — send months; backend writes F17, then D48 = '=F17'
+        holdPeriodMonths: holdingPeriod * 12,
 
-        physicalOccupancy: 0.95,
-        economicOccupancy: 0.90,
-        vacancyRate: vacancyRate,
-        badDebtRate: badDebtRate,
-        vacancyLossAnnual: totalUnits * avgMonthlyRent * 12 * vacancyRate,
-        concessionsAnnual: 20000,
-        badDebtAnnual: totalUnits * avgMonthlyRent * 12 * badDebtRate,
-        laundryIncome: omLaundryIncome ?? 0,
-        rentStabilized: omRentStabilized ?? false,
-        annualRentGrowthCap: omAnnualRentGrowthCap ?? undefined,
+        // Valuation
+        ttmNoi,
+        purchasePrice,
+        entryCapRate: metrics.entryCapRate,
+        refiCapRate: exitCapRate,   // default refi cap = exit cap; override in Excel if needed
+        exitCapRate,
 
-        otherIncome: {
-          laundryPerUnit: 15,
-          petRentPerUnit: 25,
-          parkingPerSpace: 30,
-          otherPerUnit: 10
-        },
+        // Unit mix — always 4 rows, unused rows zeroed
+        unitMix: normalizedUnitMix,
 
-        operatingExpenses: {
-          // Use OM-extracted annual figures when available; fall back to per-unit estimates
-          propertyTaxAnnual: omOperatingExpenses?.propertyTaxAnnual ?? purchasePrice * 0.011,
-          insuranceAnnual: omOperatingExpenses?.insuranceAnnual ?? totalUnits * 600,
-          utilitiesAnnual: omOperatingExpenses?.utilitiesAnnual ?? (totalUnits * 145 * 12),
-          repairsMaintenanceAnnual: omOperatingExpenses?.repairsMaintenanceAnnual ?? totalUnits * 500,
-          managementFeePct: omOperatingExpenses?.managementFeePct ?? 0.04,
-          payroll: totalUnits * 350,
-          marketing: totalUnits * 100,
-          legalProfessional: 25000,
-          administrative: totalUnits * 150
-        },
+        // Other income
+        rubsPct,                    // fraction of utilities recovered (e.g. 0.675)
+        parkingIncomePerUnit,
+        otherIncomePerUnit,
 
-        renovationBudget: {
-          commonAreaExterior: constructionCost || 100000,
-          contingencyPct: 0.10
-        },
-
-        operatingProjections: {
-          marketRentGrowth: 0.02,
-          inplaceRentGrowth: 0.025,
-          otherIncomeGrowth: 0.03,
-          opexGrowth: 0.03,
-          stabilizedVacancy: 0.05,
-          capexPerUnitAnnual: 400
-        },
-
-        financing: {
-          loanType: 'Agency Fixed',
-          ltv: ltv / 100,
-          interestRate: interestRate,
-          amortizationYears: 30,
-          loanTermYears: loanTermYears,
-          originationFeePct: 0.01,
-          lenderLegalDd: 25000
-        },
-
-        equityRequired: metrics.equityRequired,  // cost-basis equity → overrides D25 so IRR matches on-screen
-        entryCapRate: metrics.entryCapRate,  // actual in-place cap rate (NOI / purchase price) → D19
-        aequitasEquityPct: 0.5,  // Aequitas equity share of the deal → D46
-
-        exitAssumptions: {
-          holdPeriodYears: holdingPeriod,
-          exitCapRate: exitCapRate,
-          saleCostsPct: 0.04
-        },
-
-        propertyTax: {
-          countyTaxRate: 0.011,
-          prop13Cap: 0.02,
-          specialAssessments: 0
-        },
-
-        // New template input fields
+        // Income adjustments — single value replicated across all 5 year columns
         lossToLeaseRate,
+        vacancyRate,
+        badDebtRate,
         concessionsRate,
-        rentGrowthRate,
-        opexGrowthRate,
-        propertyTaxGrowthRate,
+        nonRevenueUnits,
+
+        // Senior financing
+        ltv: ltv / 100,             // state is %, send as decimal
+        interestRate,               // state is already decimal (e.g. 0.065)
+        seniorIoPeriods,
+        closingCostsPct: closingCostsPct / 100,  // state is %, send as decimal
+
+        // Refi
+        refiTermMonths,
+        refiDebtYield: 0.08,
+        refiLtv,
+        refiInterestRate,
+
+        // Opex $/unit/year
         opexPayrollPerUnit,
         opexAdminPerUnit,
         opexMarketingPerUnit,
         opexRmPerUnit,
         opexContractServicePerUnit,
         opexTurnoverPerUnit,
+        opexOtherPerUnit: 0,        // not tracked in UI
         opexInsurancePerUnit,
         opexUtilitiesPerUnit,
-        opexPropertyTaxPerUnit,
         capexPerUnit,
-        rubsPct,
-        parkingIncomePerUnit,
-        otherIncomePerUnit,
-        seniorIoPeriods,
-        seniorFinancingCostsPct,
-        refiLtv,
-        refiInterestRate,
-        refiFinancingCostsPct,
-        refiIoPeriods,
-        refiTermMonths,
-        gpEquitySplitPct,
+
+        // Management fee (decimal)
+        managementFeePct: omOperatingExpenses?.managementFeePct ?? 0.04,
+
+        // Property tax
+        millageRate,
+        specialAssessments,
+
+        // Growth rates — opexGrowthRate and propertyTaxGrowthRate stored as %;
+        // _to_decimal on backend normalizes them. rentGrowthRate is already decimal.
+        rentGrowthRate,
+        opexGrowthRate,             // % → backend _to_decimal → 0.03
+        propertyTaxGrowthRate,      // % → backend _to_decimal → 0.02
+        generalInflationRate: rentGrowthRate,  // drives D105
+
+        // GP equity share — stored as % (e.g. 10); backend _to_decimal → 0.10
+        gpEquityShare,
       };
 
       await dealApi.exportMultifamilyToExcel(currentDealId, underwritingData);
@@ -1308,13 +1258,23 @@ const Underwriting = () => {
       isAcquisition: true, isExit: false,
     });
 
+    const expenseGrowthRate = opexGrowthRate / 100;
+    const baseInsurance    = omOperatingExpenses?.insuranceAnnual ?? 0;
+    const baseUtilities    = omOperatingExpenses?.utilitiesAnnual ?? 0;
+    const basePropertyTax  = omOperatingExpenses?.propertyTaxAnnual ?? 0;
+    const baseRepairsMaint = omOperatingExpenses?.repairsMaintenanceAnnual ?? 0;
+    const mgmtFeePct       = omOperatingExpenses?.managementFeePct ?? 0;
+    const hasItemizedOpex  = (baseInsurance + baseUtilities + basePropertyTax + baseRepairsMaint) > 0 || mgmtFeePct > 0;
+
     let lastNOI = netOperatingIncome;
     for (let year = 1; year <= holdingPeriod; year++) {
       const gpr = baseGPR * Math.pow(1 + rentGrowthRate, year - 1);
       const vLoss = gpr * vacancyRate;
       const bdLoss = gpr * badDebtRate;
       const egi = gpr - vLoss - bdLoss;
-      const opex = egi * operatingExpenseRatio;
+      const opex = hasItemizedOpex
+        ? (baseInsurance + baseUtilities + basePropertyTax + baseRepairsMaint) * Math.pow(1 + expenseGrowthRate, year - 1) + mgmtFeePct * egi
+        : egi * operatingExpenseRatio;
       const noi = egi - opex;
       const cfbt = noi - annualDebtService;
       lastNOI = noi;
@@ -1358,7 +1318,7 @@ const Underwriting = () => {
       totalReturn,
       yearlyData,
     };
-  }, [purchasePrice, constructionCost, closingCosts, totalUnits, avgMonthlyRent, operatingExpenseRatio, interestRate, loanTermYears, ltv, exitCapRate, holdingPeriod, vacancyRate, badDebtRate, rentGrowthRate]);
+  }, [purchasePrice, constructionCost, closingCosts, totalUnits, avgMonthlyRent, operatingExpenseRatio, interestRate, loanTermYears, ltv, exitCapRate, holdingPeriod, vacancyRate, badDebtRate, rentGrowthRate, omOperatingExpenses, opexGrowthRate]);
 
   // Returns & Loan Summary derived metrics
   const returnsMetrics = useMemo(() => {
@@ -1859,6 +1819,16 @@ const Underwriting = () => {
               />
             </div>
             <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">Trailing NOI (TTM) ($)</label>
+              <input
+                type="number"
+                step="1000"
+                value={ttmNoi}
+                onChange={(e) => setTtmNoi(Number(e.target.value) || 0)}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+              />
+            </div>
+            <div>
               <label className="block text-xs font-medium text-gray-600 mb-1.5">Total Units</label>
               <input
                 type="number"
@@ -1987,6 +1957,10 @@ const Underwriting = () => {
                     <input type="number" step="0.1" value={badDebtRate * 100} onChange={(e) => setBadDebtRate((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
                   </div>
                   <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Non-Revenue Units</label>
+                    <input type="number" step="1" value={nonRevenueUnits} onChange={(e) => setNonRevenueUnits(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                  </div>
+                  <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="block text-xs font-medium text-gray-600">Interest Rate (%)</label>
                       {currentMortgageRate && !loadingRates && (
@@ -2064,6 +2038,21 @@ const Underwriting = () => {
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1.5">Property Tax Growth Rate (%/yr)</label>
                         <input type="number" step="0.1" value={propertyTaxGrowthRate} onChange={(e) => setPropertyTaxGrowthRate(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── Property Tax ── */}
+                  <div className="border-t border-gray-100 pt-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Property Tax</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Millage Rate (%)</label>
+                        <input type="number" step="0.001" value={+(millageRate * 100).toFixed(4)} onChange={(e) => setMillageRate((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Special Assessments (Annual) ($)</label>
+                        <input type="number" step="1000" value={specialAssessments} onChange={(e) => setSpecialAssessments(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
                       </div>
                     </div>
                   </div>

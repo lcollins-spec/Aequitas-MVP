@@ -1,44 +1,55 @@
 """
 Excel Export API Routes
-Generates multifamily underwriting Excel models
+Writes deal inputs into the v13 template and returns the file.
+All formula cells are left untouched — Excel evaluates them on open.
 """
 from flask import Blueprint, request, jsonify, send_file
 from datetime import datetime, date
 from io import BytesIO
-import json
 import os
 
 from openpyxl import load_workbook
-from app.database import db, DealModel
+from app.database import DealModel
 
 excel_export_bp = Blueprint('excel_export', __name__)
 
-TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'MF_Acq_Pro_Forma_Template_-_v13.xlsx')
+TEMPLATE_PATH = os.path.join(
+    os.path.dirname(__file__), '..', '..', '..', 'MF_Acq_Pro_Forma_Template_-_v13.xlsx'
+)
+
+YEAR_COLS = ('D', 'E', 'F', 'G', 'H')
 
 
-def _to_decimal(value, fallback=0):
-    """Convert a value to decimal form. If > 1 assume it's already a percent and divide by 100."""
+def _to_decimal(value, fallback=0.0):
+    """Normalize a value to a decimal fraction.
+
+    Values > 1 are assumed to be percentages (e.g. 65 → 0.65).
+    Values ≤ 1 are returned as-is.
+    None returns fallback.
+    """
     if value is None:
-        return fallback
+        return float(fallback)
     v = float(value)
-    return v / 100 if v > 1 else v
+    return v / 100.0 if v > 1.0 else v
 
 
-def _classify_unit_type(unit_type_str):
-    """Return '1br' if the unit type is a 1-bedroom, otherwise 'other'."""
-    s = (unit_type_str or '').lower()
-    # Match explicit 1BR patterns; avoid '1b' shortcut which falsely matches '2br/1ba'
-    if '1br' in s or '1/1' in s or s.startswith('1b'):
-        return '1br'
-    return 'other'
+def _write_5yr(ws, row, value_or_list):
+    """Write a value (or list of up to 5 values) across columns D–H for row.
+
+    A scalar is replicated to all 5 columns.
+    A short list is extended by repeating its last element.
+    """
+    if isinstance(value_or_list, list):
+        last = value_or_list[-1] if value_or_list else 0
+        vals = (list(value_or_list) + [last] * 5)[:5]
+    else:
+        vals = [value_or_list] * 5
+    for col, val in zip(YEAR_COLS, vals):
+        ws[f'{col}{row}'] = val
 
 
 @excel_export_bp.route('/underwriting/<int:deal_id>/export-excel', methods=['POST'])
 def export_underwriting_excel(deal_id):
-    """
-    Load the MF Acq Pro Forma template, write the 13 input cells with deal data,
-    and return the file. All formula cells are left untouched.
-    """
     try:
         return _do_export(deal_id)
     except Exception as e:
@@ -48,18 +59,11 @@ def export_underwriting_excel(deal_id):
 
 
 def _do_export(deal_id):
-    raw_body = request.get_json(silent=True)
+    data = request.get_json(silent=True) or {}
 
     deal = DealModel.query.get(deal_id)
     if deal is None:
         return jsonify({'error': f'Deal {deal_id} not found'}), 404
-    data = raw_body or {}
-
-    financing        = data.get('financing', {}) or {}
-    exit_assumptions = data.get('exitAssumptions', {}) or {}
-    op_expenses      = data.get('operatingExpenses', {}) or {}
-    op_projections   = data.get('operatingProjections', {}) or {}
-    unit_mix_list    = data.get('unitMix', []) or []
 
     if not os.path.exists(TEMPLATE_PATH):
         return jsonify({'error': f'Excel template not found at: {os.path.abspath(TEMPLATE_PATH)}'}), 500
@@ -69,271 +73,127 @@ def _do_export(deal_id):
     wb = load_workbook(template_bytes)
     ws = wb.worksheets[0]
 
-    # --- D5: Property Name ---
+    # ── Property Info ─────────────────────────────────────────────────────────
     ws['D5'] = data.get('propertyName') or deal.deal_name or ''
-
-    # --- D6: Address ---
     ws['D6'] = data.get('address') or deal.property_address or ''
 
-    # --- E14: Acquisition Date (Python date object) ---
-    acq_date_raw = data.get('acquisitionDate')
+    # ── Timeline ──────────────────────────────────────────────────────────────
     acq_date = None
+    acq_date_raw = data.get('acquisitionDate')
     if acq_date_raw:
         try:
             acq_date = datetime.strptime(acq_date_raw[:10], '%Y-%m-%d').date()
         except (ValueError, TypeError):
-            acq_date = None
-    if acq_date is None:
-        acq_date = getattr(deal, 'acquisition_date', None)
-    if acq_date is None:
-        acq_date = date.today()
-    ws['E16'] = acq_date
+            pass
+    ws['E16'] = acq_date or date.today()
 
-    # --- D61: 1BR unit count, E61: 1BR rent per unit ---
-    # Find 1BR entry in unit mix; fall back to total units / avg rent
-    one_br_count = 0
-    one_br_rent = 0
-    for u in unit_mix_list:
-        if _classify_unit_type(u.get('unitType', '')) == '1br':
-            one_br_count += u.get('count', 0)
-            one_br_rent = u.get('askingRent') or u.get('marketRent') or u.get('currentRent') or 0
-    if one_br_count == 0:
-        # No 1BR found — use the first unit type as the primary, or fall back to totals
-        if unit_mix_list:
-            primary = unit_mix_list[0]
-            one_br_count = primary.get('count', 0)
-            one_br_rent = primary.get('askingRent') or primary.get('marketRent') or primary.get('currentRent') or 0
+    hold_months = data.get('holdPeriodMonths')
+    if hold_months is None:
+        hold_months = int((data.get('holdPeriodYears') or 0) * 12)
+    ws['F17'] = int(hold_months)
+    ws['D48'] = '=F17'  # senior loan term mirrors hold period
+
+    # ── Valuation ─────────────────────────────────────────────────────────────
+    ws['D23'] = float(data.get('ttmNoi') or 0)
+    ws['D25'] = float(data.get('purchasePrice') or deal.purchase_price or 0)
+    ws['E24'] = _to_decimal(data.get('entryCapRate'))
+    ws['G24'] = _to_decimal(data.get('refiCapRate'))
+    ws['H24'] = _to_decimal(data.get('exitCapRate'))
+    ws['E86'] = '=E25'  # sources-and-uses price ties to valuation price
+
+    # ── Unit Mix (always 4 rows; zero-pad unused rows) ─────────────────────────
+    unit_mix = data.get('unitMix') or []
+    for i, row_num in enumerate([60, 61, 62, 63]):
+        if i < len(unit_mix):
+            u = unit_mix[i]
+            ws[f'D{row_num}'] = int(u.get('count') or 0)
+            ws[f'E{row_num}'] = float(u.get('askingRent') or u.get('rent') or 0)
+            ws[f'F{row_num}'] = float(u.get('avgSf') or u.get('sf') or 0)
         else:
-            one_br_count = data.get('totalUnits') or sum(u.get('count', 0) for u in unit_mix_list) or 0
-            one_br_rent = data.get('avgMonthlyRent') or 0
-    ws['D61'] = one_br_count
-    ws['E61'] = one_br_rent
+            ws[f'D{row_num}'] = 0
+            ws[f'E{row_num}'] = 0
+            ws[f'F{row_num}'] = 0
 
-    # --- D21: Asking/listing price (valuation analysis) ---
-    purchase_price = data.get('purchasePrice') or deal.purchase_price or 0
-    ws['D21'] = purchase_price
+    # ── Other Income ──────────────────────────────────────────────────────────
+    ws['E67'] = _to_decimal(data.get('rubsPct'))
+    ws['G68'] = float(data.get('parkingIncomePerUnit') or 0)
+    ws['G69'] = float(data.get('otherIncomePerUnit') or 0)
 
-    # --- D25: Asking Price ---
-    ws['D25'] = purchase_price
+    # ── Income Adjustments (rows 73–77, columns D–H = years 1–5) ──────────────
+    def _pct_or_list(key):
+        v = data.get(key)
+        if isinstance(v, list):
+            return [_to_decimal(x) for x in v]
+        return _to_decimal(v)
 
-    # --- E24: Aequitas entry cap rate (decimal) ---
-    exit_cap = exit_assumptions.get('exitCapRate') or data.get('exitCapRate') or 0
-    entry_cap = _to_decimal(data.get('entryCapRate') or exit_cap or 0.06)
-    ws['E24'] = entry_cap
+    _write_5yr(ws, 73, _pct_or_list('lossToLeaseRate'))
+    _write_5yr(ws, 74, _pct_or_list('vacancyRate'))
+    _write_5yr(ws, 75, _pct_or_list('badDebtRate'))
+    _write_5yr(ws, 76, _pct_or_list('concessionsRate'))
+    _write_5yr(ws, 77, int(data.get('nonRevenueUnits') or 0))
 
-    # --- D23: TTM NOI ---
-    # Compute from unit mix and operating expense ratio supplied by frontend
-    total_units = sum(u.get('count', 0) for u in unit_mix_list) or 1
-    annual_gross_rent = sum(
-        u.get('count', 0) * (u.get('askingRent') or u.get('marketRent') or u.get('currentRent') or 0) * 12
-        for u in unit_mix_list
-    )
-    vacancy_rate = _to_decimal(
-        data.get('vacancyRate') or op_projections.get('stabilizedVacancy') or deal.vacancy_rate or 0.05
-    )
-    egi = annual_gross_rent * (1 - vacancy_rate)
-    utilities_annual = (
-        (op_expenses.get('utilitiesElectric') or 0)
-        + (op_expenses.get('utilitiesGas') or 0)
-        + (op_expenses.get('utilitiesWaterSewer') or 0)
-        + (op_expenses.get('utilitiesTrash') or 0)
-        or op_expenses.get('utilitiesAnnual')
-        or (deal.utilities_monthly or 0) * 12
-    )
-    mgmt_fee_pct = _to_decimal(
-        op_expenses.get('managementFeePct')
-        or (deal.property_management_percent if deal.property_management_percent else None)
-        or 0.04
-    )
-    total_opex = (
-        (op_expenses.get('payroll') or 0)
-        + (op_expenses.get('administrative') or op_expenses.get('legalProfessional') or 0)
-        + (op_expenses.get('marketing') or 0)
-        + (op_expenses.get('repairsMaintenance') or op_expenses.get('repairsMaintenanceAnnual') or 0)
-        + (op_expenses.get('insurance') or op_expenses.get('insuranceAnnual') or deal.insurance_annual or 0)
-        + utilities_annual
-        + (op_expenses.get('propertyTax') or op_expenses.get('propertyTaxAnnual') or deal.property_tax_annual or 0)
-        + mgmt_fee_pct * egi
-    )
-    ttm_noi = max(egi - total_opex, 0)
-    ws['D23'] = round(ttm_noi)
+    # ── Senior Financing ──────────────────────────────────────────────────────
+    ws['D47'] = _to_decimal(data.get('ltv'))
+    ws['E49'] = _to_decimal(data.get('interestRate'))
+    ws['D51'] = int(data.get('seniorIoPeriods') or 0)
+    ws['C39'] = _to_decimal(data.get('closingCostsPct'))
 
-    # --- E47: LTV (decimal) ---
-    ltv = financing.get('ltv') or data.get('ltv')
-    if ltv is None:
-        ltv = 1.0 - (_to_decimal(deal.down_payment_percent) if deal.down_payment_percent else 0.35)
-    else:
-        ltv = _to_decimal(ltv)
-    ws['E47'] = ltv
+    # ── Refi Assumptions ──────────────────────────────────────────────────────
+    ws['G48'] = int(data.get('refiTermMonths') or 0)
+    ws['G54'] = _to_decimal(data.get('refiDebtYield'))
+    ws['G55'] = _to_decimal(data.get('refiLtv'))
 
-    # --- D48: Senior loan term (months) ---
-    loan_term_years = financing.get('loanTermYears') or deal.loan_term_years or 30
-    ws['D48'] = int(loan_term_years * 12)
+    # ── Operating Expenses ($/unit/year) ──────────────────────────────────────
+    ws['K42'] = float(data.get('opexPayrollPerUnit') or 0)
+    ws['K43'] = float(data.get('opexAdminPerUnit') or 0)
+    ws['K44'] = float(data.get('opexMarketingPerUnit') or 0)
+    ws['K45'] = float(data.get('opexRmPerUnit') or 0)
+    ws['K46'] = float(data.get('opexContractServicePerUnit') or 0)
+    ws['K47'] = float(data.get('opexTurnoverPerUnit') or 0)
+    ws['K48'] = float(data.get('opexOtherPerUnit') or 0)
+    ws['K52'] = float(data.get('opexInsurancePerUnit') or 0)
+    ws['K53'] = float(data.get('opexUtilitiesPerUnit') or 0)
+    ws['K64'] = float(data.get('capexPerUnit') or 0)
 
-    # --- E49: Senior loan interest rate (decimal) ---
-    interest_rate = (
-        financing.get('interestRate')
-        or data.get('interestRate')
-        or deal.loan_interest_rate
-        or 0
-    )
-    ws['E49'] = _to_decimal(interest_rate)
+    # ── Management Fee ────────────────────────────────────────────────────────
+    ws['J54'] = _to_decimal(data.get('managementFeePct'))
 
-    # --- G8: LP equity share (decimal) ---
-    # aequitasEquityPct is Aequitas (GP) share; LP = 1 - GP share
-    aeq_pct = _to_decimal(data.get('aequitasEquityPct', 0.5))
-    ws['G8'] = round(1.0 - aeq_pct, 6)
+    # ── Property Tax ──────────────────────────────────────────────────────────
+    millage = _to_decimal(data.get('millageRate'))
+    ws['E89'] = millage
+    ws['F89'] = millage
+    ws['E90'] = float(data.get('specialAssessments') or 0)
+    ws['K55'] = '=E92'  # property tax $/unit pulls from template's computed total
 
-    # --- H21: Exit cap rate (valuation analysis) ---
-    ws['H21'] = _to_decimal(exit_cap or 0.06)
+    # ── Growth Rates ──────────────────────────────────────────────────────────
+    ws['D105'] = _to_decimal(data.get('generalInflationRate') or data.get('rentGrowthRate'))
 
-    # --- H24: Exit cap rate (decimal) ---
-    ws['H24'] = _to_decimal(exit_cap or 0.06)
+    # ── GP Equity Share ───────────────────────────────────────────────────────
+    ws['G8'] = _to_decimal(data.get('gpEquityShare') or data.get('gpEquitySplitPct') or 0.10)
 
-    # --- F17: Hold period in months (integer) ---
-    hold_years = (
-        exit_assumptions.get('holdPeriodYears')
-        or financing.get('loanTermYears')
-        or deal.loan_term_years
-        or 0
-    )
-    ws['F17'] = int(hold_years * 12)
-
-    # ── New template input cells ──────────────────────────────────────────────
-
-    # --- D73: Loss to lease (decimal) ---
-    ws['D73'] = _to_decimal(data.get('lossToLeaseRate') or getattr(deal, 'loss_to_lease_rate', None) or 0)
-
-    # --- D74–H74: Vacancy rate (same value across Year 1–5 columns) ---
-    vac = _to_decimal(
-        data.get('vacancyRate')
-        or op_projections.get('stabilizedVacancy')
-        or deal.vacancy_rate
-        or 0.05
-    )
-    for col in ('D', 'E', 'F', 'G', 'H'):
-        ws[f'{col}74'] = vac
-
-    # --- D75: Bad debt (decimal) ---
-    ws['D75'] = _to_decimal(data.get('badDebtRate') or 0)
-
-    # --- D76: Concessions (decimal) ---
-    ws['D76'] = _to_decimal(data.get('concessionsRate') or getattr(deal, 'concessions_rate', None) or 0)
-
-    # --- D79: Rent growth (decimal) ---
-    ws['D79'] = _to_decimal(
-        data.get('rentGrowthRate')
-        or op_projections.get('marketRentGrowth')
-        or 0.02
-    )
-
-    # --- D81: Opex growth rate (decimal) ---
-    ws['D81'] = _to_decimal(
-        data.get('opexGrowthRate')
-        or op_projections.get('opexGrowth')
-        or getattr(deal, 'opex_growth_rate', None)
-        or 0.03
-    )
-
-    # --- D82: Property tax growth rate (decimal) ---
-    ws['D82'] = _to_decimal(
-        data.get('propertyTaxGrowthRate')
-        or getattr(deal, 'property_tax_growth_rate', None)
-        or 0.02
-    )
-
-    # --- K42–K47: Controllable opex $/unit/yr ---
-    ws['K42'] = float(data.get('opexPayrollPerUnit') or getattr(deal, 'opex_payroll_per_unit', None) or 0)
-    ws['K43'] = float(data.get('opexAdminPerUnit') or getattr(deal, 'opex_admin_per_unit', None) or 0)
-    ws['K44'] = float(data.get('opexMarketingPerUnit') or getattr(deal, 'opex_marketing_per_unit', None) or 0)
-    ws['K45'] = float(data.get('opexRmPerUnit') or getattr(deal, 'opex_rm_per_unit', None) or 0)
-    ws['K46'] = float(data.get('opexContractServicePerUnit') or getattr(deal, 'opex_contract_service_per_unit', None) or 0)
-    ws['K47'] = float(data.get('opexTurnoverPerUnit') or getattr(deal, 'opex_turnover_per_unit', None) or 0)
-
-    # --- K52–K55: Non-controllable opex $/unit/yr ---
-    ws['K52'] = float(data.get('opexInsurancePerUnit') or getattr(deal, 'opex_insurance_per_unit', None) or 0)
-    ws['K53'] = float(data.get('opexUtilitiesPerUnit') or getattr(deal, 'opex_utilities_per_unit', None) or 0)
-    ws['K55'] = float(data.get('opexPropertyTaxPerUnit') or getattr(deal, 'opex_property_tax_per_unit', None) or 0)
-
-    # --- K64: CapEx $/unit/yr ---
-    ws['K64'] = float(data.get('capexPerUnit') or getattr(deal, 'capex_per_unit', None) or 0)
-
-    # --- E67: RUBS % (decimal) ---
-    ws['E67'] = _to_decimal(data.get('rubsPct') or getattr(deal, 'rubs_pct', None) or 0)
-
-    # --- G68: Parking $/unit/mo ---
-    ws['G68'] = float(data.get('parkingIncomePerUnit') or getattr(deal, 'parking_income_per_unit', None) or 0)
-
-    # --- G69: Other income $/unit/mo ---
-    ws['G69'] = float(data.get('otherIncomePerUnit') or getattr(deal, 'other_income_per_unit', None) or 0)
-
-    # --- D51: Senior IO periods (months) ---
-    ws['D51'] = int(data.get('seniorIoPeriods') or getattr(deal, 'senior_io_periods', None) or 0)
-
-    # --- D50: Senior financing costs % (decimal) ---
-    ws['D50'] = _to_decimal(data.get('seniorFinancingCostsPct') or getattr(deal, 'senior_financing_costs_pct', None) or 0)
-
-    # --- E51: Senior PMT (dynamic term from D48) ---
-    ws['E51'] = '=PMT(E49/12,D48,-E47,0,)'
-
-    # --- H51: Refi PMT (dynamic term from D48) ---
-    ws['H51'] = '=PMT(H49/12,D48,-H47,0,)'
-
-    # --- E53: DSCR (dynamic term from D48) ---
-    ws['E53'] = '=D23/(PMT(E49/12,D48,-E47,0)*12)'
-
-    # --- G55: Refi LTV (decimal) ---
-    ws['G55'] = _to_decimal(data.get('refiLtv') or getattr(deal, 'refi_ltv', None) or 0)
-
-    # --- G49: Refi interest rate (decimal) ---
-    ws['G49'] = _to_decimal(data.get('refiInterestRate') or getattr(deal, 'refi_interest_rate', None) or 0)
-
-    # --- G50: Refi financing costs % (decimal) ---
-    ws['G50'] = _to_decimal(data.get('refiFinancingCostsPct') or getattr(deal, 'refi_financing_costs_pct', None) or 0)
-
-    # --- G51: Refi IO periods (months) ---
-    ws['G51'] = int(data.get('refiIoPeriods') or getattr(deal, 'refi_io_periods', None) or 0)
-
-    # --- G48: Refi term (months) ---
-    ws['G48'] = int(data.get('refiTermMonths') or getattr(deal, 'refi_term_months', None) or 0)
-
-    # --- G6: GP equity split % (decimal) ---
-    ws['G6'] = _to_decimal(data.get('gpEquitySplitPct') or getattr(deal, 'gp_equity_split_pct', None) or 0.10)
-
-    # --- Save and return ---
+    # ── Save and return ───────────────────────────────────────────────────────
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
 
     property_name = (data.get('propertyName') or deal.deal_name or 'Property').replace(' ', '_')
-    filename = f"{property_name}_ProForma.xlsx"
-
     return send_file(
         buf,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         as_attachment=True,
-        download_name=filename
+        download_name=f'{property_name}_ProForma.xlsx',
     )
 
 
 @excel_export_bp.route('/underwriting/export-excel-template', methods=['GET'])
 def export_template():
-    """
-    Download the blank MF Acq Pro Forma template.
-
-    Returns:
-        Excel file download
-    """
     try:
         timestamp = datetime.now().strftime('%Y%m%d')
-        filename = f"MF_ProForma_Template_{timestamp}.xlsx"
-
         return send_file(
             TEMPLATE_PATH,
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             as_attachment=True,
-            download_name=filename
+            download_name=f'MF_ProForma_Template_{timestamp}.xlsx',
         )
-
     except Exception as e:
         return jsonify({'error': str(e)}), 500
