@@ -151,4 +151,6 @@ export interface OmExtractedData {
   propertyTaxGrowthRate?: number | null;
   rentStabilized?: boolean | null;
   annualRentGrowthCap?: number | null;
+  ttmNoi?: number | null;
+  netOperatingIncome?: number | null;
 }
