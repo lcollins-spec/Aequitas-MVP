@@ -582,6 +582,8 @@ const Underwriting = () => {
         if (uw.opexGrowthRate != null) setOpexGrowthRate(uw.opexGrowthRate);
         if (uw.propertyTaxGrowthRate != null) setPropertyTaxGrowthRate(uw.propertyTaxGrowthRate);
         if (uw.gpEquitySplitPct != null) setGpEquitySplitPct(uw.gpEquitySplitPct);
+        if (uw.lpEquityShare != null) setLpEquityShare(uw.lpEquityShare);
+        if (uw.interestRate != null) setInterestRate(uw.interestRate);
         if (uw.ttmNoi != null) setTtmNoi(uw.ttmNoi);
         if (uw.nonRevenueUnits != null) setNonRevenueUnits(uw.nonRevenueUnits);
         if (uw.millageRate != null) setMillageRate(uw.millageRate);
@@ -987,6 +989,8 @@ const Underwriting = () => {
           opexGrowthRate,
           propertyTaxGrowthRate,
           gpEquitySplitPct,
+          lpEquityShare,
+          interestRate,
           ttmNoi,
           nonRevenueUnits,
           millageRate,
@@ -1148,7 +1152,11 @@ const Underwriting = () => {
         refiCapRate: exitCapRate,   // default refi cap = exit cap; override in Excel if needed
         exitCapRate,
 
-        // Unit mix — always 4 rows, unused rows zeroed
+        // Unit mix — always 4 rows, unused rows zeroed.
+        // LIMITATION: The OM parser may extract more than 4 bedroom types (e.g. studio, 1BR, 2BR, 3BR+).
+        // The template only has 4 unit-type rows (D60:F63), so only the first 4 entries are written.
+        // This is acceptable for single-property deals. Portfolio deals with 5+ unit types will silently
+        // drop the extra rows. A future fix should aggregate or collapse types before export.
         unitMix: normalizedUnitMix,
 
         // Other income
@@ -1201,8 +1209,9 @@ const Underwriting = () => {
         propertyTaxGrowthRate,      // % → backend _to_decimal → 0.02
         generalInflationRate: rentGrowthRate,  // drives D105
 
-        // GP equity share — stored as % (e.g. 10); backend _to_decimal → 0.10
-        gpEquityShare,
+        // GP ownership share as decimal (e.g. 0.5 for 50/50).
+        // lpEquityShare drives this: set LP % in the Returns panel to control this value.
+        gpEquityShare: (100 - lpEquityShare) / 100,
       };
 
       await dealApi.exportMultifamilyToExcel(currentDealId, underwritingData);
