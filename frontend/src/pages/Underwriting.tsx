@@ -1209,9 +1209,6 @@ const Underwriting = () => {
         propertyTaxGrowthRate,      // % → backend _to_decimal → 0.02
         generalInflationRate: rentGrowthRate,  // drives D105
 
-        // GP ownership share as decimal (e.g. 0.5 for 50/50).
-        // lpEquityShare drives this: set LP % in the Returns panel to control this value.
-        gpEquityShare: (100 - lpEquityShare) / 100,
       };
 
       await dealApi.exportMultifamilyToExcel(currentDealId, underwritingData);

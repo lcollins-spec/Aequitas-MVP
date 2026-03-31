@@ -168,8 +168,7 @@ def _do_export(deal_id):
     # ── Growth Rates ──────────────────────────────────────────────────────────
     ws['D105'] = _to_decimal(data.get('generalInflationRate') or data.get('rentGrowthRate'))
 
-    # ── GP Equity Share ───────────────────────────────────────────────────────
-    ws['G8'] = _to_decimal(data.get('gpEquityShare') or data.get('gpEquitySplitPct') or 0.10)
+    # G8 (GP equity share) = 0.5 template default — don't overwrite
 
     # ── Save and return ───────────────────────────────────────────────────────
     buf = BytesIO()
