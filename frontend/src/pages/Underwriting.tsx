@@ -1125,14 +1125,33 @@ const Underwriting = () => {
 
     setExporting(true);
     try {
-      // Normalize unit mix to exactly 4 rows; zero-pad unused rows
-      const normalizedUnitMix = Array.from({ length: 4 }, (_, i) => {
-        const u = unitMix[i];
+      // Consolidate unit mix into exactly 4 bedroom-count buckets: 1BR, 2BR, 3BR, other/studio.
+      // Weighted-average rent and SF by unit count; zero out empty buckets.
+      type Bucket = { unitType: string; count: number; rentSum: number; sfSum: number };
+      const buckets: Record<string, Bucket> = {
+        '1BR': { unitType: '1BR', count: 0, rentSum: 0, sfSum: 0 },
+        '2BR': { unitType: '2BR', count: 0, rentSum: 0, sfSum: 0 },
+        '3BR': { unitType: '3BR', count: 0, rentSum: 0, sfSum: 0 },
+        'other': { unitType: 'Studio/Other', count: 0, rentSum: 0, sfSum: 0 },
+      };
+      for (const u of unitMix) {
+        const t = (u.unitType ?? '').toLowerCase();
+        let key: string;
+        if (t.includes('1br') || t.includes('1 bed') || t.includes('studio')) key = '1BR';
+        else if (t.includes('2br') || t.includes('2 bed')) key = '2BR';
+        else if (t.includes('3br') || t.includes('3 bed')) key = '3BR';
+        else key = 'other';
+        buckets[key].count += u.count;
+        buckets[key].rentSum += u.askingRent * u.count;
+        buckets[key].sfSum += ((u as any).avgSf ?? 0) * u.count;
+      }
+      const normalizedUnitMix = ['1BR', '2BR', '3BR', 'other'].map((key) => {
+        const b = buckets[key];
         return {
-          unitType: u?.unitType ?? '',
-          count: u?.count ?? 0,
-          askingRent: u?.askingRent ?? 0,
-          avgSf: (u as any)?.avgSf ?? 0,
+          unitType: b.unitType,
+          count: b.count,
+          askingRent: b.count > 0 ? b.rentSum / b.count : 0,
+          avgSf: b.count > 0 ? b.sfSum / b.count : 0,
         };
       });
 
@@ -1152,11 +1171,7 @@ const Underwriting = () => {
         refiCapRate: exitCapRate,   // default refi cap = exit cap; override in Excel if needed
         exitCapRate,
 
-        // Unit mix — always 4 rows, unused rows zeroed.
-        // LIMITATION: The OM parser may extract more than 4 bedroom types (e.g. studio, 1BR, 2BR, 3BR+).
-        // The template only has 4 unit-type rows (D60:F63), so only the first 4 entries are written.
-        // This is acceptable for single-property deals. Portfolio deals with 5+ unit types will silently
-        // drop the extra rows. A future fix should aggregate or collapse types before export.
+        // Unit mix — exactly 4 rows (1BR, 2BR, 3BR, Studio/Other), grouped by bedroom count.
         unitMix: normalizedUnitMix,
 
         // Other income
@@ -1173,7 +1188,7 @@ const Underwriting = () => {
 
         // Senior financing
         // TODO: expose financingCostsPct in UI (lender origination/points as % of loan)
-        financingCostsPct: 1,
+        financingCostsPct: 0.01,
         ltv: ltv / 100,             // state is %, send as decimal
         interestRate,               // state is already decimal (e.g. 0.065)
         seniorIoPeriods,
