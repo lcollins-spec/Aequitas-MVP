@@ -1199,6 +1199,8 @@ const Underwriting = () => {
         refiDebtYield: 0.08,
         refiLtv,
         refiInterestRate,
+        refiFinancingCostsPct,
+        refiIoPeriods,
 
         // Opex $/unit/year
         opexPayrollPerUnit,

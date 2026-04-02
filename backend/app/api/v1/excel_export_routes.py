@@ -142,6 +142,8 @@ def _do_export(deal_id):
     # ── Refi Assumptions ──────────────────────────────────────────────────────
     refi_term = int(data.get('refiTermMonths') or 0)
     ws['G48'] = refi_term if refi_term > 0 else 360
+    ws['G50'] = _to_decimal(data.get('refiFinancingCostsPct', 0.005))
+    ws['G51'] = int(data.get('refiIoPeriods') or 24)
     ws['G54'] = _to_decimal(data.get('refiDebtYield'))
     ws['G55'] = _to_decimal(data.get('refiLtv'))
 
