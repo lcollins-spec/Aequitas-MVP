@@ -134,12 +134,14 @@ def _do_export(deal_id):
 
     # ── Senior Financing ──────────────────────────────────────────────────────
     ws['D47'] = _to_decimal(data.get('ltv'))
+    ws['D50'] = _to_decimal(data.get('financingCostsPct', 0.01))
     ws['E49'] = _to_decimal(data.get('interestRate'))
     ws['D51'] = int(data.get('seniorIoPeriods') or 0)
     ws['C39'] = _to_decimal(data.get('closingCostsPct'))
 
     # ── Refi Assumptions ──────────────────────────────────────────────────────
-    ws['G48'] = int(data.get('refiTermMonths') or 0)
+    refi_term = int(data.get('refiTermMonths') or 0)
+    ws['G48'] = refi_term if refi_term > 0 else 360
     ws['G54'] = _to_decimal(data.get('refiDebtYield'))
     ws['G55'] = _to_decimal(data.get('refiLtv'))
 
@@ -166,9 +168,14 @@ def _do_export(deal_id):
     ws['K55'] = '=E92'  # property tax $/unit pulls from template's computed total
 
     # ── Growth Rates ──────────────────────────────────────────────────────────
+    ws['D79'] = _to_decimal(data.get('rentGrowthRate'))
+    ws['D80'] = _to_decimal(data.get('rentGrowthRate'))
+    ws['D81'] = _to_decimal(data.get('opexGrowthRate'))
+    ws['D82'] = _to_decimal(data.get('propertyTaxGrowthRate'))
     ws['D105'] = _to_decimal(data.get('generalInflationRate') or data.get('rentGrowthRate'))
 
-    # G8 (GP equity share) = 0.5 template default — don't overwrite
+    # ── GP Equity Share ───────────────────────────────────────────────────────
+    ws['G8'] = 0.5
 
     # ── Save and return ───────────────────────────────────────────────────────
     buf = BytesIO()

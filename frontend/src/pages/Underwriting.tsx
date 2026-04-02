@@ -1172,6 +1172,8 @@ const Underwriting = () => {
         nonRevenueUnits,
 
         // Senior financing
+        // TODO: expose financingCostsPct in UI (lender origination/points as % of loan)
+        financingCostsPct: 1,
         ltv: ltv / 100,             // state is %, send as decimal
         interestRate,               // state is already decimal (e.g. 0.065)
         seniorIoPeriods,
