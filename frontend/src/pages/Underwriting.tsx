@@ -1230,10 +1230,28 @@ const Underwriting = () => {
     const annualDebtService = calculatePMT(interestRate / 12, loanTermYears * 12, loanAmount) * 12 * -1;
 
     const baseGPR = totalUnits * avgMonthlyRent * 12;
-    const year1VacancyLoss = baseGPR * vacancyRate;
-    const year1BadDebtLoss = baseGPR * badDebtRate;
-    const year1EGI = baseGPR - year1VacancyLoss - year1BadDebtLoss;
-    const year1OpEx = year1EGI * operatingExpenseRatio;
+
+    // Itemized opex — $/unit/year fields summed across all units
+    const opexOtherPerUnit = 0; // not tracked in UI
+    const totalFixedOpex = (
+      opexPayrollPerUnit + opexAdminPerUnit + opexMarketingPerUnit + opexRmPerUnit +
+      opexContractServicePerUnit + opexTurnoverPerUnit + opexOtherPerUnit +
+      opexInsurancePerUnit + opexUtilitiesPerUnit + opexPropertyTaxPerUnit + capexPerUnit
+    ) * totalUnits;
+    const mgmtFeePct = omOperatingExpenses?.managementFeePct ?? 0.025;
+    const hasItemizedOpex = totalFixedOpex > 0;
+
+    // Year 1 summary metrics (no growth applied)
+    const year1LossToLease = baseGPR * (lossToLeaseRate / 100);
+    const year1GPR = baseGPR - year1LossToLease;
+    const year1VacancyLoss = year1GPR * vacancyRate;
+    const year1NRULoss = nonRevenueUnits * avgMonthlyRent * 12;
+    const year1BadDebtLoss = year1GPR * badDebtRate;
+    const year1RubsIncome = (rubsPct / 100) * opexUtilitiesPerUnit * totalUnits;
+    const year1EGI = year1GPR - year1VacancyLoss - year1NRULoss - year1BadDebtLoss + year1RubsIncome;
+    const year1OpEx = hasItemizedOpex
+      ? totalFixedOpex + mgmtFeePct * year1EGI
+      : year1EGI * operatingExpenseRatio;
     const netOperatingIncome = year1EGI - year1OpEx;
     const entryCapRate = purchasePrice > 0 ? netOperatingIncome / purchasePrice : 0;
 
@@ -1267,21 +1285,19 @@ const Underwriting = () => {
     });
 
     const expenseGrowthRate = opexGrowthRate / 100;
-    const baseInsurance    = omOperatingExpenses?.insuranceAnnual ?? 0;
-    const baseUtilities    = omOperatingExpenses?.utilitiesAnnual ?? 0;
-    const basePropertyTax  = omOperatingExpenses?.propertyTaxAnnual ?? 0;
-    const baseRepairsMaint = omOperatingExpenses?.repairsMaintenanceAnnual ?? 0;
-    const mgmtFeePct       = omOperatingExpenses?.managementFeePct ?? 0;
-    const hasItemizedOpex  = (baseInsurance + baseUtilities + basePropertyTax + baseRepairsMaint) > 0 || mgmtFeePct > 0;
 
     let lastNOI = netOperatingIncome;
     for (let year = 1; year <= holdingPeriod; year++) {
-      const gpr = baseGPR * Math.pow(1 + rentGrowthRate, year - 1);
+      const gprBase = baseGPR * Math.pow(1 + rentGrowthRate, year - 1);
+      const lossToLease = gprBase * (lossToLeaseRate / 100);
+      const gpr = gprBase - lossToLease;
       const vLoss = gpr * vacancyRate;
+      const nruLoss = nonRevenueUnits * avgMonthlyRent * 12;
       const bdLoss = gpr * badDebtRate;
-      const egi = gpr - vLoss - bdLoss;
+      const rubsIncome = (rubsPct / 100) * opexUtilitiesPerUnit * totalUnits;
+      const egi = gpr - vLoss - nruLoss - bdLoss + rubsIncome;
       const opex = hasItemizedOpex
-        ? (baseInsurance + baseUtilities + basePropertyTax + baseRepairsMaint) * Math.pow(1 + expenseGrowthRate, year - 1) + mgmtFeePct * egi
+        ? totalFixedOpex * Math.pow(1 + expenseGrowthRate, year - 1) + mgmtFeePct * egi
         : egi * operatingExpenseRatio;
       const noi = egi - opex;
       const cfbt = noi - annualDebtService;
@@ -1326,7 +1342,7 @@ const Underwriting = () => {
       totalReturn,
       yearlyData,
     };
-  }, [purchasePrice, constructionCost, closingCosts, totalUnits, avgMonthlyRent, operatingExpenseRatio, interestRate, loanTermYears, ltv, exitCapRate, holdingPeriod, vacancyRate, badDebtRate, rentGrowthRate, omOperatingExpenses, opexGrowthRate]);
+  }, [purchasePrice, constructionCost, closingCosts, totalUnits, avgMonthlyRent, operatingExpenseRatio, interestRate, loanTermYears, ltv, exitCapRate, holdingPeriod, vacancyRate, badDebtRate, rentGrowthRate, omOperatingExpenses, opexGrowthRate, opexPayrollPerUnit, opexAdminPerUnit, opexMarketingPerUnit, opexRmPerUnit, opexContractServicePerUnit, opexTurnoverPerUnit, opexInsurancePerUnit, opexUtilitiesPerUnit, opexPropertyTaxPerUnit, capexPerUnit, lossToLeaseRate, nonRevenueUnits, rubsPct]);
 
   // Returns & Loan Summary derived metrics
   const returnsMetrics = useMemo(() => {
