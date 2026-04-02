@@ -1749,7 +1749,18 @@ const Underwriting = () => {
                     {unitMix.map((row, idx) => (
                       <tr key={idx} className="border-t border-gray-100">
                         <td className="px-2 py-1.5 text-gray-700">{row.unitType}</td>
-                        <td className="px-2 py-1.5 text-right text-gray-700">{row.count}</td>
+                        <td className="px-2 py-1">
+                          <input
+                            type="number"
+                            value={row.count}
+                            onChange={(e) => {
+                              const updated = [...unitMix];
+                              updated[idx] = { ...updated[idx], count: Number(e.target.value) || 0 };
+                              setUnitMix(updated);
+                            }}
+                            className="w-full px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </td>
                         <td className="px-2 py-1">
                           <input
                             type="number"
