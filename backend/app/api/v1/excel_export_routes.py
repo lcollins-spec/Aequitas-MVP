@@ -142,10 +142,10 @@ def _do_export(deal_id):
     # ── Refi Assumptions ──────────────────────────────────────────────────────
     refi_term = int(data.get('refiTermMonths') or 0)
     ws['G48'] = refi_term if refi_term > 0 else 360
-    ws['G50'] = _to_decimal(data.get('refiFinancingCostsPct', 0.005))
+    ws['G50'] = _to_decimal(data.get('refiFinancingCostsPct') or 0.005)
     ws['G51'] = int(data.get('refiIoPeriods') or 24)
     ws['G54'] = _to_decimal(data.get('refiDebtYield'))
-    ws['G55'] = _to_decimal(data.get('refiLtv'))
+    ws['G55'] = _to_decimal(data.get('refiLtv') or 0.75)
 
     # ── Operating Expenses ($/unit/year) ──────────────────────────────────────
     ws['K42'] = float(data.get('opexPayrollPerUnit') or 0)
