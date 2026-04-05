@@ -92,10 +92,12 @@ def _do_export(deal_id):
         hold_months = int((data.get('holdPeriodYears') or 0) * 12)
     hold_years = int(hold_months) // 12
 
+    # F17 is the senior loan duration — template pays off senior debt at this month.
+    # Must not exceed hold period or the levered model breaks.
     # TODO: cleanly separate hold period and loan term — currently both come through
     # holdPeriodMonths. F17 = senior loan term; C19 = exit year (hold period in years).
     loan_term_months = int(data.get('loanTermMonths') or hold_months)
-    ws['F17'] = loan_term_months      # senior loan term in months
+    ws['F17'] = min(loan_term_months, int(hold_months))  # capped at hold period
     ws['C19'] = hold_years            # exit year (hold period)
     ws['D48'] = '=F17'               # senior loan term also drives D48 amortization anchor
 
