@@ -329,6 +329,7 @@ const Underwriting = () => {
   const [refiInterestRate, setRefiInterestRate] = useState(0);
   const [refiFinancingCostsPct, setRefiFinancingCostsPct] = useState(0);
   const [refiIoPeriods, setRefiIoPeriods] = useState(0);
+  const [bridgeLoanTermMonths, setBridgeLoanTermMonths] = useState(36);
   const [refiTermMonths, setRefiTermMonths] = useState(0);
   const [seniorIoPeriods, setSeniorIoPeriods] = useState(0);
   const [seniorFinancingCostsPct, setSeniorFinancingCostsPct] = useState(0);
@@ -576,6 +577,7 @@ const Underwriting = () => {
         if (uw.refiInterestRate != null) setRefiInterestRate(uw.refiInterestRate);
         if (uw.refiFinancingCostsPct != null) setRefiFinancingCostsPct(uw.refiFinancingCostsPct);
         if (uw.refiIoPeriods != null) setRefiIoPeriods(uw.refiIoPeriods);
+        if (uw.bridgeLoanTermMonths != null) setBridgeLoanTermMonths(uw.bridgeLoanTermMonths);
         if (uw.refiTermMonths != null) setRefiTermMonths(uw.refiTermMonths);
         if (uw.seniorIoPeriods != null) setSeniorIoPeriods(uw.seniorIoPeriods);
         if (uw.seniorFinancingCostsPct != null) setSeniorFinancingCostsPct(uw.seniorFinancingCostsPct);
@@ -983,6 +985,7 @@ const Underwriting = () => {
           refiInterestRate,
           refiFinancingCostsPct,
           refiIoPeriods,
+          bridgeLoanTermMonths,
           refiTermMonths,
           seniorIoPeriods,
           seniorFinancingCostsPct,
@@ -1192,6 +1195,7 @@ const Underwriting = () => {
         financingCostsPct: 0.01,
         ltv: ltv / 100,             // state is %, send as decimal
         interestRate,               // state is already decimal (e.g. 0.065)
+        bridgeLoanTermMonths,
         seniorIoPeriods,
         closingCostsPct: closingCostsPct / 100,  // state is %, send as decimal
 
@@ -2192,6 +2196,10 @@ const Underwriting = () => {
                   <div className="border-t border-gray-100 pt-3">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Senior Financing</p>
                     <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Bridge Loan Term (months)</label>
+                        <input type="number" step="1" value={bridgeLoanTermMonths} onChange={(e) => setBridgeLoanTermMonths(Number(e.target.value) || 36)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+                      </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1.5">IO Periods (months)</label>
                         <input type="number" step="1" value={seniorIoPeriods} onChange={(e) => setSeniorIoPeriods(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
