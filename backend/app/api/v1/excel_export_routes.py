@@ -8,6 +8,7 @@ from datetime import datetime, date
 from io import BytesIO
 import os
 
+import openpyxl
 from openpyxl import load_workbook
 from app.database import DealModel
 
@@ -186,6 +187,23 @@ def _do_export(deal_id):
 
     # ── GP Equity Share ───────────────────────────────────────────────────────
     ws['G8'] = 0.5
+
+    # ── Dynamic IRR/SUM formula ranges ────────────────────────────────────────
+    # Column V = index 22. exit_col = column at V + hold_period_months.
+    hold_period_months = int(data.get('holdPeriodMonths') or 120)
+    exit_col = openpyxl.utils.get_column_letter(22 + hold_period_months)
+
+    ws['M88']  = f'=(1+IRR(V85:{exit_col}85,0))^12-1'
+    ws['M105'] = f'=(1+IRR(V101:{exit_col}101,0))^12-1'
+    ws['M118'] = f'=(1+IRR(V115:{exit_col}115,0))^12-1'
+    ws['M127'] = f'=(1+IRR(V124:{exit_col}124,0))^12-1'
+
+    ws['M87']  = f'=SUMIF(V85:{exit_col}85,"<0",V85:{exit_col}85)'
+    ws['M104'] = f'=SUMIF(V101:{exit_col}101,"<0",V101:{exit_col}101)'
+    ws['M116'] = f'=SUM(V115:{exit_col}115)'
+    ws['M117'] = f'=SUMIF(V115:{exit_col}115,"<0",V115:{exit_col}115)'
+    ws['M125'] = f'=SUM(V124:{exit_col}124)'
+    ws['M126'] = f'=SUMIF(V124:{exit_col}124,"<0",V124:{exit_col}124)'
 
     # ── Save and return ───────────────────────────────────────────────────────
     buf = BytesIO()
