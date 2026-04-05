@@ -203,6 +203,12 @@ def _do_export(deal_id):
     ws['M125'] = f'=SUM(V124:{exit_col}124)'
     ws['M126'] = f'=SUMIF(V124:{exit_col}124,"<0",V124:{exit_col}124)'
 
+    ws['M170'] = f'=SUM(V170:{exit_col}170)'
+    ws['M171'] = f'=SUM(V171:{exit_col}171)'
+    ws['M172'] = f'=SUM(V172:{exit_col}172)'
+    ws['M173'] = f'=SUM(V173:{exit_col}173)'
+    ws['M174'] = f'=SUM(V174:{exit_col}174)'
+
     # ── Save and return ───────────────────────────────────────────────────────
     buf = BytesIO()
     wb.save(buf)
