@@ -323,7 +323,7 @@ const Underwriting = () => {
   const [opexPropertyTaxPerUnit, setOpexPropertyTaxPerUnit] = useState(0);
   const [capexPerUnit, setCapexPerUnit] = useState(0);
   const [parkingIncomePerUnit, setParkingIncomePerUnit] = useState(0);
-  const [rubsPct, setRubsPct] = useState(0);
+  const [rubsPct, setRubsPct] = useState(0.675);
   const [otherIncomePerUnit, setOtherIncomePerUnit] = useState(0);
   const [refiLtv, setRefiLtv] = useState(0);
   const [refiInterestRate, setRefiInterestRate] = useState(0);
@@ -787,7 +787,7 @@ const Underwriting = () => {
       if (data.lossToLeaseRate != null) setLossToLeaseRate(data.lossToLeaseRate);
       if (data.concessionsRate != null) setConcessionsRate(data.concessionsRate);
       if (data.parkingIncomePerUnit != null) setParkingIncomePerUnit(data.parkingIncomePerUnit);
-      if (data.rubsPct != null) setRubsPct(data.rubsPct);
+      if (data.rubsPct != null) setRubsPct(data.rubsPct / 100); // LLM returns percentage (0-100); state stores decimal
       if (data.otherIncomePerUnit != null) setOtherIncomePerUnit(data.otherIncomePerUnit);
       if (data.opexPayrollPerUnit != null) setOpexPayrollPerUnit(data.opexPayrollPerUnit);
       if (data.opexAdminPerUnit != null) setOpexAdminPerUnit(data.opexAdminPerUnit);
