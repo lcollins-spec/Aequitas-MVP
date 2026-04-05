@@ -102,9 +102,9 @@ def _do_export(deal_id):
     # ── Valuation ─────────────────────────────────────────────────────────────
     ws['D23'] = float(data.get('ttmNoi') or 0)
     ws['D25'] = float(data.get('purchasePrice') or deal.purchase_price or 0)
-    ws['E24'] = _to_decimal(data.get('entryCapRate'))
-    ws['G24'] = _to_decimal(data.get('refiCapRate'))
-    ws['H24'] = _to_decimal(data.get('exitCapRate'))
+    ws['E24'] = _to_decimal(data.get('entryCapRate') or 0)
+    ws['G24'] = _to_decimal(data.get('refiCapRate') or 0)
+    ws['H24'] = _to_decimal(data.get('exitCapRate') or 0)
     ws['E86'] = '=E25'  # sources-and-uses price ties to valuation price
 
     # ── Unit Mix (always 4 rows; zero-pad unused rows) ─────────────────────────
@@ -121,7 +121,7 @@ def _do_export(deal_id):
             ws[f'F{row_num}'] = 0
 
     # ── Other Income ──────────────────────────────────────────────────────────
-    ws['E67'] = _to_decimal(data.get('rubsPct'))
+    ws['E67'] = _to_decimal(data.get('rubsPct') or 0)
     ws['G68'] = float(data.get('parkingIncomePerUnit') or 0)
     ws['G69'] = float(data.get('otherIncomePerUnit') or 0)
 
@@ -139,18 +139,18 @@ def _do_export(deal_id):
     _write_5yr(ws, 77, int(data.get('nonRevenueUnits') or 0))
 
     # ── Senior Financing ──────────────────────────────────────────────────────
-    ws['D47'] = _to_decimal(data.get('ltv'))
-    ws['D50'] = _to_decimal(data.get('financingCostsPct', 0.01))
-    ws['E49'] = _to_decimal(data.get('interestRate'))
+    ws['D47'] = _to_decimal(data.get('ltv') or 0)
+    ws['D50'] = _to_decimal(data.get('financingCostsPct') or 0.01)
+    ws['E49'] = _to_decimal(data.get('interestRate') or 0)
     ws['D51'] = int(data.get('seniorIoPeriods') or 0)
-    ws['C39'] = _to_decimal(data.get('closingCostsPct'))
+    ws['C39'] = _to_decimal(data.get('closingCostsPct') or 0)
 
     # ── Refi Assumptions ──────────────────────────────────────────────────────
     refi_term = int(data.get('refiTermMonths') or 0)
     ws['G48'] = refi_term if refi_term > 0 else 360
     ws['G50'] = _to_decimal(data.get('refiFinancingCostsPct') or 0.005)
     ws['G51'] = int(data.get('refiIoPeriods') or 24)
-    ws['G54'] = _to_decimal(data.get('refiDebtYield'))
+    ws['G54'] = _to_decimal(data.get('refiDebtYield') or 0)
     ws['G55'] = _to_decimal(data.get('refiLtv') or 0.75)
 
     # ── Operating Expenses ($/unit/year) ──────────────────────────────────────
@@ -166,21 +166,21 @@ def _do_export(deal_id):
     ws['K64'] = float(data.get('capexPerUnit') or 0)
 
     # ── Management Fee ────────────────────────────────────────────────────────
-    ws['J54'] = _to_decimal(data.get('managementFeePct'))
+    ws['J54'] = _to_decimal(data.get('managementFeePct') or 0)
 
     # ── Property Tax ──────────────────────────────────────────────────────────
-    millage = _to_decimal(data.get('millageRate'))
+    millage = _to_decimal(data.get('millageRate') or 0)
     ws['E89'] = millage
     ws['F89'] = millage
     ws['E90'] = float(data.get('specialAssessments') or 0)
     ws['K55'] = '=E92'  # property tax $/unit pulls from template's computed total
 
     # ── Growth Rates ──────────────────────────────────────────────────────────
-    ws['D79'] = _to_decimal(data.get('rentGrowthRate'))
-    ws['D80'] = _to_decimal(data.get('rentGrowthRate'))
-    ws['D81'] = _to_decimal(data.get('opexGrowthRate'))
-    ws['D82'] = _to_decimal(data.get('propertyTaxGrowthRate'))
-    ws['D105'] = _to_decimal(data.get('generalInflationRate') or data.get('rentGrowthRate'))
+    ws['D79'] = _to_decimal(data.get('rentGrowthRate') or 0)
+    ws['D80'] = _to_decimal(data.get('rentGrowthRate') or 0)
+    ws['D81'] = _to_decimal(data.get('opexGrowthRate') or 0)
+    ws['D82'] = _to_decimal(data.get('propertyTaxGrowthRate') or 0)
+    ws['D105'] = _to_decimal(data.get('generalInflationRate') or data.get('rentGrowthRate') or 0)
 
     # ── GP Equity Share ───────────────────────────────────────────────────────
     ws['G8'] = 0.5
