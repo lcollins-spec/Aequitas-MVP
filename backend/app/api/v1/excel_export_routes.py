@@ -90,8 +90,14 @@ def _do_export(deal_id):
     hold_months = data.get('holdPeriodMonths')
     if hold_months is None:
         hold_months = int((data.get('holdPeriodYears') or 0) * 12)
-    ws['F17'] = int(hold_months)
-    ws['D48'] = '=F17'  # senior loan term mirrors hold period
+    hold_years = int(hold_months) // 12
+
+    # TODO: cleanly separate hold period and loan term — currently both come through
+    # holdPeriodMonths. F17 = senior loan term; C19 = exit year (hold period in years).
+    loan_term_months = int(data.get('loanTermMonths') or hold_months)
+    ws['F17'] = loan_term_months      # senior loan term in months
+    ws['C19'] = hold_years            # exit year (hold period)
+    ws['D48'] = '=F17'               # senior loan term also drives D48 amortization anchor
 
     # ── Valuation ─────────────────────────────────────────────────────────────
     ws['D23'] = float(data.get('ttmNoi') or 0)

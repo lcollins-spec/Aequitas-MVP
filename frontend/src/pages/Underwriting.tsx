@@ -1163,6 +1163,7 @@ const Underwriting = () => {
 
         // Timeline — send months; backend writes F17, then D48 = '=F17'
         holdPeriodMonths: holdingPeriod * 12,
+        loanTermMonths: loanTermYears * 12,
 
         // Valuation
         ttmNoi,
