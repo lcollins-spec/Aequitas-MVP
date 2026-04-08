@@ -105,9 +105,10 @@ class ScrapingApiClient {
   /**
    * Extract unit mix and rent data from a Rent Roll PDF or Excel file
    */
-  async extractRentRollFromFile(file: File): Promise<OmExtractedData> {
+  async extractRentRollFromFile(file: File, dealId?: number): Promise<OmExtractedData> {
     const formData = new FormData();
     formData.append('file', file);
+    if (dealId != null) formData.append('deal_id', String(dealId));
 
     const response = await fetch(`${API_BASE_URL}/scraping/extract-rent-roll`, {
       method: 'POST',
@@ -126,9 +127,10 @@ class ScrapingApiClient {
   /**
    * Extract operating income and expenses from a T12 Operating Statement PDF or Excel file
    */
-  async extractT12FromFile(file: File): Promise<OmExtractedData> {
+  async extractT12FromFile(file: File, dealId?: number): Promise<OmExtractedData> {
     const formData = new FormData();
     formData.append('file', file);
+    if (dealId != null) formData.append('deal_id', String(dealId));
 
     const response = await fetch(`${API_BASE_URL}/scraping/extract-t12`, {
       method: 'POST',

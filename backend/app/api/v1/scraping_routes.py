@@ -3,17 +3,68 @@ Property scraping API routes
 Provides REST endpoints for extracting property data from listing URLs and PDFs
 """
 import base64
+import datetime
+import io
 import json
 import os
 import re
 import tempfile
+import uuid
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
 from app.services.scraping_service import ScrapingService
 from app.services.pdf_extraction_service import PDFExtractionService
-from app.database import db, PropertyImportModel
+from app.database import db, PropertyImportModel, DealModel, DealDocumentModel
 
 scraping_bp = Blueprint('scraping', __name__)
+
+
+def _get_mime_type(filename: str) -> str:
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    return {
+        'pdf': 'application/pdf',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'xls': 'application/vnd.ms-excel',
+        'csv': 'text/csv',
+    }.get(ext, 'application/octet-stream')
+
+
+def _save_document_to_drive(file_bytes: bytes, filename: str, deal_id_str: str, document_type: str) -> None:
+    """Save file bytes to Google Drive and record in DB. Failures are logged but never raised."""
+    try:
+        deal = DealModel.query.get(int(deal_id_str))
+        if not deal:
+            return
+        from app.utils import google_drive
+        drive_file_id, drive_url = None, None
+        try:
+            result = google_drive.upload_file(
+                file_bytes, filename, _get_mime_type(filename), deal.dealName, document_type
+            )
+            drive_file_id = result['file_id']
+            drive_url = result['web_view_link']
+            print(f'[{document_type}] Drive upload OK: {drive_url}', flush=True)
+        except Exception as e:
+            print(f'[{document_type}] Drive upload skipped: {e}', flush=True)
+        doc = DealDocumentModel(
+            id=str(uuid.uuid4()),
+            deal_id=int(deal_id_str),
+            file_name=filename,
+            document_type=document_type,
+            drive_file_id=drive_file_id,
+            drive_url=drive_url,
+            uploaded_at=datetime.datetime.utcnow(),
+        )
+        db.session.add(doc)
+        db.session.commit()
+        print(f'[{document_type}] DB record saved (deal_id={deal_id_str})', flush=True)
+    except Exception as e:
+        print(f'[{document_type}] Persistence skipped: {e}', flush=True)
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+
 
 # Initialize services (lazy loading)
 _scraping_service = None
@@ -800,7 +851,6 @@ def _build_claude_content(file, prompt_text):
         ]
     else:
         # Excel / CSV: convert to tab-separated text
-        import io
         import openpyxl
 
         file_bytes = file.read()
@@ -972,9 +1022,14 @@ def extract_rent_roll():
         except ImportError:
             return jsonify({'success': False, 'error': 'Anthropic SDK not available', 'code': 'SERVICE_UNAVAILABLE'}), 503
 
+        file_bytes = file.read()
+        file.seek(0)
         content = _build_claude_content(file, _RENT_ROLL_PROMPT)
         data = _call_claude_for_extraction(content, api_key)
         print(f'[extract-rent-roll] extracted: {json.dumps(data, indent=2)}', flush=True)
+        deal_id = request.form.get('deal_id')
+        if deal_id:
+            _save_document_to_drive(file_bytes, file.filename, deal_id, 'Rent Roll')
         return jsonify({'success': True, 'data': data}), 200
 
     except json.JSONDecodeError as e:
@@ -1018,9 +1073,14 @@ def extract_t12():
         except ImportError:
             return jsonify({'success': False, 'error': 'Anthropic SDK not available', 'code': 'SERVICE_UNAVAILABLE'}), 503
 
+        file_bytes = file.read()
+        file.seek(0)
         content = _build_claude_content(file, _T12_PROMPT)
         data = _call_claude_for_extraction(content, api_key)
         print(f'[extract-t12] extracted: {json.dumps(data, indent=2)}', flush=True)
+        deal_id = request.form.get('deal_id')
+        if deal_id:
+            _save_document_to_drive(file_bytes, file.filename, deal_id, 'T12')
         return jsonify({'success': True, 'data': data}), 200
 
     except json.JSONDecodeError as e:

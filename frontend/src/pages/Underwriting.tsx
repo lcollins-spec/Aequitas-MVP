@@ -557,7 +557,7 @@ const Underwriting = () => {
         if (uw.omRentStabilized != null) setOmRentStabilized(uw.omRentStabilized);
         if (uw.omAnnualRentGrowthCap != null) setOmAnnualRentGrowthCap(uw.omAnnualRentGrowthCap);
         if (uw.rentGrowthRate != null) setRentGrowthRate(uw.rentGrowthRate);
-        if (uw.acquisitionDate) setAcquisitionDate(uw.acquisitionDate);
+        if (uw.acquisitionDate !== undefined) setAcquisitionDate(uw.acquisitionDate);
         if (uw.lossToLeaseRate != null) setLossToLeaseRate(uw.lossToLeaseRate);
         if (uw.concessionsRate != null) setConcessionsRate(uw.concessionsRate);
         if (uw.opexPayrollPerUnit != null) setOpexPayrollPerUnit(uw.opexPayrollPerUnit);
@@ -590,6 +590,7 @@ const Underwriting = () => {
         if (uw.nonRevenueUnits != null) setNonRevenueUnits(uw.nonRevenueUnits);
         if (uw.millageRate != null) setMillageRate(uw.millageRate);
         if (uw.specialAssessments != null) setSpecialAssessments(uw.specialAssessments);
+        if (uw.entryCapRateInput != null) setEntryCapRateInput(uw.entryCapRateInput);
         if (uw.marketAnalysisDemographics) {
           setMarketAnalysisDemographics(uw.marketAnalysisDemographics);
           setMarketAnalysisOpen(true);
@@ -818,6 +819,13 @@ const Underwriting = () => {
         const url = new URL(window.location.href);
         url.searchParams.set('dealId', String(created.id));
         window.history.replaceState({}, '', url.toString());
+        // Fire-and-forget: save OM file to Google Drive document storage
+        const driveFormData = new FormData();
+        driveFormData.append('file', file);
+        driveFormData.append('deal_id', String(created.id));
+        driveFormData.append('document_type', 'OM');
+        fetch('/api/v1/documents/upload', { method: 'POST', body: driveFormData })
+          .catch(err => console.warn('[OM] Drive upload failed (non-blocking):', err));
       }
     } catch (err) {
       setOmError(err instanceof Error ? err.message : 'Failed to extract data from OM');
@@ -834,7 +842,7 @@ const Underwriting = () => {
     setRrError(null);
     setRrSuccess(false);
     try {
-      const data = await scrapingApi.extractRentRollFromFile(file);
+      const data = await scrapingApi.extractRentRollFromFile(file, currentDealId ?? undefined);
       console.log('[Rent Roll extraction result]', JSON.stringify(data, null, 2));
 
       if (data.numUnits) setTotalUnits(data.numUnits);
@@ -869,7 +877,7 @@ const Underwriting = () => {
     setT12Error(null);
     setT12Success(false);
     try {
-      const data = await scrapingApi.extractT12FromFile(file);
+      const data = await scrapingApi.extractT12FromFile(file, currentDealId ?? undefined);
       console.log('[T12 extraction result]', JSON.stringify(data, null, 2));
 
       if (data.laundryIncome != null) setOmLaundryIncome(data.laundryIncome);
@@ -998,6 +1006,7 @@ const Underwriting = () => {
           nonRevenueUnits,
           millageRate,
           specialAssessments,
+          entryCapRateInput,
           marketAnalysisDemographics: demoData ?? undefined,
           marketAnalysisStats: statsData ?? undefined,
         }),
