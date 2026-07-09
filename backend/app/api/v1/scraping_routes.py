@@ -1097,6 +1097,221 @@ def extract_t12():
         return jsonify({'success': False, 'error': 'Internal server error', 'code': 'SERVER_ERROR'}), 500
 
 
+def _claude_pdf_or_text(file_bytes: bytes, filename: str, prompt: str, api_key: str) -> dict:
+    """Send a file (PDF or spreadsheet) to Claude with a prompt and return parsed JSON."""
+    import anthropic as _anthropic
+    client = _anthropic.Anthropic(api_key=api_key)
+
+    fname_lower = filename.lower()
+    if fname_lower.endswith(('.xlsx', '.xls', '.csv')):
+        # Convert spreadsheet to readable text
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+            lines = []
+            for ws in wb.worksheets:
+                lines.append(f'--- Sheet: {ws.title} ---')
+                for row in ws.iter_rows(values_only=True):
+                    row_vals = [str(c) if c is not None else '' for c in row]
+                    if any(v.strip() for v in row_vals):
+                        lines.append('\t'.join(row_vals))
+            text_content = '\n'.join(lines)
+        except Exception:
+            text_content = file_bytes.decode('utf-8', errors='replace')
+        messages = [{'role': 'user', 'content': f'{prompt}\n\n{text_content}'}]
+    else:
+        b64 = base64.standard_b64encode(file_bytes).decode('utf-8')
+        messages = [{
+            'role': 'user',
+            'content': [
+                {
+                    'type': 'document',
+                    'source': {'type': 'base64', 'media_type': 'application/pdf', 'data': b64},
+                },
+                {'type': 'text', 'text': prompt},
+            ],
+        }]
+
+    resp = client.messages.create(model='claude-opus-4-6', max_tokens=1024, messages=messages)
+    text = resp.content[0].text.strip() if resp.content else '{}'
+    # Strip markdown fences if present
+    if text.startswith('```'):
+        text = re.sub(r'^```[a-z]*\n?', '', text)
+        text = re.sub(r'\n?```$', '', text)
+    return json.loads(text)
+
+
+_LOI_PROMPT = """Extract key terms from this Letter of Intent (LOI). Return ONLY a JSON object with these fields
+(use null for any field not found):
+{
+  "purchasePrice": <number or null>,
+  "earnestMoneyDeposit": <number or null>,
+  "dueDiligenceDeadline": <"YYYY-MM-DD" or null>,
+  "financingContingency": <"YYYY-MM-DD" or null>,
+  "targetCloseDate": <"YYYY-MM-DD" or null>,
+  "loanAmount": <number or null>,
+  "interestRate": <number or null, as a percentage e.g. 6.5>,
+  "loanTermMonths": <number or null>
+}"""
+
+_PSA_PROMPT = """Extract key terms from this Purchase and Sale Agreement (PSA). Return ONLY a JSON object with these fields
+(use null for any field not found):
+{
+  "psaExecutedDate": <"YYYY-MM-DD" or null>,
+  "earnestMoneyHardDate": <"YYYY-MM-DD" or null>,
+  "purchasePrice": <number or null>,
+  "closingDate": <"YYYY-MM-DD" or null>,
+  "keyConditions": <string summarizing major contingencies or null>,
+  "psaDraftedBy": <string or null>
+}"""
+
+_MODEL_PROMPT = """Extract key financial metrics from this real estate financial model (Excel or similar).
+Return ONLY a JSON object with these fields (use null for any field not found):
+{
+  "purchasePrice": <number or null>,
+  "totalEquityRequired": <number or null>,
+  "acquisitionLoanAmount": <number or null>,
+  "projectedLpNetIrr": <number or null, as a percentage e.g. 14.5>,
+  "projectedEquityMultiple": <number or null, e.g. 1.85>,
+  "projectedExitValue": <number or null>,
+  "strategy": <string, e.g. "Value-Add" or null>
+}"""
+
+
+@scraping_bp.route('/scraping/extract-loi', methods=['POST'])
+def extract_loi():
+    """Extract deal terms from an LOI PDF."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+        file = request.files['file']
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'success': False, 'error': 'ANTHROPIC_API_KEY not configured', 'code': 'SERVICE_UNAVAILABLE'}), 503
+        file_bytes = file.read()
+        data = _claude_pdf_or_text(file_bytes, file.filename or 'loi.pdf', _LOI_PROMPT, api_key)
+        # Also save to Drive
+        deal_id = request.form.get('deal_id')
+        if deal_id:
+            _save_document_to_drive(file_bytes, file.filename, deal_id, 'LOI Draft')
+        return jsonify({'success': True, 'data': data}), 200
+    except json.JSONDecodeError as e:
+        return jsonify({'success': False, 'error': f'Failed to parse Claude response: {e}', 'code': 'PARSE_ERROR'}), 500
+    except Exception as e:
+        print(f'Error in extract_loi: {e}', flush=True)
+        return jsonify({'success': False, 'error': str(e), 'code': 'SERVER_ERROR'}), 500
+
+
+@scraping_bp.route('/scraping/extract-psa', methods=['POST'])
+def extract_psa():
+    """Extract deal terms from a PSA PDF."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+        file = request.files['file']
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'success': False, 'error': 'ANTHROPIC_API_KEY not configured', 'code': 'SERVICE_UNAVAILABLE'}), 503
+        file_bytes = file.read()
+        data = _claude_pdf_or_text(file_bytes, file.filename or 'psa.pdf', _PSA_PROMPT, api_key)
+        deal_id = request.form.get('deal_id')
+        if deal_id:
+            _save_document_to_drive(file_bytes, file.filename, deal_id, 'PSA Draft')
+        return jsonify({'success': True, 'data': data}), 200
+    except json.JSONDecodeError as e:
+        return jsonify({'success': False, 'error': f'Failed to parse Claude response: {e}', 'code': 'PARSE_ERROR'}), 500
+    except Exception as e:
+        print(f'Error in extract_psa: {e}', flush=True)
+        return jsonify({'success': False, 'error': str(e), 'code': 'SERVER_ERROR'}), 500
+
+
+@scraping_bp.route('/scraping/extract-model', methods=['POST'])
+def extract_model():
+    """Extract financial metrics from an Excel financial model."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+        file = request.files['file']
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'success': False, 'error': 'ANTHROPIC_API_KEY not configured', 'code': 'SERVICE_UNAVAILABLE'}), 503
+        file_bytes = file.read()
+        file.seek(0)
+        data = _claude_pdf_or_text(file_bytes, file.filename or 'model.xlsx', _MODEL_PROMPT, api_key)
+        deal_id = request.form.get('deal_id')
+        if deal_id:
+            _save_document_to_drive(file_bytes, file.filename, deal_id, 'Financial Model')
+        return jsonify({'success': True, 'data': data}), 200
+    except json.JSONDecodeError as e:
+        return jsonify({'success': False, 'error': f'Failed to parse Claude response: {e}', 'code': 'PARSE_ERROR'}), 500
+    except Exception as e:
+        print(f'Error in extract_model: {e}', flush=True)
+        return jsonify({'success': False, 'error': str(e), 'code': 'SERVER_ERROR'}), 500
+
+
+@scraping_bp.route('/scraping/summarize-dd-doc', methods=['POST'])
+def summarize_dd_doc():
+    """Summarize a DD document in 2-3 sentences with key findings."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+        file = request.files['file']
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'success': False, 'error': 'ANTHROPIC_API_KEY not configured', 'code': 'SERVICE_UNAVAILABLE'}), 503
+        file_bytes = file.read()
+
+        import anthropic as _anthropic
+        client = _anthropic.Anthropic(api_key=api_key)
+        fname_lower = (file.filename or '').lower()
+        if fname_lower.endswith(('.xlsx', '.xls', '.csv')):
+            try:
+                import openpyxl
+                wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+                lines = []
+                for ws in wb.worksheets:
+                    lines.append(f'--- Sheet: {ws.title} ---')
+                    for row in ws.iter_rows(values_only=True):
+                        row_vals = [str(c) if c is not None else '' for c in row]
+                        if any(v.strip() for v in row_vals):
+                            lines.append('\t'.join(row_vals))
+                text_content = '\n'.join(lines)
+            except Exception:
+                text_content = file_bytes.decode('utf-8', errors='replace')
+            messages = [{
+                'role': 'user',
+                'content': (
+                    'Summarize this due diligence document in 2-3 sentences. '
+                    f'Identify any red flags, required actions, or key findings.\n\n{text_content}'
+                ),
+            }]
+        else:
+            b64 = base64.standard_b64encode(file_bytes).decode('utf-8')
+            messages = [{
+                'role': 'user',
+                'content': [
+                    {
+                        'type': 'document',
+                        'source': {'type': 'base64', 'media_type': 'application/pdf', 'data': b64},
+                    },
+                    {
+                        'type': 'text',
+                        'text': (
+                            'Summarize this due diligence document in 2-3 sentences. '
+                            'Identify any red flags, required actions, or key findings.'
+                        ),
+                    },
+                ],
+            }]
+
+        resp = client.messages.create(model='claude-opus-4-6', max_tokens=512, messages=messages)
+        summary = resp.content[0].text.strip() if resp.content else ''
+        return jsonify({'success': True, 'summary': summary}), 200
+    except Exception as e:
+        print(f'Error in summarize_dd_doc: {e}', flush=True)
+        return jsonify({'success': False, 'error': str(e), 'code': 'SERVER_ERROR'}), 500
+
+
 # Error handlers
 @scraping_bp.errorhandler(404)
 def not_found(error):

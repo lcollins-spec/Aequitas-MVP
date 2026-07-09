@@ -101,9 +101,17 @@ def _do_export(deal_id):
     ws['D48'] = '=F17'               # senior loan term also drives D48 amortization anchor
 
     # ── Valuation ─────────────────────────────────────────────────────────────
-    ws['D23'] = float(data.get('ttmNoi') or 0)
-    ws['D25'] = float(data.get('purchasePrice') or deal.purchase_price or 0)
-    ws['E24'] = _to_decimal(data.get('entryCapRate') or 0)
+    purchase_price = float(data.get('purchasePrice') or deal.purchase_price or 0)
+    entry_cap = _to_decimal(data.get('entryCapRate') or 0)
+    ttm_noi = float(data.get('ttmNoi') or 0)
+    # Template uses E38=E25=D23/E24 as the acquisition cost in the cash-flow waterfall.
+    # If D23=0, E38=0 → no equity outflow in month 0 → all IRR cells return #NUM!
+    # Back-calc TTM NOI so that E25 (implied value) = D25 (actual purchase price).
+    if ttm_noi == 0 and purchase_price > 0 and entry_cap > 0:
+        ttm_noi = round(purchase_price * entry_cap, 2)
+    ws['D23'] = ttm_noi
+    ws['D25'] = purchase_price
+    ws['E24'] = entry_cap
     ws['G24'] = _to_decimal(data.get('refiCapRate') or 0)
     ws['H24'] = _to_decimal(data.get('exitCapRate') or 0)
     ws['E86'] = '=E25'  # sources-and-uses price ties to valuation price
@@ -153,6 +161,7 @@ def _do_export(deal_id):
     ws['G51'] = int(data.get('refiIoPeriods') or 24)
     ws['G54'] = _to_decimal(data.get('refiDebtYield') or 0)
     ws['G55'] = _to_decimal(data.get('refiLtv') or 0.75)
+    ws['H49'] = _to_decimal(data.get('refiInterestRate') or 0)
 
     # ── Operating Expenses ($/unit/year) ──────────────────────────────────────
     ws['K42'] = float(data.get('opexPayrollPerUnit') or 0)
@@ -191,10 +200,17 @@ def _do_export(deal_id):
     hold_period_months = int(data.get('holdPeriodMonths') or 120)
     exit_col = openpyxl.utils.get_column_letter(22 + hold_period_months)
 
-    ws['M88']  = f'=(1+IRR(V85:{exit_col}85,0))^12-1'
-    ws['M105'] = f'=(1+IRR(V101:{exit_col}101,0))^12-1'
-    ws['M118'] = f'=(1+IRR(V115:{exit_col}115,0))^12-1'
-    ws['M127'] = f'=(1+IRR(V124:{exit_col}124,0))^12-1'
+    # Fix exit-month TTM NOI (row 71). The template formula SUM(J67:U67) includes
+    # the total-hold SUMIF plus per-year SUMIFs, massively overstating the exit NOI
+    # and therefore the sale price. Replace it in the exit column only with a direct
+    # sum of the last 12 monthly NOI values ending at the exit month.
+    ttm_start_col = openpyxl.utils.get_column_letter(max(22, 22 + hold_period_months - 11))
+    ws[f'{exit_col}71'] = f'=SUM({ttm_start_col}67:{exit_col}67)'
+
+    ws['M88']  = f'=(1+IRR(V85:{exit_col}85,0.1))^12-1'
+    ws['M105'] = f'=(1+IRR(V101:{exit_col}101,0.1))^12-1'
+    ws['M118'] = f'=(1+IRR(V115:{exit_col}115,0.1))^12-1'
+    ws['M127'] = f'=(1+IRR(V124:{exit_col}124,0.1))^12-1'
 
     ws['M87']  = f'=SUMIF(V85:{exit_col}85,"<0",V85:{exit_col}85)'
     ws['M104'] = f'=SUMIF(V101:{exit_col}101,"<0",V101:{exit_col}101)'

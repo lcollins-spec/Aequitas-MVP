@@ -280,6 +280,14 @@ def create_app(test_config=None):
     from .api.v1.climate_check_routes import climate_check_bp
     app.register_blueprint(climate_check_bp, url_prefix='/api/v1')
 
+    # Due Diligence checklist, issues, Q&A, budget, contacts
+    from .api.v1.dd_routes import dd_bp
+    app.register_blueprint(dd_bp, url_prefix='/api/v1')
+
+    # Underwriting v2 (accurate v14 Excel export + improved extractions)
+    from .api.v2.underwriting_routes import underwriting_v2_bp
+    app.register_blueprint(underwriting_v2_bp, url_prefix='/api/v2/underwriting')
+
     # Inline migration: create asset_reports table columns if the table already
     # exists but is missing newer columns (safe no-op on fresh installs because
     # db.create_all() above will have already built the full schema).
@@ -331,6 +339,42 @@ def create_app(test_config=None):
                             logger.info("Added '%s' column to deals", col)
     except Exception as e:
         logger.warning(f"ClimateCheck column migration note: {e}")
+
+    # Inline migration: add memo_drive_url to deals table if not present.
+    try:
+        with app.app_context():
+            from sqlalchemy import text, inspect as sa_inspect
+            inspector = sa_inspect(db.engine)
+            if 'deals' in inspector.get_table_names():
+                existing_cols = {c['name'] for c in inspector.get_columns('deals')}
+                if 'memo_drive_url' not in existing_cols:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE deals ADD COLUMN memo_drive_url VARCHAR(1000)"))
+                        conn.commit()
+                    logger.info("Added 'memo_drive_url' column to deals")
+    except Exception as e:
+        logger.warning(f"memo_drive_url migration note: {e}")
+
+    # Inline migration: add Drive attachment columns to dd_items if not present.
+    try:
+        with app.app_context():
+            from sqlalchemy import text, inspect as sa_inspect
+            inspector = sa_inspect(db.engine)
+            if 'dd_items' in inspector.get_table_names():
+                existing_cols = {c['name'] for c in inspector.get_columns('dd_items')}
+                dd_new_cols = {
+                    'drive_url':     'VARCHAR(1000)',
+                    'drive_file_id': 'VARCHAR(255)',
+                    'document_id':   'VARCHAR(64)',
+                }
+                with db.engine.connect() as conn:
+                    for col, col_type in dd_new_cols.items():
+                        if col not in existing_cols:
+                            conn.execute(text(f"ALTER TABLE dd_items ADD COLUMN {col} {col_type}"))
+                            conn.commit()
+                            logger.info("Added '%s' column to dd_items", col)
+    except Exception as e:
+        logger.warning(f"dd_items migration note: {e}")
 
     # Serve frontend (production/Docker, or any env where the dist was built)
     if serve_spa:

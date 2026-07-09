@@ -148,6 +148,9 @@ class DealModel(db.Model):
     climate_raw_extracted   = Column(Text)         # full JSON extraction from Claude
     climate_confirmed       = Column(Integer, default=0)  # 0 = unconfirmed, 1 = confirmed
 
+    # Investment memo saved to Google Drive
+    memo_drive_url          = Column(String(1000))
+
     # ── Template-specific underwriting inputs ─────────────────────────────────
     acquisition_date              = Column(Date)
     loss_to_lease_rate            = Column(Float)
@@ -2009,4 +2012,213 @@ class AssetReportModel(db.Model):
             'pdf_drive_url': self.pdf_drive_url,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+# ============================================================================
+# DUE DILIGENCE MODELS
+# ============================================================================
+
+class DDKeyDates(db.Model):
+    """Key milestone dates for a deal's due diligence process."""
+    __tablename__ = 'dd_key_dates'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    deal_id = Column(Integer, ForeignKey('deals.id'), nullable=False, unique=True, index=True)
+    term_sheet_executed = Column(Date, nullable=True)
+    dd_start_date = Column(Date, nullable=True)
+    target_dd_completion = Column(Date, nullable=True)
+    site_visit = Column(Date, nullable=True)
+    jv_execution_target = Column(Date, nullable=True)
+    closing_target = Column(Date, nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    def to_dict(self):
+        def _d(v): return v.isoformat() if v else None
+        return {
+            'id': self.id,
+            'deal_id': self.deal_id,
+            'term_sheet_executed': _d(self.term_sheet_executed),
+            'dd_start_date': _d(self.dd_start_date),
+            'target_dd_completion': _d(self.target_dd_completion),
+            'site_visit': _d(self.site_visit),
+            'jv_execution_target': _d(self.jv_execution_target),
+            'closing_target': _d(self.closing_target),
+        }
+
+
+class DDItem(db.Model):
+    """Individual checklist line item in the DD process."""
+    __tablename__ = 'dd_items'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    deal_id = Column(Integer, ForeignKey('deals.id'), nullable=False, index=True)
+    # Section hierarchy — e.g. top_section="I. TRANSACTION", section_code="I.A", section_name="Initial Underwriting"
+    top_section = Column(String(50), nullable=False, default='')
+    section_code = Column(String(10), nullable=False, default='')
+    section_name = Column(String(150), nullable=False, default='')
+    item_number = Column(Integer, nullable=False, default=1)
+    description = Column(Text, nullable=False, default='')
+    responsible = Column(String(20), nullable=False, default='AEQUITAS')  # AEQUITAS | SPONS | CONS | COUNSEL
+    status = Column(String(20), nullable=False, default='Open')           # Open | In Progress | Complete | Waived | N/A
+    comments = Column(Text, nullable=False, default='')
+    analyst_notes = Column(Text, nullable=False, default='')
+    due_date = Column(Date, nullable=True)
+    completed_date = Column(Date, nullable=True)
+    # Drive attachment for this checklist item
+    drive_url     = Column(String(1000), nullable=True)
+    drive_file_id = Column(String(255), nullable=True)
+    document_id   = Column(String(64), nullable=True)  # FK to deal_documents.id (nullable)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    def to_dict(self):
+        def _d(v): return v.isoformat() if v else None
+        return {
+            'id': self.id,
+            'deal_id': self.deal_id,
+            'top_section': self.top_section,
+            'section_code': self.section_code,
+            'section_name': self.section_name,
+            'item_number': self.item_number,
+            'description': self.description,
+            'responsible': self.responsible,
+            'status': self.status,
+            'comments': self.comments,
+            'analyst_notes': self.analyst_notes,
+            'due_date': _d(self.due_date),
+            'completed_date': _d(self.completed_date),
+            'drive_url': self.drive_url,
+            'drive_file_id': self.drive_file_id,
+            'document_id': self.document_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class DDIssue(db.Model):
+    """Issues & Findings identified during due diligence."""
+    __tablename__ = 'dd_issues'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    deal_id = Column(Integer, ForeignKey('deals.id'), nullable=False, index=True)
+    status = Column(String(30), nullable=False, default='Open')
+    date_identified = Column(Date, nullable=True)
+    type = Column(String(50), nullable=False, default='')
+    category = Column(String(50), nullable=False, default='')
+    description = Column(Text, nullable=False, default='')
+    action_plan = Column(Text, nullable=False, default='')
+    resolved_date = Column(Date, nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    def to_dict(self):
+        def _d(v): return v.isoformat() if v else None
+        return {
+            'id': self.id,
+            'deal_id': self.deal_id,
+            'status': self.status,
+            'date_identified': _d(self.date_identified),
+            'type': self.type,
+            'category': self.category,
+            'description': self.description,
+            'action_plan': self.action_plan,
+            'resolved_date': _d(self.resolved_date),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class DDQuestion(db.Model):
+    """Q&A Log — questions raised during due diligence."""
+    __tablename__ = 'dd_questions'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    deal_id = Column(Integer, ForeignKey('deals.id'), nullable=False, index=True)
+    resolved = Column(Boolean, nullable=False, default=False)
+    priority = Column(String(20), nullable=False, default='Medium')  # High | Medium | Low
+    category = Column(String(50), nullable=False, default='')
+    question = Column(Text, nullable=False, default='')
+    party_to_respond = Column(String(50), nullable=False, default='')
+    date_identified = Column(Date, nullable=True)
+    response = Column(Text, nullable=False, default='')
+    date_resolved = Column(Date, nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    def to_dict(self):
+        def _d(v): return v.isoformat() if v else None
+        return {
+            'id': self.id,
+            'deal_id': self.deal_id,
+            'resolved': self.resolved,
+            'priority': self.priority,
+            'category': self.category,
+            'question': self.question,
+            'party_to_respond': self.party_to_respond,
+            'date_identified': _d(self.date_identified),
+            'response': self.response,
+            'date_resolved': _d(self.date_resolved),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class DDBudgetItem(db.Model):
+    """DD Budget — estimated and actual costs for due diligence services."""
+    __tablename__ = 'dd_budget_items'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    deal_id = Column(Integer, ForeignKey('deals.id'), nullable=False, index=True)
+    service = Column(String(200), nullable=False, default='')
+    vendor = Column(String(150), nullable=False, default='')
+    estimated_cost = Column(Float, nullable=True)
+    invoice_number = Column(String(80), nullable=False, default='')
+    due_date = Column(Date, nullable=True)
+    comments = Column(Text, nullable=False, default='')
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    def to_dict(self):
+        def _d(v): return v.isoformat() if v else None
+        return {
+            'id': self.id,
+            'deal_id': self.deal_id,
+            'service': self.service,
+            'vendor': self.vendor,
+            'estimated_cost': self.estimated_cost,
+            'invoice_number': self.invoice_number,
+            'due_date': _d(self.due_date),
+            'comments': self.comments,
+            'sort_order': self.sort_order,
+        }
+
+
+class DDContact(db.Model):
+    """Deal contact list for due diligence."""
+    __tablename__ = 'dd_contacts'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    deal_id = Column(Integer, ForeignKey('deals.id'), nullable=False, index=True)
+    party_type = Column(String(80), nullable=False, default='')
+    company = Column(String(150), nullable=False, default='')
+    name_title = Column(String(150), nullable=False, default='')
+    email = Column(String(150), nullable=False, default='')
+    phone = Column(String(60), nullable=False, default='')
+    notes = Column(Text, nullable=False, default='')
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'deal_id': self.deal_id,
+            'party_type': self.party_type,
+            'company': self.company,
+            'name_title': self.name_title,
+            'email': self.email,
+            'phone': self.phone,
+            'notes': self.notes,
+            'sort_order': self.sort_order,
         }

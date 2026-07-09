@@ -5,8 +5,11 @@ and returns a structured investment memo as plain text.
 
 import os
 import json
+import logging
 from flask import Blueprint, request, jsonify
+from app.database import db, DealModel
 
+logger = logging.getLogger(__name__)
 memo_bp = Blueprint('memo', __name__)
 
 
@@ -274,3 +277,44 @@ def generate_investment_memo():
         if 'credit' in err.lower() or 'billing' in err.lower():
             return jsonify({'success': False, 'error': 'Anthropic API credits exhausted.'}), 503
         return jsonify({'success': False, 'error': err}), 500
+
+
+@memo_bp.route('/save-investment-memo', methods=['POST'])
+def save_investment_memo():
+    """
+    Save the generated investment memo text to Google Drive and record the URL.
+    Body: { deal_id, memo_text, deal_name }
+    """
+    data = request.get_json(silent=True) or {}
+    deal_id = data.get('deal_id')
+    memo_text = data.get('memo_text', '')
+    deal_name = data.get('deal_name', 'Deal')
+
+    if not deal_id:
+        return jsonify({'success': False, 'error': 'deal_id is required'}), 400
+    if not memo_text:
+        return jsonify({'success': False, 'error': 'memo_text is required'}), 400
+
+    deal = db.session.get(DealModel, int(deal_id))
+    if not deal:
+        return jsonify({'success': False, 'error': f'Deal {deal_id} not found'}), 404
+
+    try:
+        from app.utils import google_drive
+        filename = f'Investment Memo — {deal_name}.txt'
+        file_bytes = memo_text.encode('utf-8')
+        result = google_drive.upload_file(
+            file_bytes=file_bytes,
+            filename=filename,
+            mime_type='text/plain',
+            deal_name=deal_name,
+            document_type='Investment Memo',
+        )
+        drive_url = result['web_view_link']
+        deal.memo_drive_url = drive_url
+        db.session.commit()
+        return jsonify({'success': True, 'drive_url': drive_url})
+    except Exception as e:
+        logger.exception("Failed to save investment memo to Drive")
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500

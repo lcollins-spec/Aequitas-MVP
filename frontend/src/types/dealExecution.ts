@@ -3,12 +3,19 @@
  * Keyed in localStorage as: aequitas_deal_executions → Record<dealId, DealExecutionRecord>
  */
 
-export type DocumentType = 'OM' | 'T12' | 'Rent Roll' | 'LOI Draft' | 'PSA Draft' | 'Email' | 'Other';
+export type DocumentType = 'OM' | 'T12' | 'Rent Roll' | 'LOI Draft' | 'PSA Draft' | 'Financial Model' | 'DD Document' | 'Email' | 'Other';
 
-export const DOCUMENT_TYPES: DocumentType[] = ['OM', 'T12', 'Rent Roll', 'LOI Draft', 'PSA Draft', 'Email', 'Other'];
+export const DOCUMENT_TYPES: DocumentType[] = ['OM', 'T12', 'Rent Roll', 'LOI Draft', 'PSA Draft', 'Financial Model', 'DD Document', 'Email', 'Other'];
 
-/** Documents that Claude will attempt to extract from */
-export const EXTRACTABLE_TYPES: DocumentType[] = ['T12', 'Rent Roll'];
+/** Documents that can have data extracted into deal fields (user reviews + confirms) */
+export const EXTRACTABLE_TYPES: DocumentType[] = ['LOI Draft', 'PSA Draft', 'Financial Model'];
+
+/** Map from document type to extraction endpoint path */
+export const EXTRACTION_ENDPOINTS: Partial<Record<DocumentType, string>> = {
+  'LOI Draft':       '/api/v1/scraping/extract-loi',
+  'PSA Draft':       '/api/v1/scraping/extract-psa',
+  'Financial Model': '/api/v1/scraping/extract-model',
+};
 
 export interface DealDocument {
   id: string;
@@ -183,6 +190,40 @@ export interface DealExecutionRecord {
 
   // ─── Section C — Control & Approval Rights ───────────────────────────────
   controlApproval?: ControlApproval;
+
+  // ─── Financial Model ──────────────────────────────────────────────────────
+  /** Filename of the attached model (either uploaded or imported from underwriting) */
+  modelFileName?: string;
+  /** How the model was attached */
+  modelSource?: 'underwriting' | 'upload';
+  /** Confirmed metrics from an uploaded Financial Model document */
+  modelExtracted?: {
+    purchasePrice?: number;
+    totalEquityRequired?: number;
+    acquisitionLoanAmount?: number;
+    projectedLpNetIrr?: number;
+    projectedEquityMultiple?: number;
+    projectedExitValue?: number;
+    strategy?: string;
+  };
+  modelDriveUrl?: string;
+
+  // ─── PSA extracted data ───────────────────────────────────────────────────
+  psaData?: {
+    psaExecutedDate?: string;
+    earnestMoneyHardDate?: string;
+    purchasePrice?: number;
+    closingDate?: string;
+    keyConditions?: string;
+    psaDraftedBy?: string;
+  };
+
+  // ─── Field source badges ("From LOI", "From PSA") ────────────────────────
+  /** Maps field name to which document auto-populated it */
+  fieldSources?: Record<string, 'LOI Draft' | 'PSA Draft' | 'Financial Model'>;
+
+  // ─── Investment Memo Drive link ───────────────────────────────────────────
+  memoDriveUrl?: string;
 }
 
 const DEAL_EXEC_LS_KEY = 'aequitas_deal_executions';

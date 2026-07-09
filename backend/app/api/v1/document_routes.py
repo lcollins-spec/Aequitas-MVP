@@ -9,7 +9,7 @@ DELETE /api/v1/documents/<doc_id> — delete a document from Drive and DB
 import uuid
 import logging
 from flask import Blueprint, request, jsonify
-from app.database import db, DealModel, DealDocumentModel
+from app.database import db, DealModel, DealDocumentModel, DDItem
 from app.utils import google_drive
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,8 @@ ALLOWED_MIME_TYPES = {
 }
 
 VALID_DOCUMENT_TYPES = {
-    'OM', 'T12', 'Rent Roll', 'LOI Draft', 'PSA Draft', 'Email', 'Other'
+    'OM', 'T12', 'Rent Roll', 'LOI Draft', 'PSA Draft',
+    'Financial Model', 'DD Document', 'Email', 'Other',
 }
 
 
@@ -38,9 +39,13 @@ VALID_DOCUMENT_TYPES = {
 def upload_document():
     """
     Accepts multipart/form-data with:
-      - file       : the file to upload
-      - deal_id    : integer deal ID
+      - file          : the file to upload
+      - deal_id       : integer deal ID
       - document_type : one of the valid document types
+      - dd_item_id    : (optional) integer DD checklist item ID; when provided
+                        and document_type == 'DD Document', the file is also
+                        summarized by Claude and the summary is written to
+                        DDItem.analyst_notes + drive fields.
     """
     try:
         # ── Validate inputs ───────────────────────────────────────────────────
@@ -63,6 +68,14 @@ def upload_document():
         document_type = request.form.get('document_type', 'Other')
         if document_type not in VALID_DOCUMENT_TYPES:
             document_type = 'Other'
+
+        dd_item_id_raw = request.form.get('dd_item_id')
+        dd_item_id = None
+        if dd_item_id_raw:
+            try:
+                dd_item_id = int(dd_item_id_raw)
+            except ValueError:
+                pass
 
         # ── Look up the deal ──────────────────────────────────────────────────
         deal = db.session.get(DealModel, deal_id)
@@ -103,12 +116,90 @@ def upload_document():
         db.session.add(doc)
         db.session.commit()
 
+        summary = None
+
+        # ── Auto-summarize DD Documents and link to checklist item ────────────
+        if document_type == 'DD Document' and dd_item_id is not None:
+            try:
+                import os, io
+                import anthropic
+
+                api_key = os.getenv('ANTHROPIC_API_KEY')
+                if api_key:
+                    client = anthropic.Anthropic(api_key=api_key)
+                    import base64
+                    b64 = base64.standard_b64encode(file_bytes).decode('utf-8')
+                    # Use text fallback for Excel; PDF as document block
+                    fname_lower = (file.filename or '').lower()
+                    if fname_lower.endswith(('.xlsx', '.xls', '.csv')):
+                        # Convert spreadsheet to text for Claude
+                        try:
+                            import openpyxl, io as _io
+                            wb = openpyxl.load_workbook(_io.BytesIO(file_bytes), data_only=True)
+                            lines = []
+                            for ws in wb.worksheets:
+                                lines.append(f'--- Sheet: {ws.title} ---')
+                                for row in ws.iter_rows(values_only=True):
+                                    row_vals = [str(c) if c is not None else '' for c in row]
+                                    if any(v.strip() for v in row_vals):
+                                        lines.append('\t'.join(row_vals))
+                            text_content = '\n'.join(lines)
+                        except Exception:
+                            text_content = file_bytes.decode('utf-8', errors='replace')
+                        messages = [{
+                            'role': 'user',
+                            'content': (
+                                f'Summarize this due diligence document in 2-3 sentences. '
+                                f'Identify any red flags, required actions, or key findings.\n\n{text_content}'
+                            ),
+                        }]
+                    else:
+                        messages = [{
+                            'role': 'user',
+                            'content': [
+                                {
+                                    'type': 'document',
+                                    'source': {
+                                        'type': 'base64',
+                                        'media_type': 'application/pdf',
+                                        'data': b64,
+                                    },
+                                },
+                                {
+                                    'type': 'text',
+                                    'text': (
+                                        'Summarize this due diligence document in 2-3 sentences. '
+                                        'Identify any red flags, required actions, or key findings.'
+                                    ),
+                                },
+                            ],
+                        }]
+
+                    resp = client.messages.create(
+                        model='claude-opus-4-6',
+                        max_tokens=512,
+                        messages=messages,
+                    )
+                    summary = resp.content[0].text.strip() if resp.content else None
+
+                    if summary:
+                        dd_item = db.session.get(DDItem, dd_item_id)
+                        if dd_item and dd_item.deal_id == deal_id:
+                            dd_item.analyst_notes = summary
+                            dd_item.drive_url = result['web_view_link']
+                            dd_item.drive_file_id = result['file_id']
+                            dd_item.document_id = doc.id
+                            db.session.commit()
+            except Exception as exc:
+                logger.warning("DD auto-summarize failed (non-blocking): %s", exc)
+
         return jsonify({
             'success': True,
             'file_id': result['file_id'],
             'file_name': result['file_name'],
             'drive_url': result['web_view_link'],
             'document': doc.to_dict(),
+            'summary': summary,
         }), 201
 
     except Exception as e:

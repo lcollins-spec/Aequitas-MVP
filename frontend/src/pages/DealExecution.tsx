@@ -1,63 +1,32 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, ChevronDown, Plus, Trash2, CheckCircle2, Clock,
   ChevronRight, Upload, FileText, Loader2, Download, AlertTriangle,
-  TrendingDown,
+  TrendingDown, FileSpreadsheet, Sparkles, ExternalLink,
 } from 'lucide-react';
 import {
   getDealExecution, patchDealExecution, getAllDealExecutions,
   loadExecutionFromBackend,
   type DealExecutionRecord, type CapexItem,
-  type DDItemStatus, type DealStage, type LoanRow,
+  type DDItemStatus, type DealStage, type LoanRow, type DocumentType,
   DATA_ROOM_ITEMS, CLOSING_ITEMS,
 } from '../types/dealExecution';
 import DocumentsPanel from '../components/DocumentsPanel';
 import ClimateCheckUpload from '../components/ClimateCheckUpload';
+import DDSection from '../components/DDSection';
 import {
   getPipelineStatus, setPipelineStatus, syncPipelineStatusesFromBackend,
   type PipelineStatus, PIPELINE_STATUSES, PIPELINE_STATUS_STYLES,
 } from '../types/deal';
 import { getFundSettings } from '../types/fundSettings';
 
-// ─── DD Checklist Config ─────────────────────────────────────────────────────
-interface DDChecklistItem { id: string; label: string; }
-interface DDPhase { id: string; label: string; items: DDChecklistItem[]; }
-
-const DD_PHASES: DDPhase[] = [
-  {
-    id: 'physical_environmental',
-    label: 'Physical & Environmental',
-    items: [
-      { id: 'property_inspection', label: 'Property inspection' },
-      { id: 'phase1_env',          label: 'Phase I environmental' },
-      { id: 'roof_systems',        label: 'Roof/systems report' },
-    ],
-  },
-  {
-    id: 'financial_legal',
-    label: 'Financial & Legal',
-    items: [
-      { id: 'rent_roll_verification', label: 'Rent roll verification' },
-      { id: 't12_pl',                 label: 'T12 actual P&L' },
-      { id: 'utility_tax_bills',      label: 'Utility & tax bills' },
-      { id: 'title_survey',           label: 'Title search & survey' },
-      { id: 'zoning',                 label: 'Zoning confirmation' },
-      { id: 'lease_review',           label: 'Existing leases review' },
-    ],
-  },
-  {
-    id: 'financing_close',
-    label: 'Financing & Close',
-    items: [
-      { id: 'lender_term_sheet',  label: 'Lender engagement & term sheet' },
-      { id: 'appraisal',          label: 'Appraisal' },
-      { id: 'psa_negotiation',    label: 'PSA negotiation' },
-      { id: 'estoppels',          label: 'Estoppels' },
-      { id: 'final_walkthrough',  label: 'Final walkthrough & closing' },
-    ],
-  },
-];
+// ─── Data Room: document type → checklist item ID ────────────────────────────
+const DOC_TYPE_TO_DR_ID: Partial<Record<DocumentType, string>> = {
+  'OM':        'dr_om',
+  'Rent Roll': 'dr_rent_roll',
+  'T12':       'dr_t12',
+};
 
 const DD_STATUS_CYCLE: DDItemStatus[] = ['pending', 'uploaded', 'reviewed'];
 const DD_STATUS_LABEL: Record<DDItemStatus, string> = {
@@ -86,11 +55,6 @@ const BLANK_LOAN_ROW = (): LoanRow => ({
   lender: '', loanAmount: '', interestRate: '', rateType: 'Fixed', term: '', amortization: '', ioPeriod: '',
 });
 
-// ─── Stage 2 document upload slots ──────────────────────────────────────────
-const STAGE2_UPLOAD_ITEMS = [
-  { id: 's2_loi_draft', label: 'LOI Draft' },
-  { id: 's2_psa_draft', label: 'PSA Draft' },
-];
 
 // ─── Transaction Types ───────────────────────────────────────────────────────
 const TRANSACTION_TYPES = ['', 'Acquisition', 'JV', 'Recap', 'Refinance', 'Disposition'];
@@ -316,9 +280,6 @@ const DealExecution = () => {
     BLANK_LOAN_ROW(), BLANK_LOAN_ROW(), BLANK_LOAN_ROW(),
   ]);
 
-  // ─── Stage 2 doc uploads (LOI Draft, PSA Draft) ───────────────────────────
-  const [stage2Uploads, setStage2Uploads] = useState<Record<string, string>>({});
-  const stage2FileRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   // ─── Section B — JV / Partnership Terms ──────────────────────────────────
   const [jvOperatorEquity, setJvOperatorEquity] = useState('');
@@ -348,26 +309,18 @@ const DealExecution = () => {
 
   // Stage 1 — Data Room checklist
   const [dataRoomChecklist, setDataRoomChecklist] = useState<Record<string, DDItemStatus>>({});
-  const [dataRoomUploads, setDataRoomUploads]     = useState<Record<string, string>>({});
-  const dataRoomRefs = useRef<Record<string, HTMLInputElement | null>>({});
-
-  // Stage 2 — DD Checklist
-  const [ddChecklist, setDdChecklist] = useState<Record<string, DDItemStatus>>({});
-  const [ddUploads, setDdUploads]     = useState<Record<string, string>>({});
-  const [openPhases, setOpenPhases]   = useState<Record<string, boolean>>({
-    physical_environmental: false,
-    financial_legal: false,
-    financing_close: false,
-  });
-  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  // driveDocTypes: document types already uploaded (from /api/v1/documents/<id>), used for auto-marking Data Room
+  const [driveDocTypes, setDriveDocTypes] = useState<Set<DocumentType>>(new Set());
 
   // Stage 3 — Closing checklist
   const [closingChecklist, setClosingChecklist] = useState<Record<string, boolean>>({});
 
   // Investment Memo
-  const [memoText, setMemoText]       = useState('');
-  const [memoLoading, setMemoLoading] = useState(false);
-  const [memoError, setMemoError]     = useState('');
+  const [memoText, setMemoText]         = useState('');
+  const [memoLoading, setMemoLoading]   = useState(false);
+  const [memoError, setMemoError]       = useState('');
+  const [memoDriveUrl, setMemoDriveUrl] = useState('');
+  const [memoSaving, setMemoSaving]     = useState(false);
 
   // Linked sourcing property
   const [linkedPropAddress, setLinkedPropAddress] = useState<string | null>(null);
@@ -425,8 +378,6 @@ const DealExecution = () => {
       ]);
     }
 
-    setStage2Uploads(rec.stage2Uploads ?? {});
-
     // JV Terms
     const jv = rec.jvTerms ?? {};
     setJvOperatorEquity(jv.operatorEquityShare != null ? String(jv.operatorEquityShare) : '');
@@ -456,11 +407,9 @@ const DealExecution = () => {
     setProjEquityMultiple(pf.projectedEquityMultiple ? String(pf.projectedEquityMultiple) : '');
 
     setCapexItems(rec.capexItems ?? []);
-    setDdChecklist(rec.ddChecklist ?? {});
-    setDdUploads(rec.ddUploads ?? {});
     setDataRoomChecklist(rec.dataRoomChecklist ?? {});
-    setDataRoomUploads(rec.dataRoomUploads ?? {});
     setClosingChecklist(rec.closingChecklist ?? {});
+    if (rec.memoDriveUrl) setMemoDriveUrl(rec.memoDriveUrl);
   }, []);
 
   // ── Load on mount ──────────────────────────────────────────────────────────
@@ -484,6 +433,15 @@ const DealExecution = () => {
       .then((data: { properties?: { deal_id: number | null; address: string }[] } | null) => {
         const linked = data?.properties?.find(p => p.deal_id === numericId);
         if (linked?.address) setLinkedPropAddress(linked.address);
+      })
+      .catch(() => {});
+    // Load uploaded document types for Data Room auto-marking
+    fetch(`/api/v1/documents/${numericId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { documents?: { documentType: string }[] } | null) => {
+        if (data?.documents) {
+          setDriveDocTypes(new Set(data.documents.map(d => d.documentType as DocumentType)));
+        }
       })
       .catch(() => {});
   }, [numericId, applyRecord]);
@@ -591,13 +549,6 @@ const DealExecution = () => {
     });
   };
 
-  // ── Stage 2 document uploads ─────────────────────────────────────────────
-  const handleStage2Upload = (itemId: string, file: File) => {
-    const updated = { ...stage2Uploads, [itemId]: file.name };
-    setStage2Uploads(updated);
-    patchDealExecution(numericId, { stage2Uploads: updated });
-  };
-
   // ── Approval Rights checkboxes ───────────────────────────────────────────
   const toggleApprovalRight = (key: string) => {
     setApprovalRights(prev => {
@@ -635,7 +586,7 @@ const DealExecution = () => {
     patchDealExecution(numericId, { capexItems: updated });
   };
 
-  // ── Stage 1 — Data Room checklist ────────────────────────────────────────
+  // ── Stage 1 — Data Room checklist (manual cycle) ─────────────────────────
   const cycleDataRoomStatus = (itemId: string) => {
     const current: DDItemStatus = dataRoomChecklist[itemId] ?? 'pending';
     const idx = DD_STATUS_CYCLE.indexOf(current);
@@ -645,36 +596,6 @@ const DealExecution = () => {
     patchDealExecution(numericId, { dataRoomChecklist: updated });
   };
 
-  const handleDataRoomUpload = (itemId: string, file: File) => {
-    const updatedUploads = { ...dataRoomUploads, [itemId]: file.name };
-    const updatedChecklist = { ...dataRoomChecklist, [itemId]: 'uploaded' as DDItemStatus };
-    setDataRoomUploads(updatedUploads);
-    setDataRoomChecklist(updatedChecklist);
-    patchDealExecution(numericId, { dataRoomUploads: updatedUploads, dataRoomChecklist: updatedChecklist });
-  };
-
-  // ── Stage 2 — DD Checklist ───────────────────────────────────────────────
-  const cycleItemStatus = (itemId: string) => {
-    const current: DDItemStatus = ddChecklist[itemId] ?? 'pending';
-    const idx = DD_STATUS_CYCLE.indexOf(current);
-    const next = DD_STATUS_CYCLE[(idx + 1) % DD_STATUS_CYCLE.length];
-    const updated = { ...ddChecklist, [itemId]: next };
-    setDdChecklist(updated);
-    patchDealExecution(numericId, { ddChecklist: updated });
-  };
-
-  const handleItemUpload = (itemId: string, file: File) => {
-    const updatedUploads = { ...ddUploads, [itemId]: file.name };
-    const updatedChecklist = { ...ddChecklist, [itemId]: 'uploaded' as DDItemStatus };
-    setDdUploads(updatedUploads);
-    setDdChecklist(updatedChecklist);
-    patchDealExecution(numericId, { ddUploads: updatedUploads, ddChecklist: updatedChecklist });
-  };
-
-  const togglePhase = (phaseId: string) => {
-    setOpenPhases(prev => ({ ...prev, [phaseId]: !prev[phaseId] }));
-  };
-
   // ── Stage 3 — Closing checklist ──────────────────────────────────────────
   const toggleClosingItem = (itemId: string) => {
     const updated = { ...closingChecklist, [itemId]: !closingChecklist[itemId] };
@@ -682,13 +603,64 @@ const DealExecution = () => {
     patchDealExecution(numericId, { closingChecklist: updated });
   };
 
-  // ── DD progress summary ──────────────────────────────────────────────────
-  const ddProgress = useMemo(() => {
-    const all = DD_PHASES.flatMap(p => p.items);
-    const reviewed = all.filter(it => ddChecklist[it.id] === 'reviewed').length;
-    const uploaded = all.filter(it => ddChecklist[it.id] === 'uploaded').length;
-    return { total: all.length, reviewed, uploaded };
-  }, [ddChecklist]);
+  // ── onExtractionConfirmed — called by DocumentsPanel after confirm ────────
+  const handleExtractionConfirmed = useCallback((docType: DocumentType, data: Record<string, unknown>, driveUrl: string) => {
+    if (docType === 'LOI Draft') {
+      if (data.purchasePrice) setPurchasePrice(String(data.purchasePrice));
+      if (data.earnestMoneyDeposit) setEarnestMoney(String(data.earnestMoneyDeposit));
+      if (data.dueDiligenceDeadline) setDdDeadline(data.dueDiligenceDeadline as string);
+      if (data.financingContingency) setFinancingContingency(data.financingContingency as string);
+      if (data.targetCloseDate) setTargetClose(data.targetCloseDate as string);
+    }
+    if (docType === 'PSA Draft') {
+      if (data.purchasePrice) setPurchasePrice(String(data.purchasePrice));
+      if (data.psaExecutedDate) setPsaExecutedDate(data.psaExecutedDate as string);
+      if (data.earnestMoneyHardDate) setEarnestMoneyHardDate(data.earnestMoneyHardDate as string);
+      if (data.closingDate) setTargetClose(data.closingDate as string);
+      if (data.keyConditions) setKeyConditions(data.keyConditions as string);
+      if (data.psaDraftedBy) setPsaDraftedBy(data.psaDraftedBy as string);
+    }
+    if (docType === 'Financial Model') {
+      if (data.projectedLpNetIrr) setProjLpNetIrr(String(data.projectedLpNetIrr));
+      if (data.projectedEquityMultiple) setProjEquityMultiple(String(data.projectedEquityMultiple));
+      if (data.projectedExitValue) setProjExitValue(String(data.projectedExitValue));
+      if (data.strategy) setStrategy((data.strategy as 'Acquisition' | 'Light Rehab' | 'Heavy Rehab') ?? 'Acquisition');
+      patchDealExecution(numericId, {
+        modelExtracted: {
+          projectedLpNetIrr:       data.projectedLpNetIrr as number | undefined,
+          projectedEquityMultiple: data.projectedEquityMultiple as number | undefined,
+          projectedExitValue:      data.projectedExitValue as number | undefined,
+          totalEquityRequired:     data.totalEquityRequired as number | undefined,
+          purchasePrice:           data.purchasePrice as number | undefined,
+          strategy:                data.strategy as string | undefined,
+        },
+        modelDriveUrl: driveUrl,
+        modelSource: 'upload',
+      });
+      // Also update driveDocTypes so Data Room can reflect it if needed
+      setDriveDocTypes(prev => new Set([...prev, 'Financial Model']));
+    }
+  }, [numericId]);
+
+  // ── Save Investment Memo to Drive ────────────────────────────────────────
+  const saveMemoToDrive = useCallback(async () => {
+    if (!memoText || !record) return;
+    setMemoSaving(true);
+    try {
+      const res = await fetch('/api/v1/save-investment-memo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deal_id: numericId, memo_text: memoText, deal_name: record.dealName }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setMemoDriveUrl(json.drive_url);
+        patchDealExecution(numericId, { memoDriveUrl: json.drive_url });
+      }
+    } catch { /* ignore */ } finally {
+      setMemoSaving(false);
+    }
+  }, [memoText, record, numericId]);
 
   // ── Investment Memo generation ───────────────────────────────────────────
   const generateMemo = useCallback(async () => {
@@ -734,9 +706,6 @@ const DealExecution = () => {
         exitedTarget: exitedTarget || undefined,
       },
       fundSettings,
-      ddChecklist,
-      ddUploads,
-      ddPhases: DD_PHASES,
       dealApi,
       climateCheck: dealApi.climateConfirmed ? {
         confirmed: true,
@@ -772,7 +741,7 @@ const DealExecution = () => {
     record, numericId, pipelineStatus, ppNum, earnestMoney, ddDeadline, targetClose,
     loanDetails, strategy, aequitasEquity, projExitValue,
     projLpNetIrr, projEquityMultiple, capexItems,
-    underContractTarget, closedTarget, exitedTarget, fundSettings, ddChecklist, ddUploads,
+    underContractTarget, closedTarget, exitedTarget, fundSettings,
   ]);
 
   // ── Export as PDF ─────────────────────────────────────────────────────────
@@ -963,9 +932,14 @@ const DealExecution = () => {
           <div>
             <StageHeader number={1} label="Stage 1 — Data Room" status={stageStatus(1)} />
 
-            {/* Documents panel */}
+            {/* Documents panel — single upload point for all docs */}
             <div className="mb-4">
-              <DocumentsPanel dealId={numericId} />
+              <DocumentsPanel
+                dealId={numericId}
+                onExtractionConfirmed={(docType, data, driveUrl) =>
+                  handleExtractionConfirmed(docType, data as Record<string, unknown>, driveUrl)
+                }
+              />
             </div>
 
             {/* Climate Risk (ClimateCheck PDF) */}
@@ -973,52 +947,40 @@ const DealExecution = () => {
               <ClimateCheckUpload dealId={numericId} />
             </div>
 
-            {/* Data Room checklist */}
+            {/* Data Room checklist — auto-marks from Documents panel uploads */}
             <div className={`bg-white rounded-xl p-6 shadow-sm ${stage < 1 ? 'opacity-50 pointer-events-none' : ''}`}>
-              <SectionHeader label="Document Checklist" sub="Mark each item as received / reviewed" />
+              <SectionHeader label="Document Checklist" sub="Status auto-marks when uploaded via Documents panel" />
               <div className="divide-y divide-gray-100">
                 {DATA_ROOM_ITEMS.map(item => {
-                  const status: DDItemStatus = dataRoomChecklist[item.id] ?? 'pending';
-                  const uploadedFile = dataRoomUploads[item.id];
+                  const driveType = Object.entries(DOC_TYPE_TO_DR_ID).find(([, id]) => id === item.id)?.[0] as DocumentType | undefined;
+                  const autoUploaded = driveType ? driveDocTypes.has(driveType) : false;
+                  const manualStatus: DDItemStatus = dataRoomChecklist[item.id] ?? 'pending';
+                  // Auto-upgrade to 'uploaded' if Drive doc exists, but honour manual 'reviewed'
+                  const status: DDItemStatus = manualStatus === 'reviewed'
+                    ? 'reviewed'
+                    : autoUploaded ? 'uploaded' : manualStatus;
                   return (
                     <div key={item.id} className="flex items-center gap-3 py-3">
                       <button
                         onClick={() => cycleDataRoomStatus(item.id)}
                         className={`flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold transition-colors ${DD_STATUS_STYLE[status]}`}
-                        title="Click to cycle: Pending → Uploaded → Reviewed"
+                        title="Click to cycle status"
                       >
                         {DD_STATUS_LABEL[status]}
                       </button>
                       <span className={`flex-1 text-sm ${status === 'reviewed' ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
                         {item.label}
                       </span>
-                      {uploadedFile && (
-                        <span className="text-xs text-gray-400 truncate max-w-[120px] flex items-center gap-1">
-                          <FileText size={11} />
-                          {uploadedFile}
+                      {autoUploaded && status !== 'reviewed' && (
+                        <span className="text-xs text-emerald-500 flex items-center gap-0.5">
+                          <CheckCircle2 size={11} /> In Drive
                         </span>
                       )}
-                      <button
-                        onClick={() => dataRoomRefs.current[item.id]?.click()}
-                        className="flex-shrink-0 flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-gray-200 hover:border-blue-200 transition-colors"
-                      >
-                        <Upload size={11} />
-                        {uploadedFile ? 'Replace' : 'Upload'}
-                      </button>
-                      <input
-                        type="file"
-                        className="hidden"
-                        ref={el => { dataRoomRefs.current[item.id] = el; }}
-                        onChange={e => {
-                          const file = e.target.files?.[0];
-                          if (file) handleDataRoomUpload(item.id, file);
-                          e.target.value = '';
-                        }}
-                      />
                     </div>
                   );
                 })}
               </div>
+              <p className="text-xs text-gray-400 mt-3">Upload documents via the Documents panel above — OM, Rent Roll, and T12 auto-mark here.</p>
             </div>
 
             {/* Proceed to LOI */}
@@ -1042,9 +1004,73 @@ const DealExecution = () => {
 
             <div className="space-y-6">
 
+              {/* ── Financial Model ─────────────────────────────────────── */}
+              {(() => {
+                const extracted = record?.modelExtracted;
+                const hasUploaded = driveDocTypes.has('Financial Model');
+                // Prefer extracted model data; fall back to underwriting proForma
+                const displayIrr = extracted?.projectedLpNetIrr ?? record?.proForma?.projectedLpNetIrr;
+                const displayEM  = extracted?.projectedEquityMultiple ?? record?.proForma?.projectedEquityMultiple;
+                const displayExit = extracted?.projectedExitValue ?? record?.proForma?.projectedExitValue;
+                const sourceLabel = hasUploaded ? 'From uploaded model' : 'From Underwriting';
+                const hasMetrics = displayIrr || displayEM || displayExit || totalEquityRequired > 0;
+                return (
+                  <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
+                    <div className="flex items-center gap-3 px-5 pt-5 pb-4">
+                      <div className="w-9 h-9 bg-emerald-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <FileSpreadsheet size={17} className="text-emerald-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900">Financial Model</p>
+                        <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5">
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] bg-blue-50 text-blue-600 rounded-full font-medium">
+                            <Sparkles size={8} /> {sourceLabel}
+                          </span>
+                          {record?.modelDriveUrl && (
+                            <a href={record.modelDriveUrl} target="_blank" rel="noopener noreferrer"
+                               className="inline-flex items-center gap-0.5 text-blue-500 hover:text-blue-700">
+                              <ExternalLink size={10} /> Drive
+                            </a>
+                          )}
+                        </p>
+                      </div>
+                      <p className="text-xs text-gray-400">Upload via Documents panel</p>
+                    </div>
+                    {hasMetrics && (
+                      <div className="grid grid-cols-3 gap-3 px-5 pb-5 border-t border-gray-100 pt-4">
+                        <div className="text-center p-2 bg-gray-50 rounded-lg">
+                          <p className="text-xs text-gray-400 mb-0.5">LP Net IRR</p>
+                          <p className="text-sm font-bold text-gray-900">{displayIrr ? `${displayIrr}%` : '—'}</p>
+                        </div>
+                        <div className="text-center p-2 bg-gray-50 rounded-lg">
+                          <p className="text-xs text-gray-400 mb-0.5">Equity Multiple</p>
+                          <p className="text-sm font-bold text-gray-900">{displayEM ? `${displayEM}x` : '—'}</p>
+                        </div>
+                        <div className="text-center p-2 bg-gray-50 rounded-lg">
+                          <p className="text-xs text-gray-400 mb-0.5">Equity Required</p>
+                          <p className="text-sm font-bold text-gray-900">{totalEquityRequired > 0 ? fmt$(totalEquityRequired) : '—'}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* ── Section A — Deal Terms ──────────────────────────────── */}
               <div className="bg-white rounded-xl p-6 shadow-sm">
-                <SectionHeader label="A — Deal Terms" sub="Pre-filled from LOI · edit and blur to save" />
+                <SectionHeader label="A — Deal Terms" sub="Upload LOI or PSA in Documents panel to auto-fill" />
+                {/* Field source badge helper */}
+                {record?.fieldSources && Object.keys(record.fieldSources).length > 0 && (
+                  <div className="mb-4 flex flex-wrap gap-1.5">
+                    {(['LOI Draft', 'PSA Draft'] as const).filter(t =>
+                      Object.values(record.fieldSources ?? {}).includes(t)
+                    ).map(t => (
+                      <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-full">
+                        <FileText size={9} /> Fields from {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {/* Transaction Type */}
                 <div className="mb-4">
@@ -1110,44 +1136,6 @@ const DealExecution = () => {
                 <div className="grid grid-cols-1 gap-4 mb-4">
                   <TextArea label="Key Conditions" value={keyConditions} onChange={setKeyConditions} onBlur={saveSectionAExtra} placeholder="e.g. Subject to financing approval, inspection satisfactory..." />
                   <TextArea label="LOI Notes" value={loiNotes} onChange={setLoiNotes} onBlur={saveSectionAExtra} placeholder="Additional notes on LOI terms..." />
-                </div>
-
-                {/* Stage 2 document uploads */}
-                <div className="mt-4 pt-4 border-t border-gray-100">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Deal Documents</p>
-                  <div className="divide-y divide-gray-100">
-                    {STAGE2_UPLOAD_ITEMS.map(item => {
-                      const uploadedFile = stage2Uploads[item.id];
-                      return (
-                        <div key={item.id} className="flex items-center gap-3 py-3">
-                          <span className="flex-1 text-sm text-gray-700">{item.label}</span>
-                          {uploadedFile && (
-                            <span className="text-xs text-gray-400 truncate max-w-[140px] flex items-center gap-1">
-                              <FileText size={11} />
-                              {uploadedFile}
-                            </span>
-                          )}
-                          <button
-                            onClick={() => stage2FileRefs.current[item.id]?.click()}
-                            className="flex-shrink-0 flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-gray-200 hover:border-blue-200 transition-colors"
-                          >
-                            <Upload size={11} />
-                            {uploadedFile ? 'Replace' : 'Upload'}
-                          </button>
-                          <input
-                            type="file"
-                            className="hidden"
-                            ref={el => { stage2FileRefs.current[item.id] = el; }}
-                            onChange={e => {
-                              const file = e.target.files?.[0];
-                              if (file) handleStage2Upload(item.id, file);
-                              e.target.value = '';
-                            }}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
                 </div>
 
                 {/* Loan Details table */}
@@ -1411,101 +1399,8 @@ const DealExecution = () => {
                 </div>
               </div>
 
-              {/* ── Section E — DD Checklist ─────────────────────────────── */}
-              <div className="bg-white rounded-xl p-6 shadow-sm">
-                <div className="flex items-baseline justify-between mb-5">
-                  <div className="flex items-baseline gap-3">
-                    <h2 className="text-base font-semibold text-gray-900">E — DD Checklist</h2>
-                    <span className="text-xs text-gray-400">
-                      {ddProgress.reviewed} reviewed · {ddProgress.uploaded} uploaded · {ddProgress.total - ddProgress.reviewed - ddProgress.uploaded} pending
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-green-500 rounded-full transition-all"
-                        style={{ width: `${(ddProgress.reviewed / ddProgress.total) * 100}%` }}
-                      />
-                    </div>
-                    <span className="text-xs text-gray-400">
-                      {Math.round((ddProgress.reviewed / ddProgress.total) * 100)}%
-                    </span>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  {DD_PHASES.map(phase => {
-                    const isOpen = openPhases[phase.id] ?? false;
-                    const phaseItems = phase.items;
-                    const phaseReviewed = phaseItems.filter(it => ddChecklist[it.id] === 'reviewed').length;
-                    const phaseTotal = phaseItems.length;
-                    const allReviewed = phaseReviewed === phaseTotal;
-                    return (
-                      <div key={phase.id} className="border border-gray-200 rounded-xl overflow-hidden">
-                        <button
-                          onClick={() => togglePhase(phase.id)}
-                          className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <ChevronRight size={14} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
-                            {allReviewed
-                              ? <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
-                              : <div className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${phaseReviewed > 0 ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}`} />
-                            }
-                            <span className="text-sm font-medium text-gray-800">{phase.label}</span>
-                          </div>
-                          <span className="text-xs text-gray-400 tabular-nums">{phaseReviewed}/{phaseTotal}</span>
-                        </button>
-                        {isOpen && (
-                          <div className="divide-y divide-gray-100">
-                            {phaseItems.map(item => {
-                              const status: DDItemStatus = ddChecklist[item.id] ?? 'pending';
-                              const uploadedFile = ddUploads[item.id];
-                              return (
-                                <div key={item.id} className="flex items-center gap-3 px-4 py-3">
-                                  <button
-                                    onClick={() => cycleItemStatus(item.id)}
-                                    className={`flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold transition-colors ${DD_STATUS_STYLE[status]}`}
-                                    title="Click to cycle: Pending → Uploaded → Reviewed"
-                                  >
-                                    {DD_STATUS_LABEL[status]}
-                                  </button>
-                                  <span className={`flex-1 text-sm ${status === 'reviewed' ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
-                                    {item.label}
-                                  </span>
-                                  {uploadedFile && (
-                                    <span className="text-xs text-gray-400 truncate max-w-[120px] flex items-center gap-1">
-                                      <FileText size={11} />
-                                      {uploadedFile}
-                                    </span>
-                                  )}
-                                  <button
-                                    onClick={() => fileInputRefs.current[item.id]?.click()}
-                                    className="flex-shrink-0 flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-gray-200 hover:border-blue-200 transition-colors"
-                                  >
-                                    <Upload size={11} />
-                                    {uploadedFile ? 'Replace' : 'Upload'}
-                                  </button>
-                                  <input
-                                    type="file"
-                                    className="hidden"
-                                    ref={el => { fileInputRefs.current[item.id] = el; }}
-                                    onChange={e => {
-                                      const file = e.target.files?.[0];
-                                      if (file) handleItemUpload(item.id, file);
-                                      e.target.value = '';
-                                    }}
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              {/* ── Section E — Due Diligence (full tracker) ─────────────── */}
+              <DDSection dealId={numericId} />
 
               {/* Proceed to Closing */}
               {stage === 2 && (
@@ -1734,13 +1629,38 @@ const DealExecution = () => {
                 <div className="border border-gray-200 rounded-xl p-4 max-h-[600px] overflow-y-auto">
                   <MemoDisplay text={memoText} />
                 </div>
-                <button
-                  onClick={exportAsPdf}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl transition-colors"
-                >
-                  <Download size={14} />
-                  Export as PDF
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={exportAsPdf}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl transition-colors"
+                  >
+                    <Download size={14} />
+                    Export PDF
+                  </button>
+                  <button
+                    onClick={saveMemoToDrive}
+                    disabled={memoSaving}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed rounded-xl transition-colors"
+                  >
+                    {memoSaving
+                      ? <><Loader2 size={14} className="animate-spin" /> Saving…</>
+                      : memoDriveUrl
+                        ? <><CheckCircle2 size={14} /> Saved to Drive</>
+                        : <><Upload size={14} /> Save to Drive</>
+                    }
+                  </button>
+                </div>
+                {memoDriveUrl && (
+                  <a
+                    href={memoDriveUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs text-emerald-600 hover:text-emerald-700"
+                  >
+                    <ExternalLink size={12} />
+                    Open in Drive →
+                  </a>
+                )}
               </>
             )}
 
@@ -1753,7 +1673,7 @@ const DealExecution = () => {
 
         </div>{/* end right column */}
 
-      </div>
+      </div>{/* end two-column layout */}
     </div>
   );
 };

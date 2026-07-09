@@ -5,10 +5,10 @@ import { fredApi } from '../services/fredApi';
 import { rentcastApi } from '../services/rentcastApi';
 import { censusApi } from '../services/censusApi';
 import { dealApi } from '../services/dealApi';
-import type { RentEstimateData, RentalComparable, MarketStatistics } from '../types/rentcast';
+import type { RentalComparable, MarketStatistics } from '../types/rentcast';
 import type { DemographicData } from '../types/census';
 import type { Deal, DealStatus } from '../types/deal';
-import { DEAL_STATUS_LABELS, getPipelineStatus, setPipelineStatus } from '../types/deal';
+import { getPipelineStatus, setPipelineStatus } from '../types/deal';
 import type { PipelineStatus } from '../types/deal';
 import DealsListSidebar from '../components/DealsListSidebar';
 import PropertyUrlInput from '../components/PropertyUrlInput';
@@ -16,80 +16,13 @@ import DataRoomModal from '../components/DataRoomModal';
 import LoiModal from '../components/LoiModal';
 import { saveDealExecution, patchDealExecution, getDealExecution, type DealExecutionRecord } from '../types/dealExecution';
 import type { DealDocument, LoiExtractedData } from '../types/dealExecution';
-
 import { scrapingApi } from '../services/scrapingApi';
-import type { UnitMixEntry, OmExtractedData } from '../types/scraping';
 import * as sourcingApi from '../services/sourcingApi';
 import ClimateCheckUpload, { ClimateScoreSummary } from '../components/ClimateCheckUpload';
 
-// --- FINANCIAL CALCULATION UTILITIES ---
-const calculatePMT = (rate: number, nper: number, pv: number) => {
-  if (rate === 0) return -(pv / nper);
-  const pvif = Math.pow(1 + rate, nper);
-  return -((rate * pv * pvif) / (pvif - 1));
-};
+type UnitMixRow = { unitType: string; count: number; askingRent: number; avgSf: number };
 
-const npv = (rate: number, values: number[]) => {
-  return values.reduce((acc, val, i) => acc + val / Math.pow(1 + rate, i), 0);
-};
-
-const calculateIRR = (values: number[], guess = 0.1) => {
-  const maxIter = 1000;
-  const precision = 0.00001;
-  let rate = guess;
-
-  for (let i = 0; i < maxIter; i++) {
-    const npvValue = npv(rate, values);
-    if (Math.abs(npvValue) < precision) return rate;
-
-    const npvDerivative = values.reduce(
-      (acc, val, j) => acc - (j * val) / Math.pow(1 + rate, j + 1),
-      0
-    );
-
-    // Safety check for division by zero
-    if (Math.abs(npvDerivative) < 0.0000001) {
-      console.error('IRR calculation failed: derivative approaching zero');
-      return NaN;
-    }
-
-    const newRate = rate - npvValue / npvDerivative;
-
-    // Bounds checking to prevent Infinity/NaN
-    if (!isFinite(newRate) || isNaN(newRate)) {
-      console.error('IRR calculation diverged');
-      return NaN;
-    }
-
-    if (Math.abs(newRate - rate) < precision) return newRate;
-    rate = newRate;
-  }
-
-  console.warn('IRR did not converge after', maxIter, 'iterations');
-  return rate;
-};
-
-type YearRow = {
-  year: number;
-  label: string;
-  gpr: number;
-  vacancyLoss: number;
-  badDebtLoss: number;
-  egi: number;
-  opex: number;
-  noi: number;
-  debtService: number;
-  cfbt: number;
-  saleProceeds: number;
-  isAcquisition: boolean;
-  isExit: boolean;
-};
-
-const fmtDollar = (n: number, forceBlank = false): string => {
-  if (forceBlank || n === 0) return '—';
-  const abs = Math.round(Math.abs(n)).toLocaleString('en-US');
-  return n >= 0 ? `$${abs}` : `($${abs})`;
-};
+const GP_PARTNERS_FALLBACK = ['Aequitas Housing'];
 
 const amiOptions = [
   '30% AMI - $24,000/year',
@@ -98,9 +31,8 @@ const amiOptions = [
   '80% AMI - $64,000/year',
 ];
 
-const GP_PARTNERS_FALLBACK = ['Aequitas Housing'];
+// ── Market Analysis Panel ─────────────────────────────────────────────────────
 
-// --- MARKET ANALYSIS PANEL ---
 type MarketAnalysisPanelProps = {
   isOpen: boolean;
   loading: boolean;
@@ -147,9 +79,7 @@ function MarketAnalysisPanelBlock({ isOpen, loading, error, demographics, market
               <span className="text-sm">Fetching market data…</span>
             </div>
           )}
-          {error && !loading && (
-            <p className="text-sm text-red-500 py-4">{error}</p>
-          )}
+          {error && !loading && <p className="text-sm text-red-500 py-4">{error}</p>}
           {!loading && !error && demographics && (
             <div className="space-y-4 pt-4">
               <div className="grid grid-cols-2 gap-3">
@@ -162,7 +92,6 @@ function MarketAnalysisPanelBlock({ isOpen, loading, error, demographics, market
                   <p className="text-sm font-bold text-yellow-900">{fmt(demographics.income.median_household_income)}</p>
                 </div>
               </div>
-
               <div>
                 <p className="text-xs font-medium text-gray-500 mb-2">AMI Levels</p>
                 <div className="grid grid-cols-4 gap-2">
@@ -174,7 +103,6 @@ function MarketAnalysisPanelBlock({ isOpen, loading, error, demographics, market
                   ))}
                 </div>
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 bg-pink-50 rounded-lg">
                   <p className="text-xs text-gray-500">Median Rent</p>
@@ -185,7 +113,6 @@ function MarketAnalysisPanelBlock({ isOpen, loading, error, demographics, market
                   <p className="text-sm font-bold text-teal-900">{demographics.housing.occupancy_rate.toFixed(1)}%</p>
                 </div>
               </div>
-
               {marketStats && (
                 <div>
                   <p className="text-xs font-medium text-gray-500 mb-2">Rental Market (RentCast)</p>
@@ -196,22 +123,10 @@ function MarketAnalysisPanelBlock({ isOpen, loading, error, demographics, market
                         <p className="text-sm font-bold text-purple-900">{fmt(marketStats.avgRentAll)}</p>
                       </div>
                     )}
-                    {marketStats.avgRent1bed != null && (
-                      <div className="p-3 bg-indigo-50 rounded-lg">
-                        <p className="text-xs text-gray-500">1 Bed</p>
-                        <p className="text-sm font-bold text-indigo-900">{fmt(marketStats.avgRent1bed)}</p>
-                      </div>
-                    )}
                     {marketStats.avgRent2bed != null && (
                       <div className="p-3 bg-indigo-50 rounded-lg">
                         <p className="text-xs text-gray-500">2 Bed</p>
                         <p className="text-sm font-bold text-indigo-900">{fmt(marketStats.avgRent2bed)}</p>
-                      </div>
-                    )}
-                    {marketStats.avgRent3bed != null && (
-                      <div className="p-3 bg-indigo-50 rounded-lg">
-                        <p className="text-xs text-gray-500">3 Bed</p>
-                        <p className="text-sm font-bold text-indigo-900">{fmt(marketStats.avgRent3bed)}</p>
                       </div>
                     )}
                   </div>
@@ -225,7 +140,6 @@ function MarketAnalysisPanelBlock({ isOpen, loading, error, demographics, market
   );
 }
 
-// ── Fuzzy address matcher (used for auto-linking to sourcing) ─────────────────
 function addressMatch(a: string, b: string): boolean {
   const norm = (s: string) =>
     s.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
@@ -239,31 +153,46 @@ function addressMatch(a: string, b: string): boolean {
   return shared >= 2;
 }
 
+// ── Input helpers ─────────────────────────────────────────────────────────────
+
+const pctInput = (
+  val: number,
+  onChange: (v: number) => void,
+  step = 0.1,
+  extraClass = '',
+) => (
+  <input
+    type="number"
+    step={step}
+    value={parseFloat((val * 100).toFixed(4))}
+    onChange={(e) => onChange((Number(e.target.value) || 0) / 100)}
+    className={`w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white ${extraClass}`}
+  />
+);
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 const Underwriting = () => {
   const [searchParams] = useSearchParams();
 
-  // Current Deal State
+  // navigation / modals
   const [currentDealId, setCurrentDealId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-
-  // Legislation fetch state
   const [legislationFetching, setLegislationFetching] = useState(false);
   const [legislationStatus, setLegislationStatus] = useState<'idle' | 'saved' | 'failed'>('idle');
-
-  // Pipeline status (localStorage-backed)
   const [pipelineStatus, setPipelineStatusState] = useState<PipelineStatus>('Analyzing');
   const [showDataRoomModal, setShowDataRoomModal] = useState(false);
   const [showLoiModal, setShowLoiModal] = useState(false);
 
-  const isUnderwritingLocked = pipelineStatus === 'LOI Executed'
-    || pipelineStatus === 'Under Contract'
-    || pipelineStatus === 'Closed'
-    || pipelineStatus === 'Exited';
+  const isUnderwritingLocked =
+    pipelineStatus === 'LOI Executed' ||
+    pipelineStatus === 'Under Contract' ||
+    pipelineStatus === 'Closed' ||
+    pipelineStatus === 'Exited';
 
-  // Deal Parameters State
+  // deal info
   const [dealName, setDealName] = useState('New Development Project');
   const [dealStatus, setDealStatus] = useState<DealStatus>('potential');
   const [location, setLocation] = useState('Sacramento, CA');
@@ -272,116 +201,111 @@ const Underwriting = () => {
   const [yearBuilt, setYearBuilt] = useState(1985);
   const [buildingType, setBuildingType] = useState('Garden Style');
   const [numberOfBuildings, setNumberOfBuildings] = useState(4);
-  const [totalUnits, setTotalUnits] = useState(200);
-  const [purchasePrice, setPurchasePrice] = useState(15000000);
-  const [constructionCostPct, setConstructionCostPct] = useState(10); // percentage
-  const [constructionCost, setConstructionCost] = useState(purchasePrice * 0.10);
-  const [closingCostsPct, setClosingCostsPct] = useState(3); // percentage
-  const [closingCosts, setClosingCosts] = useState(purchasePrice * 0.03);
-  const [avgMonthlyRent, setAvgMonthlyRent] = useState(1200);
-  const [operatingExpenseRatio, setOperatingExpenseRatio] = useState(0.35);
-  const [interestRate, setInterestRate] = useState(0.065);
-  const [loanTermYears, setLoanTermYears] = useState(30);
-  const [ltv, setLtv] = useState(70);
-  const [exitCapRate, setExitCapRate] = useState(0.06);
-  const [holdingPeriod, setHoldingPeriod] = useState(10);
-  const [vacancyRate, setVacancyRate] = useState(0.05); // 5% default
-  const [badDebtRate, setBadDebtRate] = useState(0.00); // 0% default
-  const [rentGrowthRate, setRentGrowthRate] = useState(0.02); // 2% default
-  const [cashFlowTab, setCashFlowTab] = useState<'noi' | 'levered'>('noi');
-  const [amiTarget, setAmiTarget] = useState('60% AMI - $48,000/year');
-
-  // Returns & Loan Summary state
-  const [entryCapRateInput, setEntryCapRateInput] = useState(6.0);
-  const [offerPrice, setOfferPrice] = useState(0);
-  const [exitPrice, setExitPrice] = useState(0);
-  const [lpEquityShare, setLpEquityShare] = useState(90);
-  const gpEquityShare = 100 - lpEquityShare;
-  const [seniorLoanAmount, setSeniorLoanAmount] = useState(0);
-  const [seniorInterestRateInput, setSeniorInterestRateInput] = useState(6.5);
-  const [seniorTermYearsInput, setSeniorTermYearsInput] = useState(10);
-  const [seniorAmortYearsInput, setSeniorAmortYearsInput] = useState(30);
-  const [seniorIOMonthsInput, setSeniorIOMonthsInput] = useState(0);
-  const [refiLoanAmount, setRefiLoanAmount] = useState(0);
-  const [refiInterestRateInput, setRefiInterestRateInput] = useState(6.0);
-  const [refiTermYearsInput, setRefiTermYearsInput] = useState(10);
-  const [refiAmortYearsInput, setRefiAmortYearsInput] = useState(30);
-  const [refiIOMonthsInput, setRefiIOMonthsInput] = useState(0);
-
-  // Template-specific underwriting inputs (Excel cell mappings)
+  const [totalUnits, setTotalUnits] = useState(0);
+  const [purchasePrice, setPurchasePrice] = useState(0);
+  const [ttmNoi, setTtmNoi] = useState(0);
   const [acquisitionDate, setAcquisitionDate] = useState('');
-  const [lossToLeaseRate, setLossToLeaseRate] = useState(0);
-  const [concessionsRate, setConcessionsRate] = useState(0);
+  const [holdPeriodYears, setHoldPeriodYears] = useState(10);
+  const [bridgePeriodMonths, setBridgePeriodMonths] = useState(36);
+  const [entryCapRateInput, setEntryCapRateInput] = useState(0.0675);
+  const [salesCostPct, setSalesCostPct] = useState(0.02);
+  const [amiTarget, setAmiTarget] = useState('60% AMI - $48,000/year');
+  const [gpPartner, setGpPartner] = useState('Aequitas Housing');
+  const [gpPartners, setGpPartners] = useState<string[]>(GP_PARTNERS_FALLBACK);
+
+  // uploads
+  const [unitMix, setUnitMix] = useState<UnitMixRow[]>([]);
+  const [omUploaded, setOmUploaded] = useState(false);
+  const [rrUploaded, setRrUploaded] = useState(false);
+  const [omUploading, setOmUploading] = useState(false);
+  const [rrUploading, setRrUploading] = useState(false);
+  const [omError, setOmError] = useState<string | null>(null);
+  const [rrError, setRrError] = useState<string | null>(null);
+  const [t12Uploading, setT12Uploading] = useState(false);
+  const [t12Error, setT12Error] = useState<string | null>(null);
+  const [t12Success, setT12Success] = useState(false);
+  const [omLaundryIncome, setOmLaundryIncome] = useState<number | null>(null);
+  const [omRentStabilized, setOmRentStabilized] = useState<boolean | null>(null);
+  const [omAnnualRentGrowthCap, setOmAnnualRentGrowthCap] = useState<number | null>(null);
+
+  // other income
+  const [rubsPct, setRubsPct] = useState(0.675);
+  const [parkingIncomePerUnit, setParkingIncomePerUnit] = useState(0);
+  const [otherIncomePerUnit, setOtherIncomePerUnit] = useState(0);
+
+  // income adjustments (5-year arrays, stored as decimals 0-1)
+  const [vacancyRates, setVacancyRates] = useState([0.08, 0.07, 0.06, 0.06, 0.06]);
+  const [lossToLeaseRates, setLossToLeaseRates] = useState([0.0125, 0.0125, 0.0125, 0.0125, 0.0125]);
+  const [badDebtRates, setBadDebtRates] = useState([0.01, 0.01, 0.01, 0.01, 0.01]);
+  const [concessionsRates, setConcessionsRates] = useState([0.02, 0.01, 0.01, 0.0, 0.0]);
+  const [nonRevUnits, setNonRevUnits] = useState([0, 0, 0, 0, 0]);
+
+  // opex ($/unit/yr)
+  const [managementFeePct, setManagementFeePct] = useState(0.04);
+  const [capReservePerUnit, setCapReservePerUnit] = useState(250);
   const [opexPayrollPerUnit, setOpexPayrollPerUnit] = useState(0);
   const [opexAdminPerUnit, setOpexAdminPerUnit] = useState(0);
   const [opexMarketingPerUnit, setOpexMarketingPerUnit] = useState(0);
   const [opexRmPerUnit, setOpexRmPerUnit] = useState(0);
   const [opexContractServicePerUnit, setOpexContractServicePerUnit] = useState(0);
   const [opexTurnoverPerUnit, setOpexTurnoverPerUnit] = useState(0);
+  const [opexOtherPerUnit, setOpexOtherPerUnit] = useState(0);
   const [opexInsurancePerUnit, setOpexInsurancePerUnit] = useState(0);
   const [opexUtilitiesPerUnit, setOpexUtilitiesPerUnit] = useState(0);
   const [opexPropertyTaxPerUnit, setOpexPropertyTaxPerUnit] = useState(0);
-  const [capexPerUnit, setCapexPerUnit] = useState(0);
-  const [parkingIncomePerUnit, setParkingIncomePerUnit] = useState(0);
-  const [rubsPct, setRubsPct] = useState(0.675);
-  const [otherIncomePerUnit, setOtherIncomePerUnit] = useState(0);
-  const [refiLtv, setRefiLtv] = useState(0);
-  const [refiInterestRate, setRefiInterestRate] = useState(0);
-  const [refiFinancingCostsPct, setRefiFinancingCostsPct] = useState(0);
-  const [refiIoPeriods, setRefiIoPeriods] = useState(0);
-  const [bridgeLoanTermMonths, setBridgeLoanTermMonths] = useState(36);
-  const [refiTermMonths, setRefiTermMonths] = useState(0);
-  const [seniorIoPeriods, setSeniorIoPeriods] = useState(0);
-  const [seniorFinancingCostsPct, setSeniorFinancingCostsPct] = useState(0);
-  const [opexGrowthRate, setOpexGrowthRate] = useState(3);
-  const [propertyTaxGrowthRate, setPropertyTaxGrowthRate] = useState(2);
-  const [gpEquitySplitPct, setGpEquitySplitPct] = useState(10);
-  const [ttmNoi, setTtmNoi] = useState(0);
-  const [nonRevenueUnits, setNonRevenueUnits] = useState(0);
+
+  // property tax
+  const [assessedValue, setAssessedValue] = useState(0);
+  const [assessedValueNextBuyer, setAssessedValueNextBuyer] = useState(0);
+  const [assessmentPct, setAssessmentPct] = useState(1.0);
   const [millageRate, setMillageRate] = useState(0.01184);
   const [specialAssessments, setSpecialAssessments] = useState(0);
 
-  const [gpPartner, setGpPartner] = useState('Aequitas Housing');
-  const [gpPartners, setGpPartners] = useState<string[]>(GP_PARTNERS_FALLBACK);
+  // senior loan
+  const [seniorLoanAmount, setSeniorLoanAmount] = useState(0);
+  const [seniorInterestRate, setSeniorInterestRate] = useState(0.065);
+  const [seniorFinancingCostsPct, setSeniorFinancingCostsPct] = useState(0.01);
+  const [seniorIoPeriods, setSeniorIoPeriods] = useState(0);
 
-  // FRED API State
+  // refi loan
+  const [refiTermMonths, setRefiTermMonths] = useState(360);
+  const [refiInterestRate, setRefiInterestRate] = useState(0.0625);
+  const [refiFinancingCostsPct, setRefiFinancingCostsPct] = useState(0.01);
+  const [refiIoPeriods, setRefiIoPeriods] = useState(0);
+  const [refiTargetDscr, setRefiTargetDscr] = useState(1.25);
+  const [refiTargetDy, setRefiTargetDy] = useState(0.09);
+  const [refiTargetLtv, setRefiTargetLtv] = useState(0.65);
+
+  // growth & exit
+  const [rentGrowthRate, setRentGrowthRate] = useState(0.02);
+  const [opexGrowthRate, setOpexGrowthRate] = useState(0.02);
+  const [exitCapRate, setExitCapRate] = useState(0.0675);
+
+  // waterfall
+  const [lpEquityShare, setLpEquityShare] = useState(0.85);
+  const [amFeePct, setAmFeePct] = useState(0.01);
+  const [pariPassu, setPariPassu] = useState(0);
+  const [preferredReturnPct, setPreferredReturnPct] = useState(0.08);
+  const [gpPromotePct, setGpPromotePct] = useState(0.30);
+
+  // FRED
   const [currentMortgageRate, setCurrentMortgageRate] = useState<number | null>(null);
-  const [rateLastUpdated, setRateLastUpdated] = useState<string>('');
+  const [rateLastUpdated, setRateLastUpdated] = useState('');
   const [loadingRates, setLoadingRates] = useState(true);
 
-  // RentCast API State
-  const [rentEstimate, setRentEstimate] = useState<RentEstimateData | null>(null);
-  const [loadingRentEstimate, setLoadingRentEstimate] = useState(false);
+  // RentCast comparables
   const [showComparables, setShowComparables] = useState(false);
   const [comparables, setComparables] = useState<RentalComparable[]>([]);
 
-  // Offering Memorandum PDF extraction state
-  const [unitMix, setUnitMix] = useState<UnitMixEntry[]>([]);
-  const [omUploading, setOmUploading] = useState(false);
-  const [omError, setOmError] = useState<string | null>(null);
-  const [omLaundryIncome, setOmLaundryIncome] = useState<number | null>(null);
-  const [omOperatingExpenses, setOmOperatingExpenses] = useState<OmExtractedData['operatingExpenses'] | null>(null);
-  const [omRentStabilized, setOmRentStabilized] = useState<boolean | null>(null);
-  const [omAnnualRentGrowthCap, setOmAnnualRentGrowthCap] = useState<number | null>(null);
-
-  // Rent Roll upload state
-  const [rrUploading, setRrUploading] = useState(false);
-  const [rrError, setRrError] = useState<string | null>(null);
-  const [rrSuccess, setRrSuccess] = useState(false);
-
-  // T12 Operating Statement upload state
-  const [t12Uploading, setT12Uploading] = useState(false);
-  const [t12Error, setT12Error] = useState<string | null>(null);
-  const [t12Success, setT12Success] = useState(false);
-
-  // Market Analysis Panel State
+  // market analysis
   const [marketAnalysisOpen, setMarketAnalysisOpen] = useState(false);
   const [marketAnalysisLoading, setMarketAnalysisLoading] = useState(false);
   const [marketAnalysisDemographics, setMarketAnalysisDemographics] = useState<DemographicData | null>(null);
   const [marketAnalysisStats, setMarketAnalysisStats] = useState<MarketStatistics | null>(null);
   const [marketAnalysisError, setMarketAnalysisError] = useState<string | null>(null);
 
-  // Fetch current mortgage rates on mount
+  // ── Effects ───────────────────────────────────────────────────────────────
+
   useEffect(() => {
     fetch('/api/v1/gps')
       .then(r => r.ok ? r.json() : null)
@@ -395,7 +319,7 @@ const Underwriting = () => {
   }, []);
 
   useEffect(() => {
-    async function fetchCurrentRates() {
+    async function fetchRates() {
       try {
         setLoadingRates(true);
         const response = await fredApi.getRates();
@@ -403,72 +327,26 @@ const Underwriting = () => {
           setCurrentMortgageRate(response.data.mortgage30Year);
           setRateLastUpdated(response.lastUpdated || new Date().toISOString());
         }
-      } catch (error) {
-        console.error('Error fetching FRED rates:', error);
+      } catch {
+        // ignore
       } finally {
         setLoadingRates(false);
       }
     }
-    fetchCurrentRates();
+    fetchRates();
   }, []);
 
-  // Fetch rent estimate when location changes
   useEffect(() => {
-    async function fetchRentEstimate() {
+    async function fetchComps() {
       if (!location) return;
-
-      setLoadingRentEstimate(true);
       try {
-        // Extract ZIP code from location if possible, or use the full location
-        const response = await rentcastApi.getRentEstimate({
-          address: location,
-          bedrooms: 2, // Default assumption for market estimate
-        });
-
-        if (response.success && response.data) {
-          setRentEstimate(response.data);
-          // Auto-populate rent from RentCast data only when no deal is loaded
-          // (when a deal is loaded, the saved monthlyRent takes precedence)
-          if (response.data.estimatedRent && !currentDealId) {
-            setAvgMonthlyRent(Math.round(response.data.estimatedRent));
-          }
-        }
-
-        // Also fetch comparables
-        const compsResponse = await rentcastApi.getComparables({
-          address: location,
-          bedrooms: 2,
-          compCount: 10,
-        });
-
-        if (compsResponse.success && compsResponse.data) {
-          setComparables(compsResponse.data);
-        }
-      } catch (error) {
-        console.error('Error fetching RentCast data:', error);
-      } finally {
-        setLoadingRentEstimate(false);
-      }
+        const compsResponse = await rentcastApi.getComparables({ address: location, bedrooms: 2, compCount: 10 });
+        if (compsResponse.success && compsResponse.data) setComparables(compsResponse.data);
+      } catch { /* ignore */ }
     }
+    fetchComps();
+  }, [location]);
 
-    fetchRentEstimate();
-  }, [location]); // Only re-fetch when location changes
-
-  // Weighted average rent from unit mix; auto-syncs to avgMonthlyRent when unit mix is set
-  const weightedAvgRentFromMix = useMemo(() => {
-    if (unitMix.length === 0) return null;
-    const totalUnitsInMix = unitMix.reduce((sum, u) => sum + u.count, 0);
-    if (totalUnitsInMix === 0) return null;
-    return Math.round(unitMix.reduce((sum, u) => sum + u.count * u.askingRent, 0) / totalUnitsInMix);
-  }, [unitMix]);
-
-  useEffect(() => {
-    if (weightedAvgRentFromMix !== null) {
-      setAvgMonthlyRent(weightedAvgRentFromMix);
-    }
-  }, [weightedAvgRentFromMix]);
-
-  // Load deal from URL query parameter
   useEffect(() => {
     const dealIdParam = searchParams.get('dealId');
     if (dealIdParam) {
@@ -477,7 +355,6 @@ const Underwriting = () => {
         setCurrentDealId(dealId);
         const status = getPipelineStatus(dealId);
         setPipelineStatusState(status);
-        // Populate from localStorage first (no API dependency)
         const execRecord = getDealExecution(dealId);
         if (execRecord) {
           if (execRecord.dealName) setDealName(execRecord.dealName);
@@ -485,7 +362,6 @@ const Underwriting = () => {
           if (execRecord.totalUnits) setTotalUnits(execRecord.totalUnits);
           if (execRecord.purchasePrice) setPurchasePrice(execRecord.purchasePrice);
         }
-        // Repair: status past Analyzing but no record → create minimal record
         if (status !== 'Analyzing') {
           repairExecutionRecord(
             dealId,
@@ -495,16 +371,22 @@ const Underwriting = () => {
             execRecord?.totalUnits || 0,
           );
         }
-        // Also try the API for additional fields — silently ignore failures
         tryLoadDealFromApi(dealId);
       }
     }
   }, [searchParams]);
 
-  /**
-   * If a deal's pipeline status is past Analyzing but no execution record exists
-   * (data inconsistency), create a minimal record so Deal Execution page can open.
-   */
+  // ── Derived ───────────────────────────────────────────────────────────────
+
+  const weightedAvgRent = useMemo(() => {
+    if (unitMix.length === 0) return null;
+    const totalU = unitMix.reduce((s, u) => s + u.count, 0);
+    if (totalU === 0) return null;
+    return Math.round(unitMix.reduce((s, u) => s + u.askingRent * u.count, 0) / totalU);
+  }, [unitMix]);
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
   const repairExecutionRecord = (dealId: number, name: string, loc: string, price: number, units: number) => {
     if (!getDealExecution(dealId)) {
       saveDealExecution({
@@ -520,257 +402,226 @@ const Underwriting = () => {
     }
   };
 
-  /** Restore all form state from a Deal object (shared by sidebar select and API load). */
   const applyDealToState = (deal: Deal) => {
     if (deal.dealName) setDealName(deal.dealName);
     if (deal.status) setDealStatus(deal.status);
     if (deal.location) setLocation(deal.location);
     if (deal.purchasePrice) setPurchasePrice(deal.purchasePrice);
-    if (deal.closingCosts) setClosingCosts(deal.closingCosts);
-    if (deal.monthlyRent) setAvgMonthlyRent(deal.monthlyRent);
-    if (deal.loanInterestRate) setInterestRate(deal.loanInterestRate / 100);
-    if (deal.loanTermYears) setLoanTermYears(deal.loanTermYears);
-    if (deal.underwritingJson) {
-      try {
-        const uw = JSON.parse(deal.underwritingJson);
-        if (uw.totalUnits) setTotalUnits(uw.totalUnits);
-        if (uw.ltv != null) setLtv(uw.ltv);
-        if (uw.vacancyRate != null) setVacancyRate(uw.vacancyRate);
-        if (uw.badDebtRate != null) setBadDebtRate(uw.badDebtRate);
-        if (uw.operatingExpenseRatio != null) setOperatingExpenseRatio(uw.operatingExpenseRatio);
-        if (uw.exitCapRate) setExitCapRate(uw.exitCapRate);
-        if (uw.holdingPeriod) setHoldingPeriod(uw.holdingPeriod);
-        if (uw.constructionCostPct) setConstructionCostPct(uw.constructionCostPct);
-        if (uw.constructionCost) setConstructionCost(uw.constructionCost);
-        if (uw.closingCostsPct != null) setClosingCostsPct(uw.closingCostsPct);
-        if (uw.county) setCounty(uw.county);
-        if (uw.zipCode) setZipCode(uw.zipCode);
-        if (uw.yearBuilt) setYearBuilt(uw.yearBuilt);
-        if (uw.buildingType) setBuildingType(uw.buildingType);
-        if (uw.numberOfBuildings) setNumberOfBuildings(uw.numberOfBuildings);
-        if (uw.amiTarget) setAmiTarget(uw.amiTarget);
-        if (uw.gpPartner) setGpPartner(uw.gpPartner);
-        // Restore OM-extracted data
-        if (uw.unitMix && Array.isArray(uw.unitMix)) setUnitMix(uw.unitMix);
-        if (uw.omOperatingExpenses) setOmOperatingExpenses(uw.omOperatingExpenses);
-        if (uw.omLaundryIncome != null) setOmLaundryIncome(uw.omLaundryIncome);
-        if (uw.omRentStabilized != null) setOmRentStabilized(uw.omRentStabilized);
-        if (uw.omAnnualRentGrowthCap != null) setOmAnnualRentGrowthCap(uw.omAnnualRentGrowthCap);
-        if (uw.rentGrowthRate != null) setRentGrowthRate(uw.rentGrowthRate);
-        if (uw.acquisitionDate !== undefined) setAcquisitionDate(uw.acquisitionDate);
-        if (uw.lossToLeaseRate != null) setLossToLeaseRate(uw.lossToLeaseRate);
-        if (uw.concessionsRate != null) setConcessionsRate(uw.concessionsRate);
-        if (uw.opexPayrollPerUnit != null) setOpexPayrollPerUnit(uw.opexPayrollPerUnit);
-        if (uw.opexAdminPerUnit != null) setOpexAdminPerUnit(uw.opexAdminPerUnit);
-        if (uw.opexMarketingPerUnit != null) setOpexMarketingPerUnit(uw.opexMarketingPerUnit);
-        if (uw.opexRmPerUnit != null) setOpexRmPerUnit(uw.opexRmPerUnit);
-        if (uw.opexContractServicePerUnit != null) setOpexContractServicePerUnit(uw.opexContractServicePerUnit);
-        if (uw.opexTurnoverPerUnit != null) setOpexTurnoverPerUnit(uw.opexTurnoverPerUnit);
-        if (uw.opexInsurancePerUnit != null) setOpexInsurancePerUnit(uw.opexInsurancePerUnit);
-        if (uw.opexUtilitiesPerUnit != null) setOpexUtilitiesPerUnit(uw.opexUtilitiesPerUnit);
-        if (uw.opexPropertyTaxPerUnit != null) setOpexPropertyTaxPerUnit(uw.opexPropertyTaxPerUnit);
-        if (uw.capexPerUnit != null) setCapexPerUnit(uw.capexPerUnit);
-        if (uw.parkingIncomePerUnit != null) setParkingIncomePerUnit(uw.parkingIncomePerUnit);
-        if (uw.rubsPct != null) setRubsPct(uw.rubsPct);
-        if (uw.otherIncomePerUnit != null) setOtherIncomePerUnit(uw.otherIncomePerUnit);
-        if (uw.refiLtv != null) setRefiLtv(uw.refiLtv);
-        if (uw.refiInterestRate != null) setRefiInterestRate(uw.refiInterestRate);
-        if (uw.refiFinancingCostsPct != null) setRefiFinancingCostsPct(uw.refiFinancingCostsPct);
-        if (uw.refiIoPeriods != null) setRefiIoPeriods(uw.refiIoPeriods);
-        if (uw.bridgeLoanTermMonths != null) setBridgeLoanTermMonths(uw.bridgeLoanTermMonths);
-        if (uw.refiTermMonths != null) setRefiTermMonths(uw.refiTermMonths);
-        if (uw.seniorIoPeriods != null) setSeniorIoPeriods(uw.seniorIoPeriods);
-        if (uw.seniorFinancingCostsPct != null) setSeniorFinancingCostsPct(uw.seniorFinancingCostsPct);
-        if (uw.opexGrowthRate != null) setOpexGrowthRate(uw.opexGrowthRate);
-        if (uw.propertyTaxGrowthRate != null) setPropertyTaxGrowthRate(uw.propertyTaxGrowthRate);
-        if (uw.gpEquitySplitPct != null) setGpEquitySplitPct(uw.gpEquitySplitPct);
-        if (uw.lpEquityShare != null) setLpEquityShare(uw.lpEquityShare);
-        if (uw.interestRate != null) setInterestRate(uw.interestRate);
-        if (uw.ttmNoi != null) setTtmNoi(uw.ttmNoi);
-        if (uw.nonRevenueUnits != null) setNonRevenueUnits(uw.nonRevenueUnits);
-        if (uw.millageRate != null) setMillageRate(uw.millageRate);
-        if (uw.specialAssessments != null) setSpecialAssessments(uw.specialAssessments);
-        if (uw.entryCapRateInput != null) setEntryCapRateInput(uw.entryCapRateInput);
-        if (uw.marketAnalysisDemographics) {
-          setMarketAnalysisDemographics(uw.marketAnalysisDemographics);
-          setMarketAnalysisOpen(true);
-        }
-        if (uw.marketAnalysisStats) setMarketAnalysisStats(uw.marketAnalysisStats);
-      } catch { /* ignore malformed JSON */ }
-    }
+    if (!deal.underwritingJson) return;
+    try {
+      const uw = JSON.parse(deal.underwritingJson);
+      // Basic info
+      if (uw.totalUnits) setTotalUnits(uw.totalUnits);
+      if (uw.county) setCounty(uw.county);
+      if (uw.zipCode) setZipCode(uw.zipCode);
+      if (uw.yearBuilt) setYearBuilt(uw.yearBuilt);
+      if (uw.buildingType) setBuildingType(uw.buildingType);
+      if (uw.numberOfBuildings) setNumberOfBuildings(uw.numberOfBuildings);
+      if (uw.amiTarget) setAmiTarget(uw.amiTarget);
+      if (uw.gpPartner) setGpPartner(uw.gpPartner);
+      if (uw.acquisitionDate !== undefined) setAcquisitionDate(uw.acquisitionDate);
+      if (uw.ttmNoi != null) setTtmNoi(uw.ttmNoi);
+      if (uw.purchasePrice != null) setPurchasePrice(uw.purchasePrice);
+      if (uw.omLaundryIncome != null) setOmLaundryIncome(uw.omLaundryIncome);
+      if (uw.omRentStabilized != null) setOmRentStabilized(uw.omRentStabilized);
+      if (uw.omAnnualRentGrowthCap != null) setOmAnnualRentGrowthCap(uw.omAnnualRentGrowthCap);
+      if (uw.marketAnalysisDemographics) { setMarketAnalysisDemographics(uw.marketAnalysisDemographics); setMarketAnalysisOpen(true); }
+      if (uw.marketAnalysisStats) setMarketAnalysisStats(uw.marketAnalysisStats);
+
+      // Unit mix
+      if (uw.unitMix?.length > 0) {
+        setUnitMix(uw.unitMix.map((u: any) => ({
+          unitType: u.unitType ?? '',
+          count: u.count ?? 0,
+          askingRent: u.askingRent ?? 0,
+          avgSf: u.avgSf ?? u.sqft ?? 0,
+        })));
+        setOmUploaded(true);
+      }
+
+      // Hold period
+      const hp = uw.holdPeriodYears ?? uw.holdingPeriod;
+      if (hp != null) setHoldPeriodYears(hp);
+
+      // Bridge period
+      const bp = uw.bridgePeriodMonths ?? uw.bridgeLoanTermMonths;
+      if (bp != null) setBridgePeriodMonths(bp);
+
+      // Entry cap
+      if (uw.entryCapRateInput != null) {
+        setEntryCapRateInput(uw.entryCapRateInput > 1 ? uw.entryCapRateInput / 100 : uw.entryCapRateInput);
+      }
+      if (uw.salesCostPct != null) setSalesCostPct(uw.salesCostPct > 1 ? uw.salesCostPct / 100 : uw.salesCostPct);
+
+      // Growth / exit rates (old format could be decimal or %)
+      const toDecimal = (v: number) => v > 1 ? v / 100 : v;
+      if (uw.rentGrowthRate != null) setRentGrowthRate(toDecimal(uw.rentGrowthRate));
+      if (uw.opexGrowthRate != null) setOpexGrowthRate(toDecimal(uw.opexGrowthRate));
+      if (uw.exitCapRate != null) setExitCapRate(toDecimal(uw.exitCapRate));
+
+      // 5-year arrays (new format) or scalar (old format)
+      const toArr = (arr: number[], scalar: number | null | undefined) =>
+        Array.isArray(arr) ? arr : (scalar != null ? [scalar, scalar, scalar, scalar, scalar] : null);
+
+      const va = toArr(uw.vacancyRates, uw.vacancyRate != null ? toDecimal(uw.vacancyRate) : null);
+      if (va) setVacancyRates(va);
+      const la = toArr(uw.lossToLeaseRates, uw.lossToLeaseRate != null ? toDecimal(uw.lossToLeaseRate) : null);
+      if (la) setLossToLeaseRates(la);
+      const ba = toArr(uw.badDebtRates, uw.badDebtRate != null ? toDecimal(uw.badDebtRate) : null);
+      if (ba) setBadDebtRates(ba);
+      const ca = toArr(uw.concessionsRates, uw.concessionsRate != null ? toDecimal(uw.concessionsRate) : null);
+      if (ca) setConcessionsRates(ca);
+      const na = toArr(uw.nonRevUnits, uw.nonRevenueUnits);
+      if (na) setNonRevUnits(na);
+
+      // Opex
+      const mfp = uw.managementFeePct ?? uw.omOperatingExpenses?.managementFeePct;
+      if (mfp != null) setManagementFeePct(mfp > 1 ? mfp / 100 : mfp);
+      if (uw.capReservePerUnit != null) setCapReservePerUnit(uw.capReservePerUnit);
+      else if (uw.capexPerUnit != null) setCapReservePerUnit(uw.capexPerUnit);
+      if (uw.opexPayrollPerUnit != null) setOpexPayrollPerUnit(uw.opexPayrollPerUnit);
+      if (uw.opexAdminPerUnit != null) setOpexAdminPerUnit(uw.opexAdminPerUnit);
+      if (uw.opexMarketingPerUnit != null) setOpexMarketingPerUnit(uw.opexMarketingPerUnit);
+      if (uw.opexRmPerUnit != null) setOpexRmPerUnit(uw.opexRmPerUnit);
+      if (uw.opexContractServicePerUnit != null) setOpexContractServicePerUnit(uw.opexContractServicePerUnit);
+      if (uw.opexTurnoverPerUnit != null) setOpexTurnoverPerUnit(uw.opexTurnoverPerUnit);
+      if (uw.opexOtherPerUnit != null) setOpexOtherPerUnit(uw.opexOtherPerUnit);
+      if (uw.opexInsurancePerUnit != null) setOpexInsurancePerUnit(uw.opexInsurancePerUnit);
+      if (uw.opexUtilitiesPerUnit != null) setOpexUtilitiesPerUnit(uw.opexUtilitiesPerUnit);
+      if (uw.opexPropertyTaxPerUnit != null) setOpexPropertyTaxPerUnit(uw.opexPropertyTaxPerUnit);
+
+      // Other income
+      if (uw.rubsPct != null) setRubsPct(uw.rubsPct > 1 ? uw.rubsPct / 100 : uw.rubsPct);
+      if (uw.parkingIncomePerUnit != null) setParkingIncomePerUnit(uw.parkingIncomePerUnit);
+      if (uw.otherIncomePerUnit != null) setOtherIncomePerUnit(uw.otherIncomePerUnit);
+
+      // Property tax
+      if (uw.assessedValue != null) setAssessedValue(uw.assessedValue);
+      if (uw.assessedValueNextBuyer != null) setAssessedValueNextBuyer(uw.assessedValueNextBuyer);
+      if (uw.assessmentPct != null) setAssessmentPct(uw.assessmentPct);
+      if (uw.millageRate != null) setMillageRate(uw.millageRate);
+      if (uw.specialAssessments != null) setSpecialAssessments(uw.specialAssessments);
+
+      // Senior loan
+      if (uw.seniorLoanAmount != null) setSeniorLoanAmount(uw.seniorLoanAmount);
+      const sir = uw.seniorInterestRate ?? uw.interestRate;
+      if (sir != null) setSeniorInterestRate(sir > 1 ? sir / 100 : sir);
+      if (uw.seniorFinancingCostsPct != null) setSeniorFinancingCostsPct(uw.seniorFinancingCostsPct > 1 ? uw.seniorFinancingCostsPct / 100 : uw.seniorFinancingCostsPct);
+      if (uw.seniorIoPeriods != null) setSeniorIoPeriods(uw.seniorIoPeriods);
+
+      // Refi loan
+      if (uw.refiTermMonths != null) setRefiTermMonths(uw.refiTermMonths);
+      if (uw.refiInterestRate != null) setRefiInterestRate(uw.refiInterestRate > 1 ? uw.refiInterestRate / 100 : uw.refiInterestRate);
+      if (uw.refiFinancingCostsPct != null) setRefiFinancingCostsPct(uw.refiFinancingCostsPct > 1 ? uw.refiFinancingCostsPct / 100 : uw.refiFinancingCostsPct);
+      if (uw.refiIoPeriods != null) setRefiIoPeriods(uw.refiIoPeriods);
+      if (uw.refiTargetDscr != null) setRefiTargetDscr(uw.refiTargetDscr);
+      if (uw.refiTargetDy != null) setRefiTargetDy(uw.refiTargetDy > 1 ? uw.refiTargetDy / 100 : uw.refiTargetDy);
+      const rtl = uw.refiTargetLtv ?? uw.refiLtv;
+      if (rtl != null) setRefiTargetLtv(rtl > 1 ? rtl / 100 : rtl);
+
+      // Waterfall
+      if (uw.lpEquityShare != null) setLpEquityShare(uw.lpEquityShare > 1 ? uw.lpEquityShare / 100 : uw.lpEquityShare);
+      if (uw.amFeePct != null) setAmFeePct(uw.amFeePct > 1 ? uw.amFeePct / 100 : uw.amFeePct);
+      if (uw.pariPassu != null) setPariPassu(uw.pariPassu);
+      if (uw.preferredReturnPct != null) setPreferredReturnPct(uw.preferredReturnPct > 1 ? uw.preferredReturnPct / 100 : uw.preferredReturnPct);
+      const gpp = uw.gpPromotePct ?? uw.gpEquitySplitPct;
+      if (gpp != null) setGpPromotePct(gpp > 1 ? gpp / 100 : gpp);
+
+    } catch { /* ignore malformed JSON */ }
   };
 
-  /**
-   * Best-effort API load — populates extra form fields if backend is available.
-   * Never resets currentDealId on failure.
-   */
   const tryLoadDealFromApi = async (dealId: number) => {
     try {
       const deal = await dealApi.getDeal(dealId);
       applyDealToState(deal);
-    } catch {
-      // Backend unavailable — form fields already set from localStorage or Deal object
-    }
+    } catch { /* backend unavailable */ }
   };
 
-  /**
-   * Handle deal selection from sidebar
-   */
   const handleSelectDeal = (deal: Deal) => {
     if (!deal.id) return;
     setCurrentDealId(deal.id);
     const status = getPipelineStatus(deal.id);
     setPipelineStatusState(status);
-    // Restore all saved assumptions from the Deal object (includes underwritingJson blob)
     applyDealToState(deal);
-    // Also pull totalUnits from the execution record as a fallback
     const execRecord = getDealExecution(deal.id);
     if (execRecord?.totalUnits) setTotalUnits(execRecord.totalUnits);
-    // Repair: if status is past Analyzing but no execution record exists, create one
     if (status !== 'Analyzing') {
-      repairExecutionRecord(
-        deal.id,
-        deal.dealName || '',
-        deal.location || '',
-        deal.purchasePrice || 0,
-        execRecord?.totalUnits || 0,
-      );
+      repairExecutionRecord(deal.id, deal.dealName || '', deal.location || '', deal.purchasePrice || 0, execRecord?.totalUnits || 0);
     }
   };
 
-  // Create deal from imported property data and load it
   const handleImportCreateDeal = async (data: any) => {
     try {
-      // Directly populate the form fields from extracted data
-      if (data.propertyName) {
-        setDealName(data.propertyName);
-      } else if (data.address) {
-        setDealName(`Deal - ${data.address}`);
-      }
-
-      if (data.city && data.state) {
-        setLocation(`${data.city}, ${data.state}`);
-      } else if (data.city) {
-        setLocation(data.city);
-      } else if (data.address) {
-        setLocation(data.address);
-      }
-
-      // Populate new geographic fields
-      if (data.county) {
-        setCounty(data.county);
-      }
-
-      if (data.zipCode) {
-        setZipCode(data.zipCode);
-      }
-
-      if (data.yearBuilt) {
-        setYearBuilt(data.yearBuilt);
-      }
-
-      if (data.propertyType) {
-        // Try to map property type to building type
-        const typeMap: { [key: string]: string } = {
-          'Garden': 'Garden Style',
-          'Mid-Rise': 'Mid-Rise',
-          'High-Rise': 'High-Rise',
-          'Townhome': 'Townhome',
-          'Mixed Use': 'Mixed Use'
-        };
-        const mappedType = Object.keys(typeMap).find(key =>
-          data.propertyType.toLowerCase().includes(key.toLowerCase())
-        );
-        if (mappedType) {
-          setBuildingType(typeMap[mappedType]);
-        }
-      }
-
-      if (data.numberOfBuildings) {
-        setNumberOfBuildings(data.numberOfBuildings);
-      }
-
-      if (data.askingPrice) {
-        setPurchasePrice(data.askingPrice);
-      }
-
-      if (data.numUnits) {
-        setTotalUnits(data.numUnits);
-      }
-
-      if (data.estimatedRent) {
-        setAvgMonthlyRent(data.estimatedRent);
-      }
-
-      if (data.capRate) {
-        setExitCapRate(data.capRate / 100); // Convert percentage to decimal
-      }
-
-      // Map extracted property data to Deal create shape
-      const createPayload: Partial<Deal> = {
+      if (data.propertyName) setDealName(data.propertyName);
+      else if (data.address) setDealName(`Deal - ${data.address}`);
+      if (data.city && data.state) setLocation(`${data.city}, ${data.state}`);
+      else if (data.city) setLocation(data.city);
+      if (data.county) setCounty(data.county);
+      if (data.zipCode) setZipCode(data.zipCode);
+      if (data.yearBuilt) setYearBuilt(data.yearBuilt);
+      if (data.numberOfBuildings) setNumberOfBuildings(data.numberOfBuildings);
+      if (data.askingPrice) setPurchasePrice(data.askingPrice);
+      if (data.numUnits) setTotalUnits(data.numUnits);
+      const created = await dealApi.createDeal({
         dealName: data.propertyName || `Deal - ${data.address || data.city || 'Imported'}`,
-        location: data.city && data.state ? `${data.city}, ${data.state}` : data.city || data.state || data.address || '',
+        location: data.city && data.state ? `${data.city}, ${data.state}` : data.city || data.address || '',
         status: 'potential',
         propertyAddress: data.address,
-        latitude: data.latitude,
-        longitude: data.longitude,
         purchasePrice: data.askingPrice || undefined,
-        monthlyRent: data.estimatedRent || undefined,
-        bedrooms: data.bedrooms,
-        bathrooms: data.bathrooms,
-        squareFootage: data.buildingSizeSf,
-        yearBuilt: data.yearBuilt,
-        propertyType: data.propertyType,
-        capRate: data.capRate
-      };
-
-      const created = await dealApi.createDeal(createPayload);
-      if (created && created.id) {
+      });
+      if (created?.id) {
         setCurrentDealId(created.id);
-        // Persist deal ID in URL so page refresh doesn't lose context
         const url = new URL(window.location.href);
         url.searchParams.set('dealId', String(created.id));
         window.history.replaceState({}, '', url.toString());
       }
     } catch (err) {
-      console.error('Error creating deal from imported property:', err);
-      alert('Failed to create deal from imported property');
+      console.error('Error creating deal from import:', err);
     }
   };
 
-  /**
-   * Handle Offering Memorandum PDF upload — extracts unit mix and rents via Claude document API
-   */
+  // ── Upload handlers ───────────────────────────────────────────────────────
+
   const handleOmUpload = async (file: File) => {
     setOmUploading(true);
     setOmError(null);
     try {
-      const data = await scrapingApi.extractOmFromPdf(file);
-      console.log('[OM extraction result]', JSON.stringify(data, null, 2));
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/v2/underwriting/extract-om', { method: 'POST', body: formData });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || 'Extraction failed');
+      const data = json.data;
 
-      // Populate form fields from OM data
       if (data.propertyName) setDealName(data.propertyName);
       if (data.numUnits) setTotalUnits(data.numUnits);
       if (data.askingPrice) setPurchasePrice(data.askingPrice);
       if (data.city && data.state) setLocation(`${data.city}, ${data.state}`);
       if (data.zipcode) setZipCode(data.zipcode);
+      if (data.ttmNoi != null) setTtmNoi(data.ttmNoi);
 
-      // Populate OM-specific state (single source of truth for Excel export)
-      if (data.unitMix && data.unitMix.length > 0) {
-        setUnitMix(data.unitMix);
-        // Derive weighted-average monthly rent so export validation passes
-        const totalUnitsInMix = data.unitMix.reduce((sum, u) => sum + u.count, 0);
-        if (totalUnitsInMix > 0) {
-          const weightedRent = data.unitMix.reduce((sum, u) => sum + u.askingRent * u.count, 0) / totalUnitsInMix;
-          setAvgMonthlyRent(Math.round(weightedRent));
-        }
+      if (data.unitMix?.length > 0) {
+        setUnitMix(data.unitMix.map((u: any) => ({
+          unitType: u.unitType ?? '',
+          count: u.count ?? 0,
+          askingRent: u.askingRent ?? 0,
+          avgSf: u.avgSf ?? 0,
+        })));
       }
-      if (data.laundryIncome != null) setOmLaundryIncome(data.laundryIncome);
-      if (data.operatingExpenses != null) setOmOperatingExpenses(data.operatingExpenses);
 
-      // Derive per-unit opex from annual totals in operatingExpenses ÷ unit count.
-      // opexRmPerUnit uses the direct per-unit field if Claude returned one; falls back here.
-      const unitCount = data.numUnits || (data.unitMix?.reduce((s, u) => s + u.count, 0) ?? 0);
+      // Income adjustments
+      if (data.vacancyRate != null) { const v = data.vacancyRate; setVacancyRates([v, v, v, v, v]); }
+      if (data.badDebtRate != null) { const v = data.badDebtRate; setBadDebtRates([v, v, v, v, v]); }
+      if (data.lossToLeaseRate != null) { const v = data.lossToLeaseRate; setLossToLeaseRates([v, v, v, v, v]); }
+      if (data.concessionsRate != null) { const v = data.concessionsRate; setConcessionsRates([v, v, v, v, v]); }
+
+      // Other income (rubsPct from OM is 0-100)
+      if (data.rubsPct != null) setRubsPct(data.rubsPct / 100);
+      if (data.parkingIncomePerUnit != null) setParkingIncomePerUnit(data.parkingIncomePerUnit);
+      if (data.otherIncomePerUnit != null) setOtherIncomePerUnit(data.otherIncomePerUnit);
+
+      // Opex per unit
+      const unitCount = data.numUnits ?? (data.unitMix?.reduce((s: number, u: any) => s + (u.count ?? 0), 0) ?? 0);
       if (data.operatingExpenses && unitCount > 0) {
         const oe = data.operatingExpenses;
         if (oe.insuranceAnnual != null) setOpexInsurancePerUnit(Math.round(oe.insuranceAnnual / unitCount));
@@ -778,34 +629,32 @@ const Underwriting = () => {
         if (oe.propertyTaxAnnual != null) setOpexPropertyTaxPerUnit(Math.round(oe.propertyTaxAnnual / unitCount));
         if (oe.repairsMaintenanceAnnual != null && data.opexRmPerUnit == null)
           setOpexRmPerUnit(Math.round(oe.repairsMaintenanceAnnual / unitCount));
+        if (oe.managementFeePct != null) setManagementFeePct(oe.managementFeePct > 1 ? oe.managementFeePct / 100 : oe.managementFeePct);
       }
-
-      if (data.vacancyRate != null) setVacancyRate(data.vacancyRate);
-      if (data.badDebtRate != null) setBadDebtRate(data.badDebtRate);
-      if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
-      if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
-      // New OM-extracted template inputs
-      if (data.lossToLeaseRate != null) setLossToLeaseRate(data.lossToLeaseRate);
-      if (data.concessionsRate != null) setConcessionsRate(data.concessionsRate);
-      if (data.parkingIncomePerUnit != null) setParkingIncomePerUnit(data.parkingIncomePerUnit);
-      if (data.rubsPct != null) setRubsPct(data.rubsPct / 100); // LLM returns percentage (0-100); state stores decimal
-      if (data.otherIncomePerUnit != null) setOtherIncomePerUnit(data.otherIncomePerUnit);
       if (data.opexPayrollPerUnit != null) setOpexPayrollPerUnit(data.opexPayrollPerUnit);
       if (data.opexAdminPerUnit != null) setOpexAdminPerUnit(data.opexAdminPerUnit);
       if (data.opexMarketingPerUnit != null) setOpexMarketingPerUnit(data.opexMarketingPerUnit);
       if (data.opexRmPerUnit != null) setOpexRmPerUnit(data.opexRmPerUnit);
       if (data.opexContractServicePerUnit != null) setOpexContractServicePerUnit(data.opexContractServicePerUnit);
       if (data.opexTurnoverPerUnit != null) setOpexTurnoverPerUnit(data.opexTurnoverPerUnit);
-      if (data.capexPerUnit != null) setCapexPerUnit(data.capexPerUnit);
-      if (data.opexGrowthRate != null) setOpexGrowthRate(data.opexGrowthRate * 100); // stored as % for the input
-      if (data.propertyTaxGrowthRate != null) setPropertyTaxGrowthRate(data.propertyTaxGrowthRate * 100);
-      if (data.ttmNoi != null) setTtmNoi(data.ttmNoi);
-      else if (data.netOperatingIncome != null) setTtmNoi(data.netOperatingIncome);
+      if (data.capexPerUnit != null) setCapReservePerUnit(data.capexPerUnit);
+      if (data.opexGrowthRate != null) setOpexGrowthRate(data.opexGrowthRate > 1 ? data.opexGrowthRate / 100 : data.opexGrowthRate);
 
-      // Always create a new deal record on OM upload — never overwrite an existing deal
-      const dealLocation = data.city && data.state
-        ? `${data.city}, ${data.state}`
-        : data.address || 'Location TBD';
+      // Property tax / deal structure
+      if (data.assessedValue != null) setAssessedValue(data.assessedValue);
+      if (data.assessmentPct != null) setAssessmentPct(data.assessmentPct);
+      if (data.bridgePeriodMonths != null) setBridgePeriodMonths(data.bridgePeriodMonths);
+      if (data.lpEquityShare != null) setLpEquityShare(data.lpEquityShare > 1 ? data.lpEquityShare / 100 : data.lpEquityShare);
+
+      // OM extras
+      if (data.laundryIncome != null) setOmLaundryIncome(data.laundryIncome);
+      if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
+      if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
+
+      setOmUploaded(true);
+
+      // Create deal record
+      const dealLocation = data.city && data.state ? `${data.city}, ${data.state}` : data.address || 'Location TBD';
       const created = await dealApi.createDeal({
         dealName: data.propertyName || `Deal - ${data.address || dealLocation || 'OM Import'}`,
         location: dealLocation,
@@ -813,95 +662,174 @@ const Underwriting = () => {
         propertyAddress: data.address || undefined,
         purchasePrice: data.askingPrice || undefined,
       });
-      if (created && created.id) {
+      if (created?.id) {
         setCurrentDealId(created.id);
-        // Persist deal ID in URL so page refresh doesn't lose context
         const url = new URL(window.location.href);
         url.searchParams.set('dealId', String(created.id));
         window.history.replaceState({}, '', url.toString());
-        // Fire-and-forget: save OM file to Google Drive document storage
-        const driveFormData = new FormData();
-        driveFormData.append('file', file);
-        driveFormData.append('deal_id', String(created.id));
-        driveFormData.append('document_type', 'OM');
-        fetch('/api/v1/documents/upload', { method: 'POST', body: driveFormData })
-          .catch(err => console.warn('[OM] Drive upload failed (non-blocking):', err));
+        const driveForm = new FormData();
+        driveForm.append('file', file);
+        driveForm.append('deal_id', String(created.id));
+        driveForm.append('document_type', 'OM');
+        fetch('/api/v1/documents/upload', { method: 'POST', body: driveForm }).catch(() => {});
       }
     } catch (err) {
-      setOmError(err instanceof Error ? err.message : 'Failed to extract data from OM');
+      setOmError(err instanceof Error ? err.message : 'Failed to extract OM data');
     } finally {
       setOmUploading(false);
     }
   };
 
-  /**
-   * Handle Rent Roll upload — extracts unit mix and vacancy via Claude document API
-   */
   const handleRentRollUpload = async (file: File) => {
     setRrUploading(true);
     setRrError(null);
-    setRrSuccess(false);
     try {
-      const data = await scrapingApi.extractRentRollFromFile(file, currentDealId ?? undefined);
-      console.log('[Rent Roll extraction result]', JSON.stringify(data, null, 2));
+      const formData = new FormData();
+      formData.append('file', file);
+      if (currentDealId) formData.append('deal_id', String(currentDealId));
+      const res = await fetch('/api/v2/underwriting/extract-rent-roll', { method: 'POST', body: formData });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || 'Extraction failed');
+      const data = json.data;
 
-      if (data.numUnits) setTotalUnits(data.numUnits);
-      if (data.unitMix && data.unitMix.length > 0) {
-        setUnitMix(data.unitMix);
-        const totalUnitsInMix = data.unitMix.reduce((sum, u) => sum + u.count, 0);
-        if (totalUnitsInMix > 0) {
-          const weightedRent = data.unitMix.reduce((sum, u) => sum + u.askingRent * u.count, 0) / totalUnitsInMix;
-          setAvgMonthlyRent(Math.round(weightedRent));
-        }
+      if (data.unitMix?.length > 0) {
+        setUnitMix(data.unitMix.map((u: any) => ({
+          unitType: u.unitType ?? '',
+          count: u.count ?? 0,
+          askingRent: u.askingRent ?? 0,
+          avgSf: u.avgSf ?? 0,
+        })));
       }
-      if (data.vacancyRate != null) setVacancyRate(data.vacancyRate);
-      if (data.badDebtRate != null) setBadDebtRate(data.badDebtRate);
-      if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
-      if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
+      if (data.numUnits) setTotalUnits(data.numUnits);
+      if (data.vacancyRate != null) { const v = data.vacancyRate; setVacancyRates([v, v, v, v, v]); }
+      if (data.badDebtRate != null) { const v = data.badDebtRate; setBadDebtRates([v, v, v, v, v]); }
       if (data.city && data.state) setLocation(`${data.city}, ${data.state}`);
       if (data.zipcode) setZipCode(data.zipcode);
-
-      setRrSuccess(true);
+      if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
+      if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
+      setRrUploaded(true);
     } catch (err) {
-      setRrError(err instanceof Error ? err.message : 'Failed to extract data from Rent Roll');
+      setRrError(err instanceof Error ? err.message : 'Failed to extract Rent Roll data');
     } finally {
       setRrUploading(false);
     }
   };
 
-  /**
-   * Handle T12 Operating Statement upload — extracts expenses and income via Claude document API
-   */
   const handleT12Upload = async (file: File) => {
     setT12Uploading(true);
     setT12Error(null);
     setT12Success(false);
     try {
       const data = await scrapingApi.extractT12FromFile(file, currentDealId ?? undefined);
-      console.log('[T12 extraction result]', JSON.stringify(data, null, 2));
-
       if (data.laundryIncome != null) setOmLaundryIncome(data.laundryIncome);
-      if (data.operatingExpenses != null) setOmOperatingExpenses(data.operatingExpenses);
-      if (data.vacancyRate != null) setVacancyRate(data.vacancyRate);
-      if (data.badDebtRate != null) setBadDebtRate(data.badDebtRate);
+      if (data.vacancyRate != null) { const v = data.vacancyRate; setVacancyRates([v, v, v, v, v]); }
+      if (data.badDebtRate != null) { const v = data.badDebtRate; setBadDebtRates([v, v, v, v, v]); }
       if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
       if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
-
       setT12Success(true);
     } catch (err) {
-      setT12Error(err instanceof Error ? err.message : 'Failed to extract data from T12');
+      setT12Error(err instanceof Error ? err.message : 'Failed to extract T12 data');
     } finally {
       setT12Uploading(false);
     }
   };
 
-  /**
-   * Save current deal
-   */
+  // ── Build export payload ──────────────────────────────────────────────────
+
+  const buildExportPayload = () => {
+    // Consolidate unit mix into at most 4 rows by bedroom count
+    type Bucket = { unitType: string; count: number; rentSum: number; sfSum: number };
+    const buckets: Record<string, Bucket> = {
+      '1BR': { unitType: '1BR', count: 0, rentSum: 0, sfSum: 0 },
+      '2BR': { unitType: '2BR', count: 0, rentSum: 0, sfSum: 0 },
+      '3BR': { unitType: '3BR', count: 0, rentSum: 0, sfSum: 0 },
+      'Other': { unitType: 'Studio/Other', count: 0, rentSum: 0, sfSum: 0 },
+    };
+    for (const u of unitMix) {
+      const t = (u.unitType ?? '').toLowerCase();
+      let key: string;
+      if (t.includes('studio')) key = 'Other';
+      else if (t.includes('1br') || t.includes('1 bed') || /\b1\/\d/.test(t)) key = '1BR';
+      else if (t.includes('2br') || t.includes('2 bed') || /\b2\/\d/.test(t)) key = '2BR';
+      else if (t.includes('3br') || t.includes('3 bed') || /\b3\/\d/.test(t)) key = '3BR';
+      else key = 'Other';
+      buckets[key].count += u.count;
+      buckets[key].rentSum += u.askingRent * u.count;
+      buckets[key].sfSum += (u.avgSf ?? 0) * u.count;
+    }
+    const normalizedMix = ['1BR', '2BR', '3BR', 'Other'].map(k => {
+      const b = buckets[k];
+      return {
+        unitType: b.unitType,
+        count: b.count,
+        askingRent: b.count > 0 ? Math.round(b.rentSum / b.count) : 0,
+        avgSf: b.count > 0 ? Math.round(b.sfSum / b.count) : 0,
+      };
+    });
+
+    return {
+      propertyName: dealName,
+      address: location,
+      acquisitionDate: acquisitionDate || new Date().toISOString().slice(0, 10),
+      holdPeriodYears,
+      bridgePeriodMonths,
+      ttmNoi,
+      purchasePrice,
+      entryCapRate: entryCapRateInput,
+      salesCostPct,
+      lpEquityShare,
+      unitMix: normalizedMix,
+      rubsPct,
+      parkingPerUnitMo: parkingIncomePerUnit,
+      otherIncomePerUnitMo: otherIncomePerUnit,
+      lossToLeaseRate: lossToLeaseRates,
+      vacancyRate: vacancyRates,
+      badDebtRate: badDebtRates,
+      concessionsRate: concessionsRates,
+      nonRevenueUnits: nonRevUnits,
+      managementFeePct,
+      capReservePerUnit,
+      opexPayrollPerUnit,
+      opexAdminPerUnit,
+      opexMarketingPerUnit,
+      opexRmPerUnit,
+      opexContractServicePerUnit,
+      opexTurnoverPerUnit,
+      opexOtherPerUnit,
+      opexInsurancePerUnit,
+      opexUtilitiesPerUnit,
+      opexPropertyTaxPerUnit,
+      seniorLoanAmount,
+      seniorInterestRate,
+      seniorFinancingCostsPct,
+      seniorIoPeriods,
+      refiTermMonths,
+      refiInterestRate,
+      refiFinancingCostsPct,
+      refiIoPeriods,
+      refiTargetDscr,  // ratio (1.25), backend uses float() directly
+      refiTargetDy,
+      refiTargetLtv,
+      rentGrowthRate,
+      opexGrowthRate,
+      exitCapRate,
+      amFeePct,
+      pariPassu,
+      preferredReturnPct,
+      gpPromotePct,
+      assessedValue,
+      assessedValueNextBuyer,
+      assessmentPct,
+      millageRate,
+      specialAssessments,
+    };
+  };
+
+  // ── Save / export ─────────────────────────────────────────────────────────
+
   const handleSaveDeal = async () => {
     setSaving(true);
     try {
-      // Auto-create deal record if one doesn't exist yet (e.g. after OM upload or fresh page)
       let dealId = currentDealId;
       if (!dealId) {
         const created = await dealApi.createDeal({
@@ -909,10 +837,7 @@ const Underwriting = () => {
           location: location || 'Location TBD',
           status: dealStatus,
         });
-        if (!created || !created.id) {
-          alert('Failed to create deal record. Is the backend running?');
-          return;
-        }
+        if (!created?.id) { alert('Failed to create deal record. Is the backend running?'); return; }
         dealId = created.id;
         setCurrentDealId(dealId);
         const url = new URL(window.location.href);
@@ -920,7 +845,6 @@ const Underwriting = () => {
         window.history.replaceState({}, '', url.toString());
       }
 
-      // Auto-fetch market analysis if not yet loaded, so it gets saved with the deal
       let demoData = marketAnalysisDemographics;
       let statsData = marketAnalysisStats;
       if (!demoData && !marketAnalysisLoading) {
@@ -934,119 +858,79 @@ const Underwriting = () => {
         status: dealStatus,
         location,
         purchasePrice,
-        closingCosts,
-        monthlyRent: avgMonthlyRent,
-        loanInterestRate: interestRate * 100,
-        loanTermYears,
-        // Computed metrics
-        monthlyPayment: Math.abs(metrics.annualDebtService / 12),
-        irr: metrics.irr,
-        equityMultiple: metrics.totalReturn,
-        dscrJson: JSON.stringify(
-          metrics.yearlyData
-            .filter((r) => !r.isAcquisition && !r.isExit && r.debtService > 0)
-            .map((r) => ({ year: r.year, label: r.label, dscr: r.noi / r.debtService }))
-        ),
-        // All multifamily-specific assumptions — restored on page refresh
         underwritingJson: JSON.stringify({
-          totalUnits,
-          ltv,
-          vacancyRate,
-          badDebtRate,
-          operatingExpenseRatio,
-          exitCapRate,
-          holdingPeriod,
-          constructionCostPct,
-          constructionCost,
-          closingCostsPct,
-          county,
-          zipCode,
-          yearBuilt,
-          buildingType,
-          numberOfBuildings,
-          amiTarget,
-          gpPartner,
-          // OM-extracted data — persisted so export is correct after page refresh
-          unitMix,
-          omOperatingExpenses: omOperatingExpenses ?? undefined,
-          omLaundryIncome: omLaundryIncome ?? undefined,
-          omRentStabilized: omRentStabilized ?? undefined,
-          omAnnualRentGrowthCap: omAnnualRentGrowthCap ?? undefined,
-          rentGrowthRate,
-          acquisitionDate,
-          lossToLeaseRate,
-          concessionsRate,
-          opexPayrollPerUnit,
-          opexAdminPerUnit,
-          opexMarketingPerUnit,
-          opexRmPerUnit,
-          opexContractServicePerUnit,
-          opexTurnoverPerUnit,
-          opexInsurancePerUnit,
-          opexUtilitiesPerUnit,
-          opexPropertyTaxPerUnit,
-          capexPerUnit,
-          parkingIncomePerUnit,
-          rubsPct,
-          otherIncomePerUnit,
-          refiLtv,
-          refiInterestRate,
-          refiFinancingCostsPct,
-          refiIoPeriods,
-          bridgeLoanTermMonths,
-          refiTermMonths,
-          seniorIoPeriods,
-          seniorFinancingCostsPct,
-          opexGrowthRate,
-          propertyTaxGrowthRate,
-          gpEquitySplitPct,
-          lpEquityShare,
-          interestRate,
-          ttmNoi,
-          nonRevenueUnits,
-          millageRate,
-          specialAssessments,
-          entryCapRateInput,
+          totalUnits, county, zipCode, yearBuilt, buildingType, numberOfBuildings,
+          amiTarget, gpPartner, acquisitionDate, ttmNoi, purchasePrice,
+          holdPeriodYears, bridgePeriodMonths, entryCapRateInput, salesCostPct,
+          unitMix, omLaundryIncome, omRentStabilized, omAnnualRentGrowthCap,
+          vacancyRates, lossToLeaseRates, badDebtRates, concessionsRates, nonRevUnits,
+          managementFeePct, capReservePerUnit,
+          opexPayrollPerUnit, opexAdminPerUnit, opexMarketingPerUnit, opexRmPerUnit,
+          opexContractServicePerUnit, opexTurnoverPerUnit, opexOtherPerUnit,
+          opexInsurancePerUnit, opexUtilitiesPerUnit, opexPropertyTaxPerUnit,
+          rubsPct, parkingIncomePerUnit, otherIncomePerUnit,
+          assessedValue, assessedValueNextBuyer, assessmentPct, millageRate, specialAssessments,
+          seniorLoanAmount, seniorInterestRate, seniorFinancingCostsPct, seniorIoPeriods,
+          refiTermMonths, refiInterestRate, refiFinancingCostsPct, refiIoPeriods,
+          refiTargetDscr, refiTargetDy, refiTargetLtv,
+          rentGrowthRate, opexGrowthRate, exitCapRate,
+          lpEquityShare, amFeePct, pariPassu, preferredReturnPct, gpPromotePct,
           marketAnalysisDemographics: demoData ?? undefined,
           marketAnalysisStats: statsData ?? undefined,
         }),
       });
 
-      // Silently link any matching sourcing property by address
+      // Link to sourcing property by address
       try {
         const sourcingProps = await sourcingApi.fetchProperties();
-        console.log('[Sourcing link] Attempting match — location:', location, '| deal ID:', dealId);
-        console.log('[Sourcing link] Sourcing properties:', sourcingProps.map(p => ({ id: p.id, address: p.address, market: p.market, deal_id: p.deal_id })));
-        // Also try address+market combined to handle properties stored without city in the address
         const matchedProp = sourcingProps.find(p =>
-          addressMatch(location, p.address) ||
-          addressMatch(location, `${p.address} ${p.market}`)
+          addressMatch(location, p.address) || addressMatch(location, `${p.address} ${p.market}`)
         );
-        console.log('[Sourcing link] Match result:', matchedProp ? { id: matchedProp.id, address: matchedProp.address, deal_id: matchedProp.deal_id } : 'none');
         if (matchedProp && matchedProp.deal_id !== dealId) {
           await sourcingApi.updateProperty(matchedProp.id, { deal_id: dealId });
-          console.log('[Sourcing link] Updated deal_id →', dealId);
-        } else if (matchedProp) {
-          console.log('[Sourcing link] Already linked (deal_id =', matchedProp.deal_id, ')');
         }
-      } catch (err) { console.warn('[Sourcing link] Error:', err); }
+      } catch { /* ignore */ }
 
-      // Open market analysis panel so results are immediately visible
       setMarketAnalysisOpen(true);
-
       alert('Deal saved successfully!');
-    } catch (error) {
-      console.error('Error saving deal:', error);
+    } catch (err) {
+      console.error('Error saving deal:', err);
       alert('Failed to save deal');
     } finally {
       setSaving(false);
     }
   };
 
-  /**
-   * Fetches market analysis data for the current ZIP code.
-   * Returns the fetched data directly (does not rely on state being updated).
-   */
+  const handleExportExcel = async () => {
+    setExporting(true);
+    try {
+      const body = buildExportPayload();
+      const res = await fetch('/api/v2/underwriting/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any).error || 'Export failed');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${dealName || 'Aequitas'}_Model.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error exporting:', err);
+      alert('Failed to export: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // ── Market Analysis ───────────────────────────────────────────────────────
+
   const fetchMarketAnalysisData = async () => {
     const zip = zipCode.trim();
     if (!zip || zip.length !== 5) return { demographics: null, stats: null };
@@ -1059,11 +943,8 @@ const Underwriting = () => {
       ]);
       const demographics = demoResp.success && demoResp.data ? demoResp.data : null;
       const stats = statsResp.success && statsResp.data ? statsResp.data : null;
-      if (demographics) {
-        setMarketAnalysisDemographics(demographics);
-      } else {
-        setMarketAnalysisError(demoResp.error || 'Failed to fetch demographics');
-      }
+      if (demographics) setMarketAnalysisDemographics(demographics);
+      else setMarketAnalysisError(demoResp.error || 'Failed to fetch demographics');
       if (stats) setMarketAnalysisStats(stats);
       return { demographics, stats };
     } catch {
@@ -1074,14 +955,8 @@ const Underwriting = () => {
     }
   };
 
-  /**
-   * Export deal to Excel (Multifamily Underwriting Model)
-   */
   const handleToggleMarketAnalysis = async () => {
-    if (marketAnalysisOpen) {
-      setMarketAnalysisOpen(false);
-      return;
-    }
+    if (marketAnalysisOpen) { setMarketAnalysisOpen(false); return; }
     setMarketAnalysisOpen(true);
     if (marketAnalysisDemographics || marketAnalysisLoading) return;
     await fetchMarketAnalysisData();
@@ -1114,321 +989,8 @@ const Underwriting = () => {
     }
   };
 
-  const handleExportExcel = async () => {
-    if (!currentDealId) {
-      alert('No deal loaded. Please load a deal first.');
-      return;
-    }
+  // ── Data Room / LOI handlers ──────────────────────────────────────────────
 
-    // Validate required fields
-    const validationErrors: string[] = [];
-    if (!dealName) validationErrors.push('Deal Name is required');
-    if (!location) validationErrors.push('Location is required');
-    if (!county) validationErrors.push('County is required');
-    if (!zipCode) validationErrors.push('ZIP Code is required');
-    if (totalUnits <= 0) validationErrors.push('Total Units must be greater than 0');
-    if (purchasePrice <= 0) validationErrors.push('Purchase Price must be greater than 0');
-    if (avgMonthlyRent <= 0) validationErrors.push('Average Monthly Rent must be greater than 0');
-
-    if (validationErrors.length > 0) {
-      alert('Please fix the following errors before exporting:\n\n' + validationErrors.join('\n'));
-      return;
-    }
-
-    setExporting(true);
-    try {
-      // Consolidate unit mix into exactly 4 bedroom-count buckets: 1BR, 2BR, 3BR, other/studio.
-      // Weighted-average rent and SF by unit count; zero out empty buckets.
-      type Bucket = { unitType: string; count: number; rentSum: number; sfSum: number };
-      const buckets: Record<string, Bucket> = {
-        '1BR': { unitType: '1BR', count: 0, rentSum: 0, sfSum: 0 },
-        '2BR': { unitType: '2BR', count: 0, rentSum: 0, sfSum: 0 },
-        '3BR': { unitType: '3BR', count: 0, rentSum: 0, sfSum: 0 },
-        'other': { unitType: 'Studio/Other', count: 0, rentSum: 0, sfSum: 0 },
-      };
-      for (const u of unitMix) {
-        const t = (u.unitType ?? '').toLowerCase();
-        let key: string;
-        if (t.includes('1br') || t.includes('1 bed') || t.includes('studio')) key = '1BR';
-        else if (t.includes('2br') || t.includes('2 bed')) key = '2BR';
-        else if (t.includes('3br') || t.includes('3 bed')) key = '3BR';
-        else key = 'other';
-        buckets[key].count += u.count;
-        buckets[key].rentSum += u.askingRent * u.count;
-        buckets[key].sfSum += ((u as any).avgSf ?? 0) * u.count;
-      }
-      const normalizedUnitMix = ['1BR', '2BR', '3BR', 'other'].map((key) => {
-        const b = buckets[key];
-        return {
-          unitType: b.unitType,
-          count: b.count,
-          askingRent: b.count > 0 ? b.rentSum / b.count : 0,
-          avgSf: b.count > 0 ? b.sfSum / b.count : 0,
-        };
-      });
-
-      const underwritingData = {
-        // Property info
-        propertyName: dealName,
-        address: location,
-        acquisitionDate: acquisitionDate || new Date().toISOString(),
-
-        // Timeline — send months; backend writes F17, then D48 = '=F17'
-        holdPeriodMonths: holdingPeriod * 12,
-        loanTermMonths: loanTermYears * 12,
-
-        // Valuation
-        ttmNoi,
-        purchasePrice,
-        entryCapRate: metrics.entryCapRate,
-        refiCapRate: exitCapRate,   // default refi cap = exit cap; override in Excel if needed
-        exitCapRate,
-
-        // Unit mix — exactly 4 rows (1BR, 2BR, 3BR, Studio/Other), grouped by bedroom count.
-        unitMix: normalizedUnitMix,
-
-        // Other income
-        rubsPct,                    // fraction of utilities recovered (e.g. 0.675)
-        parkingIncomePerUnit,
-        otherIncomePerUnit,
-
-        // Income adjustments — single value replicated across all 5 year columns
-        lossToLeaseRate,
-        vacancyRate,
-        badDebtRate,
-        concessionsRate,
-        nonRevenueUnits,
-
-        // Senior financing
-        // TODO: expose financingCostsPct in UI (lender origination/points as % of loan)
-        financingCostsPct: 0.01,
-        ltv: ltv / 100,             // state is %, send as decimal
-        interestRate,               // state is already decimal (e.g. 0.065)
-        bridgeLoanTermMonths,
-        seniorIoPeriods,
-        closingCostsPct: closingCostsPct / 100,  // state is %, send as decimal
-
-        // Refi
-        refiTermMonths,
-        refiDebtYield: 0.08,
-        refiLtv,
-        refiInterestRate,
-        refiFinancingCostsPct,
-        refiIoPeriods,
-
-        // Opex $/unit/year
-        opexPayrollPerUnit,
-        opexAdminPerUnit,
-        opexMarketingPerUnit,
-        opexRmPerUnit,
-        opexContractServicePerUnit,
-        opexTurnoverPerUnit,
-        opexOtherPerUnit: 0,        // not tracked in UI
-        opexInsurancePerUnit,
-        opexUtilitiesPerUnit,
-        capexPerUnit,
-
-        // Management fee (decimal)
-        managementFeePct: omOperatingExpenses?.managementFeePct ?? 0.04,
-
-        // Property tax
-        millageRate,
-        specialAssessments,
-
-        // Growth rates — opexGrowthRate and propertyTaxGrowthRate stored as %;
-        // _to_decimal on backend normalizes them. rentGrowthRate is already decimal.
-        rentGrowthRate,
-        opexGrowthRate,             // % → backend _to_decimal → 0.03
-        propertyTaxGrowthRate,      // % → backend _to_decimal → 0.02
-        generalInflationRate: rentGrowthRate,  // drives D105
-
-      };
-
-      await dealApi.exportMultifamilyToExcel(currentDealId, underwritingData);
-    } catch (error) {
-      console.error('Error exporting to Excel:', error);
-      alert('Failed to export to Excel');
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  // CALCULATIONS (Memoized for performance)
-  const metrics = useMemo(() => {
-    const totalProjectCost = purchasePrice + constructionCost + closingCosts;
-    const loanAmount = totalProjectCost * (ltv / 100);
-    const equityRequired = totalProjectCost - loanAmount;
-    const annualDebtService = calculatePMT(interestRate / 12, loanTermYears * 12, loanAmount) * 12 * -1;
-
-    const baseGPR = totalUnits * avgMonthlyRent * 12;
-
-    // Itemized opex — $/unit/year fields summed across all units
-    const opexOtherPerUnit = 0; // not tracked in UI
-    const totalFixedOpex = (
-      opexPayrollPerUnit + opexAdminPerUnit + opexMarketingPerUnit + opexRmPerUnit +
-      opexContractServicePerUnit + opexTurnoverPerUnit + opexOtherPerUnit +
-      opexInsurancePerUnit + opexUtilitiesPerUnit + opexPropertyTaxPerUnit + capexPerUnit
-    ) * totalUnits;
-    const mgmtFeePct = omOperatingExpenses?.managementFeePct ?? 0.025;
-    const hasItemizedOpex = totalFixedOpex > 0;
-
-    // Year 1 summary metrics (no growth applied)
-    const year1LossToLease = baseGPR * (lossToLeaseRate / 100);
-    const year1GPR = baseGPR - year1LossToLease;
-    const year1VacancyLoss = year1GPR * vacancyRate;
-    const year1NRULoss = nonRevenueUnits * avgMonthlyRent * 12;
-    const year1BadDebtLoss = year1GPR * badDebtRate;
-    const year1RubsIncome = (rubsPct / 100) * opexUtilitiesPerUnit * totalUnits;
-    const year1EGI = year1GPR - year1VacancyLoss - year1NRULoss - year1BadDebtLoss + year1RubsIncome;
-    const year1OpEx = hasItemizedOpex
-      ? totalFixedOpex + mgmtFeePct * year1EGI
-      : year1EGI * operatingExpenseRatio;
-    const netOperatingIncome = year1EGI - year1OpEx;
-    const entryCapRate = purchasePrice > 0 ? netOperatingIncome / purchasePrice : 0;
-
-    let validExitCapRate = exitCapRate;
-    if (exitCapRate <= 0 || exitCapRate > 1) validExitCapRate = 0.06;
-
-    // Remaining loan balance after holdingPeriod years
-    const monthlyRate = interestRate / 12;
-    const totalPayments = loanTermYears * 12;
-    const paymentsMade = holdingPeriod * 12;
-    let loanBalance = loanAmount;
-    if (paymentsMade < totalPayments && monthlyRate > 0) {
-      loanBalance = loanAmount *
-        ((Math.pow(1 + monthlyRate, totalPayments) - Math.pow(1 + monthlyRate, paymentsMade)) /
-         (Math.pow(1 + monthlyRate, totalPayments) - 1));
-    } else if (paymentsMade >= totalPayments) {
-      loanBalance = 0;
-    }
-
-    // Build year-by-year table
-    const yearlyData: YearRow[] = [];
-    const irrStream: number[] = [-equityRequired];
-    const annualCashFlows: number[] = [];
-
-    // Year 0 — acquisition (equity out, no operating income)
-    yearlyData.push({
-      year: 0, label: 'Year 0',
-      gpr: 0, vacancyLoss: 0, badDebtLoss: 0, egi: 0, opex: 0, noi: 0,
-      debtService: 0, cfbt: -equityRequired, saleProceeds: 0,
-      isAcquisition: true, isExit: false,
-    });
-
-    const expenseGrowthRate = opexGrowthRate / 100;
-
-    let lastNOI = netOperatingIncome;
-    for (let year = 1; year <= holdingPeriod; year++) {
-      const gprBase = baseGPR * Math.pow(1 + rentGrowthRate, year - 1);
-      const lossToLease = gprBase * (lossToLeaseRate / 100);
-      const gpr = gprBase - lossToLease;
-      const vLoss = gpr * vacancyRate;
-      const nruLoss = nonRevenueUnits * avgMonthlyRent * 12;
-      const bdLoss = gpr * badDebtRate;
-      const rubsIncome = (rubsPct / 100) * opexUtilitiesPerUnit * totalUnits;
-      const egi = gpr - vLoss - nruLoss - bdLoss + rubsIncome;
-      const opex = hasItemizedOpex
-        ? totalFixedOpex * Math.pow(1 + expenseGrowthRate, year - 1) + mgmtFeePct * egi
-        : egi * operatingExpenseRatio;
-      const noi = egi - opex;
-      const cfbt = noi - annualDebtService;
-      lastNOI = noi;
-      annualCashFlows.push(cfbt);
-      irrStream.push(cfbt);
-      yearlyData.push({
-        year, label: `Year ${year}`,
-        gpr, vacancyLoss: vLoss, badDebtLoss: bdLoss, egi, opex, noi,
-        debtService: annualDebtService, cfbt, saleProceeds: 0,
-        isAcquisition: false, isExit: false,
-      });
-    }
-
-    // Exit row — sale reversion
-    const exitNOI = lastNOI * (1 + rentGrowthRate);
-    const salePrice = exitNOI / validExitCapRate;
-    const saleProceeds = salePrice - loanBalance;
-    irrStream[irrStream.length - 1] += saleProceeds;
-
-    yearlyData.push({
-      year: holdingPeriod + 1, label: 'Exit',
-      gpr: 0, vacancyLoss: 0, badDebtLoss: 0, egi: 0, opex: 0, noi: exitNOI,
-      debtService: 0, cfbt: 0, saleProceeds,
-      isAcquisition: false, isExit: true,
-    });
-
-    const irr = calculateIRR(irrStream) * 100;
-    const totalCashReturned = irrStream.slice(1).reduce((a, b) => a + b, 0);
-    const totalReturn = totalCashReturned / equityRequired;
-
-    return {
-      totalProjectCost,
-      loanAmount,
-      equityRequired,
-      netOperatingIncome,
-      entryCapRate,
-      annualDebtService,
-      annualCashFlows,
-      salePrice,
-      irr,
-      totalReturn,
-      yearlyData,
-    };
-  }, [purchasePrice, constructionCost, closingCosts, totalUnits, avgMonthlyRent, operatingExpenseRatio, interestRate, loanTermYears, ltv, exitCapRate, holdingPeriod, vacancyRate, badDebtRate, rentGrowthRate, omOperatingExpenses, opexGrowthRate, opexPayrollPerUnit, opexAdminPerUnit, opexMarketingPerUnit, opexRmPerUnit, opexContractServicePerUnit, opexTurnoverPerUnit, opexInsurancePerUnit, opexUtilitiesPerUnit, opexPropertyTaxPerUnit, capexPerUnit, lossToLeaseRate, nonRevenueUnits, rubsPct]);
-
-  // Returns & Loan Summary derived metrics
-  const returnsMetrics = useMemo(() => {
-    const sellersImpliedCapRate = (purchasePrice > 0 && metrics.netOperatingIncome > 0)
-      ? metrics.netOperatingIncome / purchasePrice
-      : null;
-
-    const askingPricePerUnit = (totalUnits > 0 && purchasePrice > 0) ? purchasePrice / totalUnits : null;
-    const offerPricePerUnit = (totalUnits > 0 && offerPrice > 0) ? offerPrice / totalUnits : null;
-    const exitPricePerUnit = (totalUnits > 0 && exitPrice > 0) ? exitPrice / totalUnits : null;
-
-    // Unlevered cash flows: [-offerPrice, NOI_1, ..., NOI_n + exitPrice]
-    let unleveredIRR: number | null = null;
-    let unleveredEM: number | null = null;
-    const operatingYears = metrics.yearlyData.filter(r => !r.isAcquisition && !r.isExit);
-    if (offerPrice > 0 && exitPrice > 0 && operatingYears.length > 0) {
-      const uCFs: number[] = [-offerPrice];
-      operatingYears.forEach((row, i) => {
-        uCFs.push(i === operatingYears.length - 1 ? row.noi + exitPrice : row.noi);
-      });
-      const irrRaw = calculateIRR(uCFs);
-      if (isFinite(irrRaw) && !isNaN(irrRaw)) unleveredIRR = irrRaw * 100;
-      const totalIn = uCFs.slice(1).reduce((a, b) => a + b, 0);
-      unleveredEM = totalIn / offerPrice;
-    }
-
-    // Levered cash flows rebuilt from yearlyData
-    const exitRow = metrics.yearlyData.find(r => r.isExit);
-    const leveredCFs: number[] = [-metrics.equityRequired];
-    operatingYears.forEach((row, i) => {
-      leveredCFs.push(i === operatingYears.length - 1 ? row.cfbt + (exitRow?.saleProceeds ?? 0) : row.cfbt);
-    });
-
-    let lpIRR: number | null = null, gpIRR: number | null = null;
-    let lpEM: number | null = null, gpEM: number | null = null;
-    if (leveredCFs.length > 1) {
-      const lpShare = lpEquityShare / 100;
-      const gpShare = gpEquityShare / 100;
-      const lpCFs = leveredCFs.map(v => v * lpShare);
-      const gpCFs = leveredCFs.map(v => v * gpShare);
-      const lpRaw = calculateIRR(lpCFs);
-      const gpRaw = calculateIRR(gpCFs);
-      if (isFinite(lpRaw) && !isNaN(lpRaw)) lpIRR = lpRaw * 100;
-      if (isFinite(gpRaw) && !isNaN(gpRaw)) gpIRR = gpRaw * 100;
-      if (lpCFs[0] < 0) lpEM = lpCFs.slice(1).reduce((a, b) => a + b, 0) / Math.abs(lpCFs[0]);
-      if (gpCFs[0] < 0) gpEM = gpCFs.slice(1).reduce((a, b) => a + b, 0) / Math.abs(gpCFs[0]);
-    }
-
-    const seniorLTV = (offerPrice > 0 && seniorLoanAmount > 0) ? (seniorLoanAmount / offerPrice * 100) : null;
-    const refiLTV = (offerPrice > 0 && refiLoanAmount > 0) ? (refiLoanAmount / offerPrice * 100) : null;
-
-    return { sellersImpliedCapRate, askingPricePerUnit, offerPricePerUnit, exitPricePerUnit, unleveredIRR, unleveredEM, lpIRR, gpIRR, lpEM, gpEM, seniorLTV, refiLTV };
-  }, [purchasePrice, totalUnits, offerPrice, exitPrice, lpEquityShare, gpEquityShare, seniorLoanAmount, refiLoanAmount, metrics]);
-
-  // --- Data Room modal handlers ---
   const createDealExecutionRecord = (docs: Omit<DealDocument, 'id' | 'uploadedAt'>[]) => {
     if (!currentDealId) return;
     const documents: DealDocument[] = docs.map(d => ({
@@ -1437,14 +999,8 @@ const Underwriting = () => {
       uploadedAt: new Date().toISOString(),
     }));
     saveDealExecution({
-      dealId: currentDealId,
-      dealName,
-      propertyAddress: location,
-      location,
-      totalUnits,
-      purchasePrice,
-      createdAt: new Date().toISOString(),
-      documents,
+      dealId: currentDealId, dealName, propertyAddress: location, location,
+      totalUnits, purchasePrice, createdAt: new Date().toISOString(), documents,
     });
     setPipelineStatus(currentDealId, 'Data Room Received');
     setPipelineStatusState('Data Room Received');
@@ -1455,12 +1011,8 @@ const Underwriting = () => {
     setShowDataRoomModal(false);
   };
 
-  const handleDataRoomSkip = () => {
-    createDealExecutionRecord([]);
-    setShowDataRoomModal(false);
-  };
+  const handleDataRoomSkip = () => { createDealExecutionRecord([]); setShowDataRoomModal(false); };
 
-  // --- LOI modal handlers ---
   const advanceToLoiExecuted = (loiData: LoiExtractedData, fileName?: string) => {
     if (!currentDealId) return;
     patchDealExecution(currentDealId, { loiData, loiDocumentName: fileName, loiExecutedAt: new Date().toISOString() });
@@ -1468,19 +1020,20 @@ const Underwriting = () => {
     setPipelineStatusState('LOI Executed');
   };
 
-  const handleLoiConfirm = (loiData: LoiExtractedData, fileName?: string) => {
-    advanceToLoiExecuted(loiData, fileName);
-    setShowLoiModal(false);
-  };
+  const handleLoiConfirm = (loiData: LoiExtractedData, fileName?: string) => { advanceToLoiExecuted(loiData, fileName); setShowLoiModal(false); };
+  const handleLoiSkip = () => { advanceToLoiExecuted({}); setShowLoiModal(false); };
 
-  const handleLoiSkip = () => {
-    advanceToLoiExecuted({});
-    setShowLoiModal(false);
-  };
+  // ── Shared input class ────────────────────────────────────────────────────
+
+  const inp = 'w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white';
+  const lbl = 'block text-xs font-medium text-gray-600 mb-1.5';
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="p-4 md:p-6 lg:p-8 bg-gray-50 min-h-screen">
-<div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">Deal Underwriting</h1>
           <p className="text-sm text-gray-500 mt-1">
@@ -1488,1289 +1041,578 @@ const Underwriting = () => {
             {currentDealId && <span className="ml-2 text-blue-600 font-medium">• Deal #{currentDealId} loaded</span>}
           </p>
         </div>
-  <div className="flex gap-2 flex-wrap">
-          {/* Stage-transition button: Data Room Received */}
+        <div className="flex gap-2 flex-wrap">
           {currentDealId && pipelineStatus === 'Analyzing' && (
-            <button
-              onClick={() => setShowDataRoomModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg font-medium text-sm transition-colors"
-            >
-              <Upload size={16} />
-              Data Room Received
+            <button onClick={() => setShowDataRoomModal(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg font-medium text-sm transition-colors">
+              <Upload size={16} /> Data Room Received
             </button>
           )}
-          {/* Stage-transition button: LOI Executed */}
           {currentDealId && pipelineStatus === 'Data Room Received' && (
-            <button
-              onClick={() => setShowLoiModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg font-medium text-sm transition-colors"
-            >
-              <FileText size={16} />
-              LOI Executed
+            <button onClick={() => setShowLoiModal(true)} className="flex items-center gap-2 px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg font-medium text-sm transition-colors">
+              <FileText size={16} /> LOI Executed
             </button>
           )}
-          {/* Link to Deal Execution page once a record exists */}
           {currentDealId && pipelineStatus !== 'Analyzing' && (
-            <Link
-              to={`/deal-execution/${currentDealId}`}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 rounded-lg font-medium text-sm transition-colors"
-            >
-              <TrendingUp size={16} />
-              Deal Execution →
+            <Link to={`/deal-execution/${currentDealId}`} className="flex items-center gap-2 px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 rounded-lg font-medium text-sm transition-colors">
+              <TrendingUp size={16} /> Deal Execution →
             </Link>
           )}
-          <button
-            onClick={handleSaveDeal}
-            disabled={!currentDealId || saving}
-            className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Save size={16} />
-            {saving ? 'Saving...' : 'Save Deal'}
+          <button onClick={handleSaveDeal} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50">
+            <Save size={16} /> {saving ? 'Saving...' : 'Save Deal'}
           </button>
-          <button
-            onClick={handleExportExcel}
-            disabled={!currentDealId || exporting}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Download size={16} />
-            {exporting ? 'Exporting...' : 'Export Excel Model'}
+          <button onClick={handleExportExcel} disabled={exporting} className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50">
+            <Download size={16} /> {exporting ? 'Exporting...' : 'Export Excel Model'}
           </button>
         </div>
       </div>
 
+      {/* Main grid: sidebar + 3-col content */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Deals Sidebar */}
+        {/* Sidebar */}
         <div className="lg:col-span-1">
-          <DealsListSidebar
-            onSelectDeal={handleSelectDeal}
-            activeDealId={currentDealId ?? undefined}
-          />
+          <DealsListSidebar onSelectDeal={handleSelectDeal} activeDealId={currentDealId ?? undefined} />
         </div>
 
-        {/* Main Content - now takes 3 columns */}
-        <div className="lg:col-span-3 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Deal Parameters */}
-        <div className="bg-white rounded-xl p-6 shadow-sm lg:col-span-1">
-          <div className="flex items-center gap-2 mb-4">
-            <FileText size={20} color="#3b82f6" />
-            <h3 className="text-lg font-semibold text-gray-800">Deal Parameters</h3>
-          </div>
+        {/* Content */}
+        <div className="lg:col-span-3 space-y-6">
 
           {/* LOI locked banner */}
           {isUnderwritingLocked && (
-            <div className="flex items-center gap-2 px-3 py-2 mb-4 bg-purple-50 border border-purple-200 rounded-lg">
+            <div className="flex items-center gap-2 px-4 py-3 bg-purple-50 border border-purple-200 rounded-xl">
               <FileText size={14} className="text-purple-600 flex-shrink-0" />
               <p className="text-xs font-medium text-purple-800">LOI executed — underwriting locked.</p>
             </div>
           )}
 
-          <div className={`space-y-5 ${isUnderwritingLocked ? 'pointer-events-none opacity-60' : ''}`}>
+          {/* ── UPLOADS ─────────────────────────────────────────────────────── */}
+          <div className={`bg-white rounded-xl p-5 shadow-sm ${isUnderwritingLocked ? 'pointer-events-none opacity-60' : ''}`}>
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Documents</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-            {/* ── OM Upload — prominent hero zone ── */}
-            <div>
-              {/* "Underwrite a New Deal" button — shown whenever an OM is already loaded */}
-              {!omUploading && unitMix.length > 0 && (
-                <label className="flex items-center justify-center gap-2 w-full mb-3 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg cursor-pointer transition-colors">
-                  <Upload size={15} />
-                  Underwrite a New Deal
-                  <input
-                    type="file"
-                    accept=".pdf"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        if (file.size > 20 * 1024 * 1024) { setOmError('File must be under 20MB'); return; }
-                        handleOmUpload(file);
-                        e.target.value = '';
-                      }
-                    }}
-                  />
-                </label>
-              )}
-
-              {/* Idle: large dashed upload target */}
-              {!omUploading && unitMix.length === 0 && (
-                <label className={`flex flex-col items-center justify-center gap-3 w-full min-h-[148px] border-2 border-dashed rounded-xl transition-colors cursor-pointer px-4 py-7 text-center border-blue-300 bg-blue-50 hover:bg-blue-100 hover:border-blue-400 ${omUploading ? 'pointer-events-none' : ''}`}>
-                  <Upload size={36} className="text-blue-400" />
-                  <div>
-                    <p className="text-sm font-semibold text-blue-700">Upload Offering Memorandum (PDF)</p>
-                    <p className="text-xs text-blue-500 mt-1">Drop file here or click to browse · max 20 MB</p>
-                  </div>
-                  <input
-                    type="file"
-                    accept=".pdf"
-                    className="hidden"
-                    disabled={omUploading}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        if (file.size > 20 * 1024 * 1024) { setOmError('File must be under 20MB'); return; }
-                        handleOmUpload(file);
-                        e.target.value = '';
-                      }
-                    }}
-                  />
-                </label>
-              )}
-
-              {/* Loading state */}
-              {omUploading && (
-                <div className="flex flex-col items-center justify-center gap-3 w-full min-h-[148px] border-2 border-dashed border-blue-300 rounded-xl bg-blue-50 px-4 py-7 text-center">
-                  <Loader2 size={36} className="text-blue-500 animate-spin" />
-                  <div>
-                    <p className="text-sm font-semibold text-blue-700">Analyzing OM…</p>
-                    <p className="text-xs text-blue-500 mt-1">This may take 20–30 seconds</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Success state */}
-              {!omUploading && unitMix.length > 0 && (
-                <div className="flex items-start gap-3 p-4 bg-green-50 border border-green-200 rounded-xl">
-                  <CheckCircle size={20} className="text-green-600 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-green-800">OM Parsed Successfully</p>
-                    <p className="text-xs text-green-700 mt-0.5 truncate">{dealName}</p>
-                    <p className="text-xs text-green-600 mt-0.5">
-                      {totalUnits} total units
-                      {unitMix.map(u => ` · ${u.count}×${u.unitType}`).join('')}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setUnitMix([]);
-                      setOmLaundryIncome(null);
-                      setOmOperatingExpenses(null);
-                      setOmRentStabilized(null);
-                      setOmAnnualRentGrowthCap(null);
-                    }}
-                    className="text-xs text-green-600 hover:text-red-500 transition-colors flex-shrink-0 mt-0.5"
-                  >
-                    Clear
-                  </button>
-                </div>
-              )}
-
-              {omError && <p className="text-xs text-red-600 mt-2">{omError}</p>}
-            </div>
-
-            {/* ── Supporting document uploads: Rent Roll + T12 ── */}
-            <div className="grid grid-cols-2 gap-2">
-
-              {/* Rent Roll */}
+              {/* OM Upload */}
               <div>
-                {!rrUploading && !rrSuccess && (
-                  <label className="flex flex-col items-center justify-center gap-1.5 w-full h-24 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 hover:border-gray-400 transition-colors px-2 py-3 text-center">
-                    <Upload size={18} className="text-gray-400" />
-                    <span className="text-xs font-medium text-gray-600">Rent Roll</span>
-                    <span className="text-[10px] text-gray-400">PDF or Excel</span>
-                    <input
-                      type="file"
-                      accept=".pdf,.xlsx,.xls,.csv"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) { handleRentRollUpload(file); e.target.value = ''; }
-                      }}
-                    />
+                {omUploading ? (
+                  <div className="flex flex-col items-center justify-center gap-3 w-full min-h-[120px] border-2 border-dashed border-blue-300 rounded-xl bg-blue-50 px-4 py-5 text-center">
+                    <Loader2 size={28} className="text-blue-500 animate-spin" />
+                    <p className="text-sm font-semibold text-blue-700">Analyzing OM… (20–30 sec)</p>
+                  </div>
+                ) : omUploaded ? (
+                  <div className="flex items-start gap-3 p-4 bg-green-50 border border-green-200 rounded-xl">
+                    <CheckCircle size={18} className="text-green-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-green-800">OM Parsed</p>
+                      <p className="text-xs text-green-700 mt-0.5 truncate">{dealName}</p>
+                      <p className="text-xs text-green-600">{totalUnits} units · {unitMix.length} types</p>
+                    </div>
+                    <label className="text-xs text-green-600 hover:text-blue-600 cursor-pointer flex-shrink-0">
+                      Re-upload
+                      <input type="file" accept=".pdf" className="hidden" onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) { if (f.size > 20 * 1024 * 1024) { setOmError('File must be under 20MB'); return; } handleOmUpload(f); e.target.value = ''; }
+                      }} />
+                    </label>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center gap-3 w-full min-h-[120px] border-2 border-dashed border-blue-300 rounded-xl bg-blue-50 hover:bg-blue-100 hover:border-blue-400 transition-colors cursor-pointer px-4 py-5 text-center">
+                    <Upload size={28} className="text-blue-400" />
+                    <div>
+                      <p className="text-sm font-semibold text-blue-700">Upload Offering Memorandum</p>
+                      <p className="text-xs text-blue-500 mt-1">PDF · max 20 MB</p>
+                    </div>
+                    <input type="file" accept=".pdf" className="hidden" onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) { if (f.size > 20 * 1024 * 1024) { setOmError('File must be under 20MB'); return; } handleOmUpload(f); e.target.value = ''; }
+                    }} />
                   </label>
                 )}
-                {rrUploading && (
-                  <div className="flex flex-col items-center justify-center gap-1.5 w-full h-24 border-2 border-dashed border-gray-300 rounded-lg px-2 py-3 text-center">
-                    <Loader2 size={18} className="text-gray-500 animate-spin" />
-                    <span className="text-xs text-gray-500">Analyzing…</span>
+                {omError && <p className="text-xs text-red-600 mt-2">{omError}</p>}
+              </div>
+
+              {/* Rent Roll Upload */}
+              <div>
+                {rrUploading ? (
+                  <div className="flex flex-col items-center justify-center gap-2 w-full min-h-[120px] border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 px-4 py-5 text-center">
+                    <Loader2 size={24} className="text-gray-500 animate-spin" />
+                    <p className="text-sm text-gray-500">Analyzing Rent Roll…</p>
                   </div>
+                ) : rrUploaded ? (
+                  <div className="flex items-start gap-3 p-4 bg-green-50 border border-green-200 rounded-xl">
+                    <CheckCircle size={18} className="text-green-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-green-800">Rent Roll Parsed</p>
+                      <p className="text-xs text-green-600">{unitMix.length} unit types · {totalUnits} total</p>
+                    </div>
+                    <label className="text-xs text-green-600 hover:text-blue-600 cursor-pointer flex-shrink-0">
+                      Re-upload
+                      <input type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden" onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) { handleRentRollUpload(f); e.target.value = ''; }
+                      }} />
+                    </label>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center gap-3 w-full min-h-[120px] border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 hover:bg-gray-100 hover:border-gray-400 transition-colors cursor-pointer px-4 py-5 text-center">
+                    <Upload size={28} className="text-gray-400" />
+                    <div>
+                      <p className="text-sm font-semibold text-gray-600">Upload Rent Roll</p>
+                      <p className="text-xs text-gray-400 mt-1">PDF · Excel · CSV</p>
+                    </div>
+                    <input type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden" onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) { handleRentRollUpload(f); e.target.value = ''; }
+                    }} />
+                  </label>
                 )}
-                {!rrUploading && rrSuccess && (
-                  <div className="flex flex-col items-center justify-center gap-1 w-full h-24 border border-green-200 bg-green-50 rounded-lg px-2 py-3 text-center">
-                    <CheckCircle size={18} className="text-green-600" />
-                    <span className="text-xs font-semibold text-green-800">Rent Roll</span>
-                    <span className="text-[10px] text-green-600">Parsed</span>
-                    <button
-                      onClick={() => setRrSuccess(false)}
-                      className="text-[10px] text-green-600 hover:text-red-500 transition-colors"
-                    >
-                      Clear
+                {rrError && <p className="text-xs text-red-600 mt-2">{rrError}</p>}
+              </div>
+
+              {/* T12 */}
+              <div>
+                {t12Uploading ? (
+                  <div className="flex flex-col items-center justify-center gap-2 w-full h-20 border-2 border-dashed border-gray-300 rounded-lg px-3 py-2 text-center">
+                    <Loader2 size={18} className="text-gray-500 animate-spin" />
+                    <span className="text-xs text-gray-500">Analyzing T12…</span>
+                  </div>
+                ) : t12Success ? (
+                  <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <CheckCircle size={16} className="text-green-600" />
+                    <span className="text-xs font-semibold text-green-800">T12 Parsed</span>
+                    <button onClick={() => setT12Success(false)} className="ml-auto text-xs text-green-600 hover:text-red-500">Clear</button>
+                  </div>
+                ) : (
+                  <label className="flex items-center gap-2 w-full h-20 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 hover:border-gray-400 transition-colors px-3 py-2">
+                    <Upload size={16} className="text-gray-400" />
+                    <div>
+                      <p className="text-xs font-medium text-gray-600">T12 Operating Statement</p>
+                      <p className="text-[10px] text-gray-400">PDF or Excel</p>
+                    </div>
+                    <input type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden" onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) { handleT12Upload(f); e.target.value = ''; }
+                    }} />
+                  </label>
+                )}
+                {t12Error && <p className="text-[10px] text-red-600 mt-1">{t12Error}</p>}
+              </div>
+
+              {/* Climate Check */}
+              <div className="flex flex-col justify-center">
+                <ClimateCheckUpload dealId={currentDealId} />
+              </div>
+
+            </div>
+
+            {/* OR → URL import */}
+            <div className="flex flex-col items-center gap-2 mt-4">
+              <div className="flex items-center gap-3 w-full">
+                <div className="flex-1 border-t border-gray-200" />
+                <span className="text-xs text-gray-400 font-medium">OR</span>
+                <div className="flex-1 border-t border-gray-200" />
+              </div>
+              <button onClick={() => setIsImportModalOpen(true)} className="w-full px-3 py-2 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 hover:text-gray-700 transition-colors">
+                Link to URL
+              </button>
+            </div>
+          </div>
+
+          {/* ── DEAL INFO + UNIT MIX ─────────────────────────────────────────── */}
+          <div className={`grid grid-cols-1 lg:grid-cols-2 gap-6 ${isUnderwritingLocked ? 'pointer-events-none opacity-60' : ''}`}>
+
+            {/* Deal Info */}
+            <div className="bg-white rounded-xl p-5 shadow-sm space-y-4">
+              <h3 className="text-sm font-semibold text-gray-700">Deal Info</h3>
+
+              <div><label className={lbl}>Deal Name</label>
+                <input type="text" value={dealName} onChange={e => setDealName(e.target.value)} className={inp} /></div>
+
+              <div><label className={lbl}>Address / Location</label>
+                <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="City, State" className={inp} />
+                {location && (
+                  <div className="flex flex-wrap gap-3 mt-1 items-center">
+                    <Link to={`/sourcing?address=${encodeURIComponent(location)}`} className="text-xs text-blue-500 hover:text-blue-700" tabIndex={-1}>View in Sourcing →</Link>
+                    <Link to={`/regulations?market=${encodeURIComponent(location.split(',').map(p => p.trim()).slice(-2).join(', '))}`} className="text-xs text-indigo-500 hover:text-indigo-700" tabIndex={-1}>Local Regs →</Link>
+                    <button onClick={handleFetchLegislation} disabled={legislationFetching} className="text-xs px-2 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+                      {legislationFetching ? <><Loader2 size={10} className="inline animate-spin mr-1" />Fetching…</> :
+                       legislationStatus === 'saved' ? <><CheckCircle size={10} className="inline text-green-600 mr-1" /><span className="text-green-700">Saved</span></> :
+                       legislationStatus === 'failed' ? 'Failed — Retry' : 'Fetch Legislation'}
                     </button>
                   </div>
                 )}
-                {rrError && <p className="text-[10px] text-red-600 mt-1 leading-tight">{rrError}</p>}
               </div>
 
-              {/* T12 Operating Statement */}
-              <div>
-                {!t12Uploading && !t12Success && (
-                  <label className="flex flex-col items-center justify-center gap-1.5 w-full h-24 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 hover:border-gray-400 transition-colors px-2 py-3 text-center">
-                    <Upload size={18} className="text-gray-400" />
-                    <span className="text-xs font-medium text-gray-600">T12 Operating</span>
-                    <span className="text-[10px] text-gray-400">PDF or Excel</span>
-                    <input
-                      type="file"
-                      accept=".pdf,.xlsx,.xls,.csv"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) { handleT12Upload(file); e.target.value = ''; }
-                      }}
-                    />
-                  </label>
-                )}
-                {t12Uploading && (
-                  <div className="flex flex-col items-center justify-center gap-1.5 w-full h-24 border-2 border-dashed border-gray-300 rounded-lg px-2 py-3 text-center">
-                    <Loader2 size={18} className="text-gray-500 animate-spin" />
-                    <span className="text-xs text-gray-500">Analyzing…</span>
-                  </div>
-                )}
-                {!t12Uploading && t12Success && (
-                  <div className="flex flex-col items-center justify-center gap-1 w-full h-24 border border-green-200 bg-green-50 rounded-lg px-2 py-3 text-center">
-                    <CheckCircle size={18} className="text-green-600" />
-                    <span className="text-xs font-semibold text-green-800">T12 Statement</span>
-                    <span className="text-[10px] text-green-600">Parsed</span>
-                    <button
-                      onClick={() => setT12Success(false)}
-                      className="text-[10px] text-green-600 hover:text-red-500 transition-colors"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                )}
-                {t12Error && <p className="text-[10px] text-red-600 mt-1 leading-tight">{t12Error}</p>}
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={lbl}>Acquisition Date</label>
+                  <input type="date" value={acquisitionDate} onChange={e => setAcquisitionDate(e.target.value)} className={inp} /></div>
+                <div><label className={lbl}>Total Units</label>
+                  <input type="number" value={totalUnits} onChange={e => setTotalUnits(Number(e.target.value) || 0)} className={inp} /></div>
               </div>
 
-            </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={lbl}>Hold Period (yrs)</label>
+                  <input type="number" value={holdPeriodYears} onChange={e => setHoldPeriodYears(Number(e.target.value) || 0)} className={inp} /></div>
+                <div><label className={lbl}>Bridge Period (mo)</label>
+                  <input type="number" value={bridgePeriodMonths} onChange={e => setBridgePeriodMonths(Number(e.target.value) || 0)} className={inp} /></div>
+              </div>
 
-            {/* ── Climate Risk (ClimateCheck PDF) ── */}
-            <div className="pt-1 border-t border-gray-100">
-              <ClimateCheckUpload dealId={currentDealId} />
-            </div>
+              <div><label className={lbl}>Purchase Price ($)</label>
+                <input type="number" value={purchasePrice} onChange={e => setPurchasePrice(Number(e.target.value) || 0)} className={inp} /></div>
 
-            {/* ── OR divider + Link to URL ── */}
-            {!omUploading && (
-              <div className="flex flex-col items-center gap-2">
-                <div className="flex items-center gap-3 w-full">
-                  <div className="flex-1 border-t border-gray-200" />
-                  <span className="text-xs text-gray-400 font-medium">OR</span>
-                  <div className="flex-1 border-t border-gray-200" />
+              <div><label className={lbl}>Trailing 12-Month NOI ($)</label>
+                <input type="number" step="1000" value={ttmNoi} onChange={e => setTtmNoi(Number(e.target.value) || 0)} className={inp} /></div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={lbl}>Entry Cap Rate (%)</label>
+                  {pctInput(entryCapRateInput, setEntryCapRateInput, 0.01)}
                 </div>
-                <button
-                  onClick={() => setIsImportModalOpen(true)}
-                  className="w-full px-3 py-2 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 hover:text-gray-700 transition-colors"
-                >
-                  Link to URL
-                </button>
-                <p className="text-xs text-gray-400 italic">
-                  ⚠ Only works with an active rents API key
-                </p>
+                <div><label className={lbl}>Sales Cost (%)</label>
+                  {pctInput(salesCostPct, setSalesCostPct, 0.1)}
+                </div>
               </div>
-            )}
 
-            {/* ── Unit Mix table (shown after parse) ── */}
-            {unitMix.length > 0 && (
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={lbl}>County</label>
+                  <input type="text" value={county} onChange={e => setCounty(e.target.value)} placeholder="e.g. Sacramento County" className={inp} /></div>
+                <div><label className={lbl}>ZIP Code</label>
+                  <input type="text" value={zipCode} onChange={e => setZipCode(e.target.value)} maxLength={10} className={inp} /></div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={lbl}>Year Built</label>
+                  <input type="number" value={yearBuilt} onChange={e => setYearBuilt(Number(e.target.value) || 1900)} className={inp} /></div>
+                <div><label className={lbl}>Buildings</label>
+                  <input type="number" value={numberOfBuildings} onChange={e => setNumberOfBuildings(Number(e.target.value) || 1)} className={inp} /></div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={lbl}>Building Type</label>
+                  <select value={buildingType} onChange={e => setBuildingType(e.target.value)} className={inp}>
+                    <option>Garden Style</option><option>Mid-Rise</option><option>High-Rise</option><option>Townhome</option><option>Mixed Use</option>
+                  </select>
+                </div>
+                <div><label className={lbl}>AMI Target</label>
+                  <select value={amiTarget} onChange={e => setAmiTarget(e.target.value)} className={inp}>
+                    {amiOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div><label className={lbl}>GP Partner</label>
+                <select value={gpPartner} onChange={e => setGpPartner(e.target.value)} className={inp}>
+                  {gpPartners.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Unit Mix + Other Income */}
+            <div className="bg-white rounded-xl p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-700">Unit Mix</h3>
+                {weightedAvgRent !== null && (
+                  <span className="text-xs text-blue-600 font-semibold">Avg ${weightedAvgRent.toLocaleString()}/mo</span>
+                )}
+              </div>
+
+              {/* Unit mix table */}
               <div className="border border-gray-200 rounded-lg overflow-hidden text-xs">
                 <table className="w-full">
                   <thead>
                     <tr className="bg-gray-50">
                       <th className="text-left px-2 py-1.5 text-gray-500 font-medium">Type</th>
                       <th className="text-right px-2 py-1.5 text-gray-500 font-medium">Units</th>
-                      <th className="text-right px-2 py-1.5 text-gray-500 font-medium">Rent/mo ($)</th>
+                      <th className="text-right px-2 py-1.5 text-gray-500 font-medium">Rent/mo</th>
+                      <th className="text-right px-2 py-1.5 text-gray-500 font-medium">Avg SF</th>
+                      <th className="px-1"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {unitMix.map((row, idx) => (
                       <tr key={idx} className="border-t border-gray-100">
-                        <td className="px-2 py-1.5 text-gray-700">{row.unitType}</td>
                         <td className="px-2 py-1">
-                          <input
-                            type="number"
-                            value={row.count}
-                            onChange={(e) => {
-                              const updated = [...unitMix];
-                              updated[idx] = { ...updated[idx], count: Number(e.target.value) || 0 };
-                              setUnitMix(updated);
-                            }}
-                            className="w-full px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          />
+                          <input type="text" value={row.unitType} onChange={e => { const u = [...unitMix]; u[idx] = { ...u[idx], unitType: e.target.value }; setUnitMix(u); }}
+                            className="w-full px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
                         </td>
-                        <td className="px-2 py-1">
-                          <input
-                            type="number"
-                            value={row.askingRent}
-                            onChange={(e) => {
-                              const updated = [...unitMix];
-                              updated[idx] = { ...updated[idx], askingRent: Number(e.target.value) || 0 };
-                              setUnitMix(updated);
-                            }}
-                            className="w-full px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          />
+                        <td className="px-1 py-1">
+                          <input type="number" value={row.count} onChange={e => { const u = [...unitMix]; u[idx] = { ...u[idx], count: Number(e.target.value) || 0 }; setUnitMix(u); }}
+                            className="w-14 px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        </td>
+                        <td className="px-1 py-1">
+                          <input type="number" value={row.askingRent} onChange={e => { const u = [...unitMix]; u[idx] = { ...u[idx], askingRent: Number(e.target.value) || 0 }; setUnitMix(u); }}
+                            className="w-16 px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        </td>
+                        <td className="px-1 py-1">
+                          <input type="number" value={row.avgSf} onChange={e => { const u = [...unitMix]; u[idx] = { ...u[idx], avgSf: Number(e.target.value) || 0 }; setUnitMix(u); }}
+                            className="w-16 px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        </td>
+                        <td className="px-1">
+                          <button onClick={() => setUnitMix(unitMix.filter((_, i) => i !== idx))} className="text-gray-300 hover:text-red-400 text-xs">✕</button>
                         </td>
                       </tr>
                     ))}
+                    {unitMix.length < 4 && (
+                      <tr className="border-t border-gray-100">
+                        <td colSpan={5} className="px-2 py-1.5">
+                          <button onClick={() => setUnitMix([...unitMix, { unitType: '', count: 0, askingRent: 0, avgSf: 0 }])} className="text-xs text-blue-500 hover:text-blue-700">+ Add row</button>
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
-                {weightedAvgRentFromMix !== null && (
-                  <div className="bg-gray-50 border-t border-gray-200 px-2 py-1.5 flex justify-between">
-                    <span className="text-gray-500 font-medium">Weighted avg</span>
-                    <span className="text-blue-600 font-semibold">${weightedAvgRentFromMix.toLocaleString()}/mo</span>
-                  </div>
-                )}
               </div>
-            )}
 
-            {/* ── Essential fields ── */}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">Deal Name</label>
-              <input
-                type="text"
-                value={dealName}
-                onChange={(e) => setDealName(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">Location</label>
-              <input
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-                placeholder="City, State"
-              />
-              {location && (
-                <div className="flex flex-wrap gap-3 mt-1 items-center">
-                  <Link
-                    to={`/sourcing?address=${encodeURIComponent(location)}`}
-                    className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700"
-                    tabIndex={-1}
-                  >
-                    View in Sourcing →
-                  </Link>
-                  <Link
-                    to={`/regulations?market=${encodeURIComponent(location.split(',').map(p => p.trim()).slice(-2).join(', '))}`}
-                    className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700"
-                    tabIndex={-1}
-                  >
-                    Review Local Regs →
-                  </Link>
-                  <button
-                    onClick={handleFetchLegislation}
-                    disabled={legislationFetching}
-                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 transition-colors"
-                  >
-                    {legislationFetching ? (
-                      <><Loader2 size={10} className="animate-spin" /> Fetching…</>
-                    ) : legislationStatus === 'saved' ? (
-                      <><CheckCircle size={10} className="text-green-600" /> <span className="text-green-700">Legislation Saved</span></>
-                    ) : legislationStatus === 'failed' ? (
-                      'Failed — Retry'
-                    ) : (
-                      'Fetch Relevant Legislation'
-                    )}
+              {/* Other income */}
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Other Income</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className={lbl}>RUBS (% of utilities)</label>
+                    {pctInput(rubsPct, setRubsPct, 1)}
+                  </div>
+                  <div><label className={lbl}>Parking ($/unit/mo)</label>
+                    <input type="number" value={parkingIncomePerUnit} onChange={e => setParkingIncomePerUnit(Number(e.target.value) || 0)} className={inp} /></div>
+                </div>
+                <div className="mt-3"><label className={lbl}>Other Income ($/unit/mo)</label>
+                  <input type="number" value={otherIncomePerUnit} onChange={e => setOtherIncomePerUnit(Number(e.target.value) || 0)} className={inp} /></div>
+              </div>
+
+              {/* Rent comps */}
+              {comparables.length > 0 && (
+                <div className="border-t border-gray-100 pt-3">
+                  <button onClick={() => setShowComparables(!showComparables)} className="text-xs text-blue-500 hover:text-blue-700">
+                    {showComparables ? 'Hide' : 'View'} {comparables.length} Rent Comps
                   </button>
+                  {currentMortgageRate && !loadingRates && (
+                    <span className="ml-3 text-xs text-green-600">30-yr: {currentMortgageRate.toFixed(2)}% (FRED · {new Date(rateLastUpdated).toLocaleDateString()})</span>
+                  )}
                 </div>
               )}
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">Purchase Price ($)</label>
-              <input
-                type="number"
-                value={purchasePrice}
-                onChange={(e) => {
-                  const price = Number(e.target.value) || 0;
-                  setPurchasePrice(price);
-                  setConstructionCost(price * (constructionCostPct / 100));
-                  setClosingCosts(price * (closingCostsPct / 100));
-                }}
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">Trailing NOI (TTM) ($)</label>
-              <input
-                type="number"
-                step="1000"
-                value={ttmNoi}
-                onChange={(e) => setTtmNoi(Number(e.target.value) || 0)}
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">Total Units</label>
-              <input
-                type="number"
-                value={totalUnits}
-                onChange={(e) => setTotalUnits(Number(e.target.value) || 0)}
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-              />
-            </div>
-
-            {/* Seller's Implied Cap Rate */}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">Seller's Implied Cap Rate</label>
-              <div className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-sm text-gray-600 font-mono">
-                {returnsMetrics.sellersImpliedCapRate !== null
-                  ? `${(returnsMetrics.sellersImpliedCapRate * 100).toFixed(2)}%`
-                  : '—'}
-              </div>
-              <p className="text-[10px] text-gray-400 mt-1">Year 1 NOI ÷ Asking Price</p>
-            </div>
-
-            {/* Your Entry Cap Rate */}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Your Entry Cap Rate (%)</label>
-              <p className="text-[10px] text-gray-400 mb-1.5">What cap rate are you underwriting to?</p>
-              <input
-                type="number"
-                step="0.1"
-                value={entryCapRateInput}
-                onChange={(e) => setEntryCapRateInput(Number(e.target.value) || 0)}
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-              />
-            </div>
-
-            {/* ── Advanced Settings (collapsed) ── */}
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
-              <button
-                onClick={() => setShowAdvanced(!showAdvanced)}
-                className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 text-xs font-medium text-gray-600 hover:bg-gray-100 transition-colors"
-              >
-                Advanced Settings
-                {showAdvanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-              {showAdvanced && (
-                <div className="p-3 space-y-4">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Deal Status</label>
-                    <div className="relative">
-                      <select
-                        value={dealStatus}
-                        onChange={(e) => setDealStatus(e.target.value as DealStatus)}
-                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white appearance-none cursor-pointer"
-                      >
-                        {Object.entries(DEAL_STATUS_LABELS).map(([value, label]) => (
-                          <option key={value} value={value}>{label}</option>
-                        ))}
-                      </select>
-                      <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1.5">County</label>
-                      <input type="text" value={county} onChange={(e) => setCounty(e.target.value)} placeholder="e.g., Fresno County" className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1.5">ZIP Code</label>
-                      <input type="text" value={zipCode} onChange={(e) => setZipCode(e.target.value)} placeholder="e.g., 93704" maxLength={10} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1.5">Year Built</label>
-                      <input type="number" value={yearBuilt} onChange={(e) => setYearBuilt(Number(e.target.value) || 1900)} min="1800" max={new Date().getFullYear()} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1.5">Buildings</label>
-                      <input type="number" value={numberOfBuildings} onChange={(e) => setNumberOfBuildings(Number(e.target.value) || 1)} min="1" className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Building Type</label>
-                    <select value={buildingType} onChange={(e) => setBuildingType(e.target.value)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white">
-                      <option>Garden Style</option><option>Mid-Rise</option><option>High-Rise</option><option>Townhome</option><option>Mixed Use</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Construction Cost % <span className="text-gray-400">(Default: 10%)</span></label>
-                    <input type="number" step="0.1" value={constructionCostPct} onChange={(e) => { const pct = Number(e.target.value) || 0; setConstructionCostPct(pct); setConstructionCost(purchasePrice * (pct / 100)); }} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Construction Cost ($) <span className="text-gray-400 italic">– Auto-calculated</span></label>
-                    <input type="number" value={constructionCost} onChange={(e) => setConstructionCost(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Closing Costs % <span className="text-gray-400">(Default: 3%)</span></label>
-                    <input type="number" step="0.1" value={closingCostsPct} onChange={(e) => { const pct = Number(e.target.value) || 0; setClosingCostsPct(pct); setClosingCosts(purchasePrice * (pct / 100)); }} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Closing Costs ($) <span className="text-gray-400 italic">– Auto-calculated</span></label>
-                    <input type="number" value={closingCosts} onChange={(e) => setClosingCosts(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-xs font-medium text-gray-600">Average Monthly Rent ($)</label>
-                      {rentEstimate && !loadingRentEstimate && rentEstimate.estimatedRent && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-green-600 font-medium flex items-center gap-1"><TrendingUp size={12} />RentCast: ${Math.round(rentEstimate.estimatedRent).toLocaleString()}</span>
-                          <button onClick={() => setAvgMonthlyRent(Math.round(rentEstimate.estimatedRent!))} className="text-xs text-blue-600 hover:text-blue-700 font-medium underline">Use</button>
-                          {comparables.length > 0 && <button onClick={() => setShowComparables(!showComparables)} className="text-xs text-blue-600 hover:text-blue-700 font-medium underline">{showComparables ? 'Hide' : 'View'} Comps</button>}
-                        </div>
-                      )}
-                    </div>
-                    <input type="number" value={avgMonthlyRent} onChange={(e) => setAvgMonthlyRent(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                    {loadingRentEstimate && <p className="text-xs text-gray-400 mt-1">Loading market estimate...</p>}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Operating Expense Ratio (%)</label>
-                    <input type="number" value={operatingExpenseRatio * 100} onChange={(e) => setOperatingExpenseRatio((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Vacancy Rate (%)</label>
-                    <input type="number" step="0.1" value={vacancyRate * 100} onChange={(e) => setVacancyRate((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Bad Debt / Loss to Lease (%)</label>
-                    <input type="number" step="0.1" value={badDebtRate * 100} onChange={(e) => setBadDebtRate((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Non-Revenue Units</label>
-                    <input type="number" step="1" value={nonRevenueUnits} onChange={(e) => setNonRevenueUnits(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-xs font-medium text-gray-600">Interest Rate (%)</label>
-                      {currentMortgageRate && !loadingRates && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-green-600 font-medium flex items-center gap-1"><TrendingUp size={12} />Market: {currentMortgageRate.toFixed(2)}%</span>
-                          <button onClick={() => setInterestRate(currentMortgageRate / 100)} className="text-xs text-blue-600 hover:text-blue-700 font-medium underline">Use</button>
-                        </div>
-                      )}
-                    </div>
-                    <input type="number" step="0.1" value={interestRate * 100} onChange={(e) => setInterestRate((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                    {currentMortgageRate && !loadingRates && <p className="text-xs text-gray-500 mt-1">30-yr mortgage: {currentMortgageRate.toFixed(2)}% (FRED) · Updated {new Date(rateLastUpdated).toLocaleDateString()}</p>}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">LTV Ratio (%)</label>
-                    <input type="range" min="50" max="90" step="1" value={ltv} onChange={(e) => setLtv(Number(e.target.value))} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
-                    <div className="text-center text-sm font-bold text-blue-600 mt-1">{ltv}%</div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Loan Term (Years)</label>
-                    <input type="number" value={loanTermYears} onChange={(e) => setLoanTermYears(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Exit Cap Rate (%)</label>
-                    <input type="number" step="0.1" value={exitCapRate * 100} onChange={(e) => setExitCapRate((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Annual Rent Growth (%)</label>
-                    <input type="number" step="0.1" value={rentGrowthRate * 100} onChange={(e) => setRentGrowthRate((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Holding Period (Years)</label>
-                    <input type="number" value={holdingPeriod} onChange={(e) => setHoldingPeriod(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">AMI Target</label>
-                    <div className="relative">
-                      <select value={amiTarget} onChange={(e) => setAmiTarget(e.target.value)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white appearance-none cursor-pointer">
-                        {amiOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                      </select>
-                      <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">GP Partner</label>
-                    <div className="relative">
-                      <select value={gpPartner} onChange={(e) => setGpPartner(e.target.value)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white appearance-none cursor-pointer">
-                        {gpPartners.map((p) => <option key={p} value={p}>{p}</option>)}
-                      </select>
-                      <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                    </div>
-                  </div>
-
-                  {/* ── Acquisition Date ── */}
-                  <div className="border-t border-gray-100 pt-3">
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Acquisition Date</label>
-                    <input type="date" value={acquisitionDate} onChange={(e) => setAcquisitionDate(e.target.value)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                  </div>
-
-                  {/* ── Income Adjustments ── */}
-                  <div className="border-t border-gray-100 pt-3">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Income Adjustments</p>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Loss to Lease (%)</label>
-                        <input type="number" step="0.1" value={lossToLeaseRate * 100} onChange={(e) => setLossToLeaseRate((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Concessions (%)</label>
-                        <input type="number" step="0.1" value={concessionsRate * 100} onChange={(e) => setConcessionsRate((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Opex Growth Rate (%/yr)</label>
-                        <input type="number" step="0.1" value={opexGrowthRate} onChange={(e) => setOpexGrowthRate(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Property Tax Growth Rate (%/yr)</label>
-                        <input type="number" step="0.1" value={propertyTaxGrowthRate} onChange={(e) => setPropertyTaxGrowthRate(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ── Property Tax ── */}
-                  <div className="border-t border-gray-100 pt-3">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Property Tax</p>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Millage Rate (%)</label>
-                        <input type="number" step="0.001" value={+(millageRate * 100).toFixed(4)} onChange={(e) => setMillageRate((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Special Assessments (Annual) ($)</label>
-                        <input type="number" step="1000" value={specialAssessments} onChange={(e) => setSpecialAssessments(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ── Other Income ── */}
-                  <div className="border-t border-gray-100 pt-3">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Other Income</p>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">RUBS % of Utility Expense</label>
-                        <input type="number" step="0.1" value={rubsPct * 100} onChange={(e) => setRubsPct((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Parking $/unit/mo</label>
-                        <input type="number" step="1" value={parkingIncomePerUnit} onChange={(e) => setParkingIncomePerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Other Income $/unit/mo</label>
-                        <input type="number" step="1" value={otherIncomePerUnit} onChange={(e) => setOtherIncomePerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ── Controllable Opex ── */}
-                  <div className="border-t border-gray-100 pt-3">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Controllable Opex ($/unit/yr)</p>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Payroll</label>
-                        <input type="number" step="1" value={opexPayrollPerUnit} onChange={(e) => setOpexPayrollPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Admin</label>
-                        <input type="number" step="1" value={opexAdminPerUnit} onChange={(e) => setOpexAdminPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Marketing</label>
-                        <input type="number" step="1" value={opexMarketingPerUnit} onChange={(e) => setOpexMarketingPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Repairs &amp; Maintenance</label>
-                        <input type="number" step="1" value={opexRmPerUnit} onChange={(e) => setOpexRmPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Contract Services</label>
-                        <input type="number" step="1" value={opexContractServicePerUnit} onChange={(e) => setOpexContractServicePerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Turnover</label>
-                        <input type="number" step="1" value={opexTurnoverPerUnit} onChange={(e) => setOpexTurnoverPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ── Non-controllable Opex ── */}
-                  <div className="border-t border-gray-100 pt-3">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Non-controllable Opex ($/unit/yr)</p>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Insurance</label>
-                        <input type="number" step="1" value={opexInsurancePerUnit} onChange={(e) => setOpexInsurancePerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Utilities</label>
-                        <input type="number" step="1" value={opexUtilitiesPerUnit} onChange={(e) => setOpexUtilitiesPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Property Tax</label>
-                        <input type="number" step="1" value={opexPropertyTaxPerUnit} onChange={(e) => setOpexPropertyTaxPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ── CapEx ── */}
-                  <div className="border-t border-gray-100 pt-3">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">CapEx</p>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1.5">CapEx $/unit/yr</label>
-                      <input type="number" step="1" value={capexPerUnit} onChange={(e) => setCapexPerUnit(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                    </div>
-                  </div>
-
-                  {/* ── Senior Financing ── */}
-                  <div className="border-t border-gray-100 pt-3">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Senior Financing</p>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Bridge Loan Term (months)</label>
-                        <input type="number" step="1" value={bridgeLoanTermMonths} onChange={(e) => setBridgeLoanTermMonths(Number(e.target.value) || 36)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">IO Periods (months)</label>
-                        <input type="number" step="1" value={seniorIoPeriods} onChange={(e) => setSeniorIoPeriods(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Financing Costs (%)</label>
-                        <input type="number" step="0.1" value={seniorFinancingCostsPct * 100} onChange={(e) => setSeniorFinancingCostsPct((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ── Refinance ── */}
-                  <div className="border-t border-gray-100 pt-3">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Refinance</p>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Refi LTV (%)</label>
-                        <input type="number" step="0.1" value={refiLtv * 100} onChange={(e) => setRefiLtv((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Refi Interest Rate (%)</label>
-                        <input type="number" step="0.1" value={refiInterestRate * 100} onChange={(e) => setRefiInterestRate((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Refi Financing Costs (%)</label>
-                        <input type="number" step="0.1" value={refiFinancingCostsPct * 100} onChange={(e) => setRefiFinancingCostsPct((Number(e.target.value) || 0) / 100)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Refi IO Periods (months)</label>
-                        <input type="number" step="1" value={refiIoPeriods} onChange={(e) => setRefiIoPeriods(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Refi Term (months)</label>
-                        <input type="number" step="1" value={refiTermMonths} onChange={(e) => setRefiTermMonths(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ── GP Equity Split ── */}
-                  <div className="border-t border-gray-100 pt-3">
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">GP Equity Split (%)</label>
-                    <input type="number" step="0.1" value={gpEquitySplitPct} onChange={(e) => setGpEquitySplitPct(Number(e.target.value) || 0)} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
-                  </div>
-
-                </div>
-              )}
-            </div>
-
-            {/* ── Export Excel — full-width CTA at bottom ── */}
-            <button
-              onClick={handleExportExcel}
-              disabled={unitMix.length === 0 || !currentDealId || exporting}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-green-600 hover:bg-green-700 text-white"
-            >
-              <Download size={16} />
-              {exporting ? 'Exporting…' : 'Export to Excel'}
-            </button>
-
-          </div>
-        </div>
-
-        {/* Rental Comparables Section */}
-        {showComparables && comparables.length > 0 && (
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Rental Comparables
-                <span className="text-sm font-normal text-gray-500 ml-2">
-                  ({comparables.length} properties)
-                </span>
-              </h3>
-              <button
-                onClick={() => setShowComparables(false)}
-                className="text-sm text-gray-500 hover:text-gray-700"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {comparables.slice(0, 8).map((comp, index) => (
-                <div
-                  key={index}
-                  className="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors"
-                >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900">{comp.address}</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {comp.bedrooms && `${comp.bedrooms} bed`}
-                        {comp.bathrooms && ` • ${comp.bathrooms} bath`}
-                        {comp.squareFootage && ` • ${comp.squareFootage.toLocaleString()} sqft`}
-                        {comp.distanceMiles && ` • ${comp.distanceMiles.toFixed(2)} mi away`}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      {comp.listedRent && (
-                        <>
-                          <p className="text-lg font-bold text-blue-600">
-                            ${comp.listedRent.toLocaleString()}/mo
-                          </p>
-                          {comp.pricePerSqft && (
-                            <p className="text-xs text-gray-500">
-                              ${comp.pricePerSqft.toFixed(2)}/sqft
-                            </p>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {comparables.length > 8 && (
-              <p className="text-xs text-gray-500 mt-4 text-center">
-                Showing 8 of {comparables.length} comparables
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Right Column */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Metrics Row - 5 Columns */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            <div className="bg-white rounded-xl p-4 shadow-sm">
-              <span className="block text-xs text-gray-500 mb-1">Total Units</span>
-              <span className="block text-xl font-bold text-gray-800">{totalUnits}</span>
-            </div>
-            <div className="bg-white rounded-xl p-4 shadow-sm">
-              <span className="block text-xs text-gray-500 mb-1">Total Project Cost</span>
-              <span className="block text-xl font-bold text-gray-800">${(metrics.totalProjectCost / 1000000).toFixed(1)}M</span>
-            </div>
-            <div className="bg-white rounded-xl p-4 shadow-sm">
-              <span className="block text-xs text-gray-500 mb-1">Entry Cap Rate</span>
-              <span className="block text-xl font-bold text-gray-800">{(metrics.entryCapRate * 100).toFixed(2)}%</span>
-            </div>
-            <div className="bg-white rounded-xl p-4 shadow-sm">
-              <span className="block text-xs text-gray-500 mb-1">10-Year IRR</span>
-              <span className={`block text-xl font-bold ${
-                isNaN(metrics.irr) || !isFinite(metrics.irr)
-                  ? 'text-red-600'
-                  : metrics.irr > 0
-                    ? 'text-green-600'
-                    : 'text-orange-600'
-              }`}>
-                {isNaN(metrics.irr) || !isFinite(metrics.irr)
-                  ? 'Error'
-                  : `${metrics.irr.toFixed(2)}%`}
-              </span>
-              {(isNaN(metrics.irr) || !isFinite(metrics.irr)) && (
-                <p className="text-xs text-red-600 mt-1">Check exit cap rate</p>
-              )}
-            </div>
-            <div className="bg-white rounded-xl p-4 shadow-sm">
-              <span className="block text-xs text-gray-500 mb-1">Equity Multiple</span>
-              <span className="block text-xl font-bold text-green-600">{metrics.totalReturn.toFixed(2)}x</span>
-            </div>
           </div>
 
-          {/* Cash Flow Table — tabbed NOI Waterfall / Levered CF */}
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            {/* Tab bar */}
-            <div className="flex border-b border-gray-200">
-              <button
-                onClick={() => setCashFlowTab('noi')}
-                className={`px-5 py-3 text-sm font-medium transition-colors ${cashFlowTab === 'noi' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                NOI Waterfall
-              </button>
-              <button
-                onClick={() => setCashFlowTab('levered')}
-                className={`px-5 py-3 text-sm font-medium transition-colors ${cashFlowTab === 'levered' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                Levered Cash Flow
-              </button>
-            </div>
-
+          {/* ── INCOME ADJUSTMENTS (5-Year) ──────────────────────────────────── */}
+          <div className={`bg-white rounded-xl p-5 shadow-sm ${isUnderwritingLocked ? 'pointer-events-none opacity-60' : ''}`}>
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Income Adjustments (5-Year)</h3>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-xs border-collapse">
                 <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="sticky left-0 z-10 bg-gray-50 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide min-w-[180px]">
-                      Line Item
-                    </th>
-                    {metrics.yearlyData.map((row) => (
-                      <th key={row.label} className={`px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide whitespace-nowrap min-w-[100px] ${row.isExit ? 'text-purple-600 bg-purple-50' : row.isAcquisition ? 'text-orange-600 bg-orange-50' : 'text-gray-500'}`}>
-                        {row.label}
-                      </th>
+                  <tr className="bg-gray-50">
+                    <th className="text-left px-3 py-2 text-gray-500 font-medium w-36">Adjustment</th>
+                    {[1, 2, 3, 4, 5].map(y => (
+                      <th key={y} className="text-right px-2 py-2 text-gray-500 font-medium w-20">Yr {y}</th>
                     ))}
                   </tr>
                 </thead>
-
-                {cashFlowTab === 'noi' ? (
-                  <tbody className="divide-y divide-gray-100">
-                    {/* Gross Potential Rent */}
-                    <tr className="hover:bg-gray-50">
-                      <td className="sticky left-0 z-10 bg-white hover:bg-gray-50 px-4 py-2.5 text-xs font-medium text-gray-700">Gross Potential Rent</td>
-                      {metrics.yearlyData.map((row) => (
-                        <td key={row.label} className="px-4 py-2.5 text-right text-xs text-gray-700 font-mono">
-                          {row.isAcquisition || row.isExit ? '—' : fmtDollar(row.gpr)}
+                <tbody>
+                  {([
+                    { label: 'Vacancy (%)', vals: vacancyRates, setVals: setVacancyRates, pct: true },
+                    { label: 'Bad Debt (%)', vals: badDebtRates, setVals: setBadDebtRates, pct: true },
+                    { label: 'Loss to Lease (%)', vals: lossToLeaseRates, setVals: setLossToLeaseRates, pct: true },
+                    { label: 'Concessions (%)', vals: concessionsRates, setVals: setConcessionsRates, pct: true },
+                    { label: 'Non-Rev Units', vals: nonRevUnits, setVals: setNonRevUnits, pct: false },
+                  ] as { label: string; vals: number[]; setVals: (v: number[]) => void; pct: boolean }[]).map(({ label, vals, setVals, pct }) => (
+                    <tr key={label} className="border-t border-gray-100">
+                      <td className="px-3 py-1.5 text-gray-600 font-medium">{label}</td>
+                      {vals.map((v, i) => (
+                        <td key={i} className="px-1 py-1">
+                          <input
+                            type="number"
+                            step={pct ? 0.1 : 1}
+                            value={pct ? parseFloat((v * 100).toFixed(3)) : v}
+                            onChange={(e) => {
+                              const updated = [...vals];
+                              updated[i] = pct ? (Number(e.target.value) || 0) / 100 : (Number(e.target.value) || 0);
+                              setVals(updated);
+                            }}
+                            className="w-full px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
                         </td>
                       ))}
                     </tr>
-                    {/* Vacancy Loss */}
-                    <tr className="hover:bg-gray-50">
-                      <td className="sticky left-0 z-10 bg-white hover:bg-gray-50 px-4 py-2.5 text-xs text-gray-500 pl-7">(–) Vacancy Loss</td>
-                      {metrics.yearlyData.map((row) => (
-                        <td key={row.label} className="px-4 py-2.5 text-right text-xs text-red-500 font-mono">
-                          {row.isAcquisition || row.isExit ? '—' : row.vacancyLoss === 0 ? '—' : `($${Math.round(row.vacancyLoss).toLocaleString('en-US')})`}
-                        </td>
-                      ))}
-                    </tr>
-                    {/* EGI */}
-                    <tr className="bg-blue-50/40 hover:bg-blue-50">
-                      <td className="sticky left-0 z-10 bg-blue-50/40 hover:bg-blue-50 px-4 py-2.5 text-xs font-semibold text-gray-700">= Effective Gross Income</td>
-                      {metrics.yearlyData.map((row) => (
-                        <td key={row.label} className="px-4 py-2.5 text-right text-xs font-semibold text-gray-700 font-mono">
-                          {row.isAcquisition || row.isExit ? '—' : fmtDollar(row.egi)}
-                        </td>
-                      ))}
-                    </tr>
-                    {/* OpEx */}
-                    <tr className="hover:bg-gray-50">
-                      <td className="sticky left-0 z-10 bg-white hover:bg-gray-50 px-4 py-2.5 text-xs text-gray-500 pl-7">(–) Operating Expenses</td>
-                      {metrics.yearlyData.map((row) => (
-                        <td key={row.label} className="px-4 py-2.5 text-right text-xs text-red-500 font-mono">
-                          {row.isAcquisition || row.isExit ? '—' : `($${Math.round(row.opex).toLocaleString('en-US')})`}
-                        </td>
-                      ))}
-                    </tr>
-                    {/* NOI */}
-                    <tr className="bg-green-50 border-t-2 border-green-200">
-                      <td className="sticky left-0 z-10 bg-green-50 px-4 py-3 text-xs font-bold text-green-800">= NOI</td>
-                      {metrics.yearlyData.map((row) => (
-                        <td key={row.label} className={`px-4 py-3 text-right text-xs font-bold font-mono ${row.isExit ? 'text-purple-700' : 'text-green-700'}`}>
-                          {row.isAcquisition ? '—' : fmtDollar(row.noi)}
-                        </td>
-                      ))}
-                    </tr>
-                    {/* NOI Margin */}
-                    <tr className="hover:bg-gray-50">
-                      <td className="sticky left-0 z-10 bg-white hover:bg-gray-50 px-4 py-2.5 text-xs text-gray-500 pl-7">NOI Margin</td>
-                      {metrics.yearlyData.map((row) => {
-                        const margin = (!row.isAcquisition && !row.isExit && row.egi > 0)
-                          ? `${(row.noi / row.egi * 100).toFixed(1)}%`
-                          : '—';
-                        return (
-                          <td key={row.label} className="px-4 py-2.5 text-right text-xs text-gray-600 font-mono">
-                            {margin}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  </tbody>
-                ) : (
-                  <tbody className="divide-y divide-gray-100">
-                    {/* Equity Investment (Year 0 only) */}
-                    <tr className="hover:bg-gray-50">
-                      <td className="sticky left-0 z-10 bg-white hover:bg-gray-50 px-4 py-2.5 text-xs font-medium text-gray-700">Equity Investment</td>
-                      {metrics.yearlyData.map((row) => (
-                        <td key={row.label} className="px-4 py-2.5 text-right text-xs font-mono text-red-500">
-                          {row.isAcquisition ? `($${Math.round(metrics.equityRequired).toLocaleString('en-US')})` : '—'}
-                        </td>
-                      ))}
-                    </tr>
-                    {/* NOI */}
-                    <tr className="hover:bg-gray-50">
-                      <td className="sticky left-0 z-10 bg-white hover:bg-gray-50 px-4 py-2.5 text-xs font-medium text-gray-700">NOI</td>
-                      {metrics.yearlyData.map((row) => (
-                        <td key={row.label} className="px-4 py-2.5 text-right text-xs text-gray-700 font-mono">
-                          {row.isAcquisition ? '—' : fmtDollar(row.noi)}
-                        </td>
-                      ))}
-                    </tr>
-                    {/* Debt Service */}
-                    <tr className="hover:bg-gray-50">
-                      <td className="sticky left-0 z-10 bg-white hover:bg-gray-50 px-4 py-2.5 text-xs text-gray-500 pl-7">(–) Debt Service</td>
-                      {metrics.yearlyData.map((row) => (
-                        <td key={row.label} className="px-4 py-2.5 text-right text-xs text-red-500 font-mono">
-                          {row.isAcquisition || row.isExit ? '—' : `($${Math.round(row.debtService).toLocaleString('en-US')})`}
-                        </td>
-                      ))}
-                    </tr>
-                    {/* DSCR */}
-                    <tr className="bg-indigo-50/40 border-t border-indigo-100">
-                      <td className="sticky left-0 z-10 bg-indigo-50/40 px-4 py-2.5 text-xs font-medium text-indigo-700 pl-7">DSCR</td>
-                      {metrics.yearlyData.map((row) => {
-                        const dscr = row.debtService > 0 ? row.noi / row.debtService : null;
-                        return (
-                          <td key={row.label} className={`px-4 py-2.5 text-right text-xs font-mono font-semibold ${!row.isAcquisition && !row.isExit && dscr !== null ? (dscr >= 1.25 ? 'text-green-600' : dscr >= 1.0 ? 'text-orange-500' : 'text-red-600') : 'text-gray-400'}`}>
-                            {!row.isAcquisition && !row.isExit && dscr !== null ? `${dscr.toFixed(2)}x` : '—'}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                    {/* CFBT */}
-                    <tr className="bg-blue-50/40 hover:bg-blue-50">
-                      <td className="sticky left-0 z-10 bg-blue-50/40 hover:bg-blue-50 px-4 py-2.5 text-xs font-semibold text-gray-700">= CFBT</td>
-                      {metrics.yearlyData.map((row) => (
-                        <td key={row.label} className={`px-4 py-2.5 text-right text-xs font-semibold font-mono ${row.isAcquisition ? 'text-red-600' : row.cfbt < 0 ? 'text-orange-600' : 'text-gray-700'}`}>
-                          {row.isAcquisition || row.isExit ? '—' : fmtDollar(row.cfbt)}
-                        </td>
-                      ))}
-                    </tr>
-                    {/* Sale Proceeds */}
-                    <tr className="hover:bg-gray-50">
-                      <td className="sticky left-0 z-10 bg-white hover:bg-gray-50 px-4 py-2.5 text-xs text-gray-500 pl-7">+ Sale Proceeds (net)</td>
-                      {metrics.yearlyData.map((row) => (
-                        <td key={row.label} className="px-4 py-2.5 text-right text-xs text-purple-600 font-mono font-medium">
-                          {row.isExit ? fmtDollar(row.saleProceeds) : '—'}
-                        </td>
-                      ))}
-                    </tr>
-                    {/* Net Cash Flow */}
-                    <tr className="bg-green-50 border-t-2 border-green-200">
-                      <td className="sticky left-0 z-10 bg-green-50 px-4 py-3 text-xs font-bold text-green-800">= Net Cash Flow</td>
-                      {metrics.yearlyData.map((row) => (
-                        <td key={row.label} className={`px-4 py-3 text-right text-xs font-bold font-mono ${
-                          row.isAcquisition ? 'text-red-600'
-                          : row.isExit ? 'text-purple-700'
-                          : row.cfbt < 0 ? 'text-orange-600'
-                          : 'text-green-700'
-                        }`}>
-                          {row.isAcquisition
-                            ? `($${Math.round(metrics.equityRequired).toLocaleString('en-US')})`
-                            : row.isExit
-                              ? fmtDollar(row.saleProceeds)
-                              : fmtDollar(row.cfbt)}
-                        </td>
-                      ))}
-                    </tr>
-                  </tbody>
-                )}
+                  ))}
+                </tbody>
               </table>
             </div>
-
-            {/* IRR + Equity Multiple footer */}
-            <div className="flex gap-6 px-6 py-4 bg-gray-50 border-t border-gray-200">
-              <div>
-                <span className="text-xs text-gray-500">IRR</span>
-                <span className={`block text-lg font-bold ${isNaN(metrics.irr) || !isFinite(metrics.irr) ? 'text-red-600' : metrics.irr > 0 ? 'text-green-600' : 'text-orange-600'}`}>
-                  {isNaN(metrics.irr) || !isFinite(metrics.irr) ? 'Error' : `${metrics.irr.toFixed(2)}%`}
-                </span>
-              </div>
-              <div>
-                <span className="text-xs text-gray-500">Equity Multiple</span>
-                <span className="block text-lg font-bold text-green-600">{metrics.totalReturn.toFixed(2)}x</span>
-              </div>
-              <div>
-                <span className="text-xs text-gray-500">Rent Growth / yr</span>
-                <span className="block text-lg font-bold text-gray-700">{(rentGrowthRate * 100).toFixed(1)}%</span>
-              </div>
-              <div>
-                <span className="text-xs text-gray-500">Exit Cap Rate</span>
-                <span className="block text-lg font-bold text-gray-700">{(exitCapRate * 100).toFixed(1)}%</span>
-              </div>
-            </div>
           </div>
 
-          {/* Returns & Loan Summary */}
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-800">Returns &amp; Loan Summary</h3>
-            </div>
+          {/* ── OPEX + FINANCING ─────────────────────────────────────────────── */}
+          <div className={`grid grid-cols-1 lg:grid-cols-2 gap-6 ${isUnderwritingLocked ? 'pointer-events-none opacity-60' : ''}`}>
 
-            <div className="p-5 space-y-6">
+            {/* Operating Expenses */}
+            <div className="bg-white rounded-xl p-5 shadow-sm space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700">Operating Expenses ($/unit/yr)</h3>
 
-              {/* Price Summary */}
-              <div>
-                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Price Summary</p>
-                <div className="border border-gray-200 rounded-lg overflow-hidden text-xs">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200">
-                        <th className="text-left px-3 py-2 text-gray-500 font-medium"></th>
-                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Asking Price</th>
-                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Offer Price</th>
-                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Exit Price</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      <tr>
-                        <td className="px-3 py-2 text-gray-600 font-medium">Total ($)</td>
-                        <td className="px-3 py-2 text-right text-gray-700 font-mono">{purchasePrice > 0 ? `$${Math.round(purchasePrice).toLocaleString()}` : '—'}</td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="number"
-                            value={offerPrice || ''}
-                            placeholder="0"
-                            onChange={(e) => setOfferPrice(Number(e.target.value) || 0)}
-                            className="w-full px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="number"
-                            value={exitPrice || ''}
-                            placeholder="0"
-                            onChange={(e) => setExitPrice(Number(e.target.value) || 0)}
-                            className="w-full px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          />
-                        </td>
-                      </tr>
-                      <tr className="bg-gray-50">
-                        <td className="px-3 py-2 text-gray-600 font-medium">Per Unit ($/unit)</td>
-                        <td className="px-3 py-2 text-right text-gray-700 font-mono">
-                          {returnsMetrics.askingPricePerUnit !== null ? `$${Math.round(returnsMetrics.askingPricePerUnit).toLocaleString()}` : '—'}
-                        </td>
-                        <td className="px-3 py-2 text-right text-gray-700 font-mono">
-                          {returnsMetrics.offerPricePerUnit !== null ? `$${Math.round(returnsMetrics.offerPricePerUnit).toLocaleString()}` : '—'}
-                        </td>
-                        <td className="px-3 py-2 text-right text-gray-700 font-mono">
-                          {returnsMetrics.exitPricePerUnit !== null ? `$${Math.round(returnsMetrics.exitPricePerUnit).toLocaleString()}` : '—'}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={lbl}>Mgmt Fee (%)</label>
+                  {pctInput(managementFeePct, setManagementFeePct, 0.1)}
                 </div>
+                <div><label className={lbl}>Cap Reserve ($/unit/yr)</label>
+                  <input type="number" value={capReservePerUnit} onChange={e => setCapReservePerUnit(Number(e.target.value) || 0)} className={inp} /></div>
               </div>
 
-              {/* Unlevered Returns */}
-              <div>
-                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Unlevered Returns</p>
+              {([
+                ['Payroll', opexPayrollPerUnit, setOpexPayrollPerUnit],
+                ['Admin', opexAdminPerUnit, setOpexAdminPerUnit],
+                ['Marketing', opexMarketingPerUnit, setOpexMarketingPerUnit],
+                ['R&M', opexRmPerUnit, setOpexRmPerUnit],
+                ['Contract Services', opexContractServicePerUnit, setOpexContractServicePerUnit],
+                ['Turnover', opexTurnoverPerUnit, setOpexTurnoverPerUnit],
+                ['Other', opexOtherPerUnit, setOpexOtherPerUnit],
+                ['Insurance', opexInsurancePerUnit, setOpexInsurancePerUnit],
+                ['Utilities', opexUtilitiesPerUnit, setOpexUtilitiesPerUnit],
+                ['Property Tax', opexPropertyTaxPerUnit, setOpexPropertyTaxPerUnit],
+              ] as [string, number, (v: number) => void][]).map(([label, val, setter]) => (
+                <div key={label}>
+                  <label className={lbl}>{label}</label>
+                  <input type="number" value={val} onChange={e => setter(Number(e.target.value) || 0)} className={inp} />
+                </div>
+              ))}
+
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide pt-2">Property Tax Model</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={lbl}>Assessed Value ($)</label>
+                  <input type="number" step="10000" value={assessedValue} onChange={e => setAssessedValue(Number(e.target.value) || 0)} className={inp} /></div>
+                <div><label className={lbl}>Assessed (Next Buyer) ($)</label>
+                  <input type="number" step="10000" value={assessedValueNextBuyer} onChange={e => setAssessedValueNextBuyer(Number(e.target.value) || 0)} className={inp} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={lbl}>Assessment Ratio (1.0 = 100%)</label>
+                  <input type="number" step="0.01" value={assessmentPct} onChange={e => setAssessmentPct(Number(e.target.value) || 0)} className={inp} /></div>
+                <div><label className={lbl}>Millage Rate (%)</label>
+                  <input type="number" step="0.001" value={+(millageRate * 100).toFixed(4)} onChange={e => setMillageRate((Number(e.target.value) || 0) / 100)} className={inp} /></div>
+              </div>
+              <div><label className={lbl}>Special Assessments (Annual $)</label>
+                <input type="number" step="1000" value={specialAssessments} onChange={e => setSpecialAssessments(Number(e.target.value) || 0)} className={inp} /></div>
+            </div>
+
+            {/* Financing */}
+            <div className="bg-white rounded-xl p-5 shadow-sm space-y-4">
+              <h3 className="text-sm font-semibold text-gray-700">Financing</h3>
+
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Senior / Bridge Loan</p>
+              <div className="space-y-3">
+                <div><label className={lbl}>Loan Amount ($)</label>
+                  <input type="number" step="50000" value={seniorLoanAmount} onChange={e => setSeniorLoanAmount(Number(e.target.value) || 0)} className={inp} />
+                  {currentMortgageRate && !loadingRates && (
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-green-600">FRED 30-yr: {currentMortgageRate.toFixed(2)}%</span>
+                      <button onClick={() => setSeniorInterestRate(currentMortgageRate / 100)} className="text-xs text-blue-600 hover:text-blue-700 underline">Use</button>
+                    </div>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs text-gray-500">Unlevered IRR</p>
-                    <p className={`text-lg font-bold mt-0.5 ${returnsMetrics.unleveredIRR !== null ? (returnsMetrics.unleveredIRR > 0 ? 'text-green-600' : 'text-orange-600') : 'text-gray-400'}`}>
-                      {returnsMetrics.unleveredIRR !== null ? `${returnsMetrics.unleveredIRR.toFixed(2)}%` : '—'}
-                    </p>
+                  <div><label className={lbl}>Interest Rate (%)</label>
+                    {pctInput(seniorInterestRate, setSeniorInterestRate, 0.1)}
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs text-gray-500">Unlevered Equity Multiple</p>
-                    <p className={`text-lg font-bold mt-0.5 ${returnsMetrics.unleveredEM !== null ? 'text-green-600' : 'text-gray-400'}`}>
-                      {returnsMetrics.unleveredEM !== null ? `${returnsMetrics.unleveredEM.toFixed(2)}x` : '—'}
-                    </p>
+                  <div><label className={lbl}>IO Periods (mo)</label>
+                    <input type="number" value={seniorIoPeriods} onChange={e => setSeniorIoPeriods(Number(e.target.value) || 0)} className={inp} /></div>
+                </div>
+                <div><label className={lbl}>Financing Costs (%)</label>
+                  {pctInput(seniorFinancingCostsPct, setSeniorFinancingCostsPct, 0.1)}
+                </div>
+              </div>
+
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide pt-2">Refinance Loan</p>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className={lbl}>Term (months)</label>
+                    <input type="number" value={refiTermMonths} onChange={e => setRefiTermMonths(Number(e.target.value) || 0)} className={inp} /></div>
+                  <div><label className={lbl}>IO Periods (mo)</label>
+                    <input type="number" value={refiIoPeriods} onChange={e => setRefiIoPeriods(Number(e.target.value) || 0)} className={inp} /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className={lbl}>Interest Rate (%)</label>
+                    {pctInput(refiInterestRate, setRefiInterestRate, 0.1)}
+                  </div>
+                  <div><label className={lbl}>Financing Costs (%)</label>
+                    {pctInput(refiFinancingCostsPct, setRefiFinancingCostsPct, 0.1)}
                   </div>
                 </div>
-                <p className="text-[10px] text-gray-400 mt-1">Based on Offer Price outflow and Exit Price terminal value</p>
-              </div>
-
-              {/* LP / GP Returns */}
-              <div>
-                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">LP / GP Returns</p>
-                <div className="border border-gray-200 rounded-lg overflow-hidden text-xs">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200">
-                        <th className="text-left px-3 py-2 text-gray-500 font-medium"></th>
-                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Equity Share (%)</th>
-                        <th className="text-right px-3 py-2 text-gray-500 font-medium">IRR</th>
-                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Equity Multiple</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      <tr>
-                        <td className="px-3 py-2 text-gray-700 font-medium">LP</td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={lpEquityShare}
-                            onChange={(e) => setLpEquityShare(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
-                            className="w-full px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-gray-700">
-                          {returnsMetrics.lpIRR !== null ? `${returnsMetrics.lpIRR.toFixed(2)}%` : '—'}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-gray-700">
-                          {returnsMetrics.lpEM !== null ? `${returnsMetrics.lpEM.toFixed(2)}x` : '—'}
-                        </td>
-                      </tr>
-                      <tr className="bg-gray-50">
-                        <td className="px-3 py-2 text-gray-700 font-medium">GP</td>
-                        <td className="px-3 py-2 text-right font-mono text-gray-600">{gpEquityShare}%</td>
-                        <td className="px-3 py-2 text-right font-mono text-gray-700">
-                          {returnsMetrics.gpIRR !== null ? `${returnsMetrics.gpIRR.toFixed(2)}%` : '—'}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-gray-700">
-                          {returnsMetrics.gpEM !== null ? `${returnsMetrics.gpEM.toFixed(2)}x` : '—'}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                <p className="text-xs font-medium text-gray-500">Sizing Constraints</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div><label className={lbl}>Min DSCR</label>
+                    <input type="number" step="0.01" value={refiTargetDscr} onChange={e => setRefiTargetDscr(Number(e.target.value) || 0)} className={inp} /></div>
+                  <div><label className={lbl}>Min DY (%)</label>
+                    {pctInput(refiTargetDy, setRefiTargetDy, 0.1)}
+                  </div>
+                  <div><label className={lbl}>Max LTV (%)</label>
+                    {pctInput(refiTargetLtv, setRefiTargetLtv, 1)}
+                  </div>
                 </div>
               </div>
-
-              {/* Loan Summary */}
-              <div>
-                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Loan Summary</p>
-                <div className="border border-gray-200 rounded-lg overflow-x-auto text-xs">
-                  <table className="w-full min-w-[600px]">
-                    <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200">
-                        <th className="text-left px-3 py-2 text-gray-500 font-medium">Loan</th>
-                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Amount ($)</th>
-                        <th className="text-right px-3 py-2 text-gray-500 font-medium">LTV</th>
-                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Rate (%)</th>
-                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Term (yrs)</th>
-                        <th className="text-right px-3 py-2 text-gray-500 font-medium">Amort (yrs)</th>
-                        <th className="text-right px-3 py-2 text-gray-500 font-medium">IO (mo)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      <tr>
-                        <td className="px-3 py-2 text-gray-700 font-medium whitespace-nowrap">Senior Acq.</td>
-                        <td className="px-3 py-2">
-                          <input type="number" value={seniorLoanAmount || ''} placeholder="0" onChange={(e) => setSeniorLoanAmount(Number(e.target.value) || 0)} className="w-24 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-gray-600">
-                          {returnsMetrics.seniorLTV !== null ? `${returnsMetrics.seniorLTV.toFixed(1)}%` : '—'}
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" step="0.1" value={seniorInterestRateInput} onChange={(e) => setSeniorInterestRateInput(Number(e.target.value) || 0)} className="w-16 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" value={seniorTermYearsInput} onChange={(e) => setSeniorTermYearsInput(Number(e.target.value) || 0)} className="w-14 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" value={seniorAmortYearsInput} onChange={(e) => setSeniorAmortYearsInput(Number(e.target.value) || 0)} className="w-14 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" value={seniorIOMonthsInput} onChange={(e) => setSeniorIOMonthsInput(Number(e.target.value) || 0)} className="w-14 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                        </td>
-                      </tr>
-                      <tr className="bg-gray-50">
-                        <td className="px-3 py-2 text-gray-700 font-medium whitespace-nowrap">Refinance</td>
-                        <td className="px-3 py-2">
-                          <input type="number" value={refiLoanAmount || ''} placeholder="0" onChange={(e) => setRefiLoanAmount(Number(e.target.value) || 0)} className="w-24 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-gray-600">
-                          {returnsMetrics.refiLTV !== null ? `${returnsMetrics.refiLTV.toFixed(1)}%` : '—'}
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" step="0.1" value={refiInterestRateInput} onChange={(e) => setRefiInterestRateInput(Number(e.target.value) || 0)} className="w-16 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" value={refiTermYearsInput} onChange={(e) => setRefiTermYearsInput(Number(e.target.value) || 0)} className="w-14 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" value={refiAmortYearsInput} onChange={(e) => setRefiAmortYearsInput(Number(e.target.value) || 0)} className="w-14 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" value={refiIOMonthsInput} onChange={(e) => setRefiIOMonthsInput(Number(e.target.value) || 0)} className="w-14 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                <p className="text-[10px] text-gray-400 mt-1">LTV auto-calculates from Loan Amount ÷ Offer Price</p>
-              </div>
-
-              {/* Climate Risk Summary (read-only, only after confirmation) */}
-              <ClimateScoreSummary dealId={currentDealId} />
-
             </div>
           </div>
 
-          {/* Market Analysis Panel */}
+          {/* ── WATERFALL + GROWTH & EXIT ────────────────────────────────────── */}
+          <div className={`grid grid-cols-1 lg:grid-cols-2 gap-6 ${isUnderwritingLocked ? 'pointer-events-none opacity-60' : ''}`}>
+
+            {/* Waterfall */}
+            <div className="bg-white rounded-xl p-5 shadow-sm space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700">Waterfall</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={lbl}>LP Equity Share (%)</label>
+                  {pctInput(lpEquityShare, setLpEquityShare, 1)}
+                </div>
+                <div><label className={lbl}>GP Promote (%)</label>
+                  {pctInput(gpPromotePct, setGpPromotePct, 1)}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={lbl}>Preferred Return (%)</label>
+                  {pctInput(preferredReturnPct, setPreferredReturnPct, 0.5)}
+                </div>
+                <div><label className={lbl}>AM Fee (%)</label>
+                  {pctInput(amFeePct, setAmFeePct, 0.1)}
+                </div>
+              </div>
+              <div><label className={lbl}>Pari Passu (0 = No, 1 = Yes)</label>
+                <select value={pariPassu} onChange={e => setPariPassu(Number(e.target.value))} className={inp}>
+                  <option value={0}>No</option>
+                  <option value={1}>Yes</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Growth & Exit */}
+            <div className="bg-white rounded-xl p-5 shadow-sm space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700">Growth &amp; Exit</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={lbl}>Rent Growth (%/yr)</label>
+                  {pctInput(rentGrowthRate, setRentGrowthRate, 0.1)}
+                </div>
+                <div><label className={lbl}>OpEx Growth (%/yr)</label>
+                  {pctInput(opexGrowthRate, setOpexGrowthRate, 0.1)}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={lbl}>Exit Cap Rate (%)</label>
+                  {pctInput(exitCapRate, setExitCapRate, 0.1)}
+                </div>
+                <div><label className={lbl}>Sales Cost (%)</label>
+                  {pctInput(salesCostPct, setSalesCostPct, 0.1)}
+                </div>
+              </div>
+
+              {/* Summary chips */}
+              <div className="pt-2 grid grid-cols-2 gap-2">
+                {[
+                  ['Purchase Price', purchasePrice > 0 ? `$${(purchasePrice / 1e6).toFixed(2)}M` : '—'],
+                  ['TTM NOI', ttmNoi > 0 ? `$${(ttmNoi / 1e3).toFixed(0)}K` : '—'],
+                  ['Entry Cap', `${(entryCapRateInput * 100).toFixed(2)}%`],
+                  ['Exit Cap', `${(exitCapRate * 100).toFixed(2)}%`],
+                  ['Hold', `${holdPeriodYears} yrs`],
+                  ['Bridge', `${bridgePeriodMonths} mo`],
+                ].map(([label, value]) => (
+                  <div key={label} className="bg-gray-50 rounded-lg p-2.5">
+                    <p className="text-[10px] text-gray-400">{label}</p>
+                    <p className="text-sm font-bold text-gray-800">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* ── CLIMATE RISK SUMMARY ─────────────────────────────────────────── */}
+          <ClimateScoreSummary dealId={currentDealId} />
+
+          {/* ── MARKET ANALYSIS ─────────────────────────────────────────────── */}
           <MarketAnalysisPanelBlock
             isOpen={marketAnalysisOpen}
             loading={marketAnalysisLoading}
@@ -2782,50 +1624,55 @@ const Underwriting = () => {
             onToggle={handleToggleMarketAnalysis}
           />
 
-        </div>
+          {/* ── RENT COMPS ───────────────────────────────────────────────────── */}
+          {showComparables && comparables.length > 0 && (
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Rental Comparables <span className="text-sm font-normal text-gray-500">({comparables.length})</span></h3>
+                <button onClick={() => setShowComparables(false)} className="text-sm text-gray-500 hover:text-gray-700">Close</button>
+              </div>
+              <div className="space-y-3">
+                {comparables.slice(0, 8).map((comp, i) => (
+                  <div key={i} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900">{comp.address}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {comp.bedrooms && `${comp.bedrooms} bed`}
+                          {comp.bathrooms && ` · ${comp.bathrooms} bath`}
+                          {comp.squareFootage && ` · ${comp.squareFootage.toLocaleString()} sqft`}
+                          {comp.distanceMiles && ` · ${comp.distanceMiles.toFixed(2)} mi`}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        {comp.listedRent && <p className="text-lg font-bold text-blue-600">${comp.listedRent.toLocaleString()}/mo</p>}
+                        {comp.pricePerSqft && <p className="text-xs text-gray-500">${comp.pricePerSqft.toFixed(2)}/sqft</p>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Data Room Received Modal */}
+      {/* Modals */}
       {showDataRoomModal && (
-        <DataRoomModal
-          dealName={dealName}
-          onConfirm={handleDataRoomConfirm}
-          onSkip={handleDataRoomSkip}
-          onClose={() => setShowDataRoomModal(false)}
-        />
+        <DataRoomModal dealName={dealName} onConfirm={handleDataRoomConfirm} onSkip={handleDataRoomSkip} onClose={() => setShowDataRoomModal(false)} />
       )}
-
-      {/* LOI Executed Modal */}
       {showLoiModal && (
-        <LoiModal
-          dealName={dealName}
-          onConfirm={handleLoiConfirm}
-          onSkip={handleLoiSkip}
-          onClose={() => setShowLoiModal(false)}
-        />
+        <LoiModal dealName={dealName} onConfirm={handleLoiConfirm} onSkip={handleLoiSkip} onClose={() => setShowLoiModal(false)} />
       )}
-
-      {/* Import Property Modal */}
       {isImportModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="relative w-full max-w-2xl p-6 bg-white rounded-lg shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-800">Link Property URL</h2>
-              <button
-                onClick={() => setIsImportModalOpen(false)}
-                className="p-1 text-gray-400 hover:text-gray-600"
-                aria-label="Close import modal"
-              >
-                ✕
-              </button>
+              <button onClick={() => setIsImportModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600">✕</button>
             </div>
-
             <PropertyUrlInput
-              onDataExtracted={async (data) => {
-                await handleImportCreateDeal(data);
-                setIsImportModalOpen(false);
-              }}
+              onDataExtracted={async (data) => { await handleImportCreateDeal(data); setIsImportModalOpen(false); }}
               onError={(err) => console.warn('Import error:', err)}
             />
           </div>
