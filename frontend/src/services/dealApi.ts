@@ -165,65 +165,6 @@ class DealApiClient {
     }
   }
 
-  /**
-   * Export a deal to Excel (single-family financial model)
-   * Downloads the Excel file directly
-   */
-  async exportDealToExcel(dealId: number, dealName: string): Promise<void> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/deals/${dealId}/export`);
-
-      if (!response.ok) {
-        const error: ApiError = await response.json();
-        throw new Error(error.error || 'Failed to export deal');
-      }
-
-      // Get the blob from the response
-      const blob = await response.blob();
-
-      // Create a download link
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${dealName.replace(/\s+/g, '_')}_financial_model.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-
-      // Cleanup
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
-      console.error(`Error exporting deal ${dealId}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Export multifamily underwriting to Excel.
-   * POST → server returns the Excel file directly as binary.
-   */
-  async exportMultifamilyToExcel(dealId: number, underwritingData: any): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/underwriting/${dealId}/export-excel`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(underwritingData)
-    });
-
-    if (!response.ok) {
-      const error: ApiError = await response.json();
-      throw new Error(error.error || 'Failed to export multifamily underwriting');
-    }
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${underwritingData.propertyName?.replace(/\s+/g, '_') || 'Property'}_Underwriting_${new Date().toISOString().split('T')[0]}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => window.URL.revokeObjectURL(url), 100);
-  }
 }
 
 // Export singleton instance

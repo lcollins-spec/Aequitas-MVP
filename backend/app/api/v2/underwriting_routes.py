@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 TEMPLATE_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-    'Aequitas_Model_-_v14_Template.xlsx',
+    'Aequitas_Model_-_v16_Template.xlsx',
 )
 
 
@@ -38,8 +38,8 @@ def _as_list(val):
     return val if isinstance(val, list) else [val]
 
 
-def _write_5yr(ws, row, value_or_list, col_start=3):
-    """Write a scalar or up to-5-element list into cols col_start … col_start+4.
+def _write_5yr_rows(ws, rows, value_or_list):
+    """Write a scalar or up to-5-element list into the given 5 Inputs rows (col C), one per year.
     Shorter lists are padded by repeating the last element."""
     if isinstance(value_or_list, list) and len(value_or_list) > 0:
         base = list(value_or_list)
@@ -47,8 +47,8 @@ def _write_5yr(ws, row, value_or_list, col_start=3):
     else:
         v = value_or_list[0] if isinstance(value_or_list, list) else value_or_list
         vals = [v] * 5
-    for i, v in enumerate(vals):
-        ws.cell(row=row, column=col_start + i).value = v
+    for row, v in zip(rows, vals):
+        ws.cell(row=row, column=3).value = v
 
 
 def _build_claude_content(file, prompt_text):
@@ -135,9 +135,9 @@ def _handle_extraction_error(e, route_name):
 
 @underwriting_v2_bp.route('/export', methods=['POST'])
 def export():
-    """Fill the v14 Pro Forma template with scalar inputs and return the xlsx file.
-    Python writes ONLY input cells — all formula cells are left untouched so Excel
-    evaluates the model on open."""
+    """Fill the v15 template's Inputs tab with scalar inputs and return the xlsx file.
+    Python writes ONLY the Inputs tab — the Pro Forma tab is 100% formulas that read
+    from Inputs, so Excel evaluates the whole model on open."""
     import openpyxl
 
     if not os.path.exists(TEMPLATE_PATH):
@@ -146,182 +146,180 @@ def export():
     body = request.get_json(silent=True) or {}
 
     wb = openpyxl.load_workbook(TEMPLATE_PATH, keep_links=False)
-    ws = wb['Pro Forma']
+    ws = wb['Inputs']
+
+    def set_row(row, value):
+        ws.cell(row=row, column=3).value = value
 
     # ── Property ────────────────────────────────────────────────────
     if body.get('propertyName'):
-        ws['C4'] = str(body['propertyName'])
+        set_row(81, str(body['propertyName']))
     if body.get('address'):
-        ws['C5'] = str(body['address'])
+        set_row(82, str(body['address']))
 
     # ── Timeline ────────────────────────────────────────────────────
-    # D15: acquisition date — drives exit date formula F18=EOMONTH(D15,B18*12-1)
+    # Row 5: acquisition date — drives exit date formula on Pro Forma
     if body.get('acquisitionDate'):
         try:
             acq = datetime.strptime(str(body['acquisitionDate'])[:10], '%Y-%m-%d').date()
-            ws['D15'] = acq
+            set_row(5, acq)
         except (ValueError, TypeError):
             pass
 
-    # E16: bridge/renovation period months (senior loan term = C47=E16)
+    # Row 7: senior/bridge loan term in months
     bridge = body.get('bridgePeriodMonths') or body.get('bridgeLoanTermMonths')
     if bridge is not None:
-        ws['E16'] = int(bridge)
+        set_row(7, int(bridge))
 
-    # B18: total hold period years — drives F18=EOMONTH(D15,B18*12-1) which sets G18
+    # Row 83: total hold period in years
     hold_yrs = body.get('holdPeriodYears') or body.get('holdingPeriod')
     if hold_yrs is not None:
-        ws['B18'] = int(hold_yrs)
+        set_row(83, int(hold_yrs))
 
     # ── Valuation ───────────────────────────────────────────────────
     ttm_noi = float(body['ttmNoi']) if body.get('ttmNoi') is not None else None
     purchase_price = float(body['purchasePrice']) if body.get('purchasePrice') is not None else None
 
     if ttm_noi is not None:
-        ws['C22'] = ttm_noi
+        set_row(8, ttm_noi)
     if purchase_price is not None:
-        ws['C24'] = purchase_price
+        set_row(84, purchase_price)
 
-    # D23 drives D24 = D22/D23 which is used as the equity basis throughout the model.
-    # Always derive D23 from actual NOI / purchase price so D24 == C24 and equity is accurate.
-    # If either is missing or zero, fall back to the user-entered entry cap rate.
+    # Row 9: Cap Rate Aequitas Valuation — feeds the equity-basis formula on Pro Forma.
+    # Always derive from actual NOI / purchase price so the model's implied basis matches
+    # the confirmed purchase price. Fall back to the user-entered entry cap rate.
     if ttm_noi and purchase_price:
-        ws['D23'] = ttm_noi / purchase_price
+        set_row(9, ttm_noi / purchase_price)
     elif body.get('entryCapRate') is not None:
-        ws['D23'] = _to_decimal(body['entryCapRate'])
+        set_row(9, _to_decimal(body['entryCapRate']))
 
     if body.get('salesCostPct') is not None:
-        ws['E26'] = _to_decimal(body['salesCostPct'])
+        set_row(10, _to_decimal(body['salesCostPct']))
 
-    # D39 = working capital reserve — template has a stale hardcoded value; zero it out.
-    ws['D39'] = 0
+    # Row 85: working capital / reserve dollar amount
+    if body.get('workingCapitalReserveAmount') is not None:
+        set_row(85, float(body['workingCapitalReserveAmount']))
 
     # ── LP / GP split ───────────────────────────────────────────────
     if body.get('lpEquityShare') is not None:
-        ws['F7'] = _to_decimal(body['lpEquityShare'])
+        set_row(86, _to_decimal(body['lpEquityShare']))
 
-    # ── Unit mix (rows 59–62, cols C/D/E = count/rent/avgSf) ────────
+    # ── Unit mix (Inputs rows 96–111, cols B/C/D/E = type/count/rent/avgSf) ──
     unit_mix = body.get('unitMix') or []
-    for i in range(4):
-        row = 59 + i
+    for i in range(16):
+        row = 96 + i
         if i < len(unit_mix):
             u = unit_mix[i]
+            ws.cell(row=row, column=2).value = u.get('unitType') or u.get('type')
             ws.cell(row=row, column=3).value = int(u.get('count') or 0)
             ws.cell(row=row, column=4).value = float(u.get('askingRent') or u.get('rent') or 0)
             ws.cell(row=row, column=5).value = float(u.get('avgSf') or u.get('sqft') or 0)
         else:
+            ws.cell(row=row, column=2).value = None
             ws.cell(row=row, column=3).value = 0
             ws.cell(row=row, column=4).value = 0
             ws.cell(row=row, column=5).value = 0
 
     # ── Other income ────────────────────────────────────────────────
     if body.get('rubsPct') is not None:
-        ws['D66'] = _to_decimal(body['rubsPct'])
+        set_row(87, _to_decimal(body['rubsPct']))
     if body.get('parkingPerUnitMo') is not None:
-        ws['F67'] = float(body['parkingPerUnitMo'])
+        set_row(88, float(body['parkingPerUnitMo']))
     if body.get('otherIncomePerUnitMo') is not None:
-        ws['F68'] = float(body['otherIncomePerUnitMo'])
+        set_row(89, float(body['otherIncomePerUnitMo']))
 
-    # ── Income adjustments (5-year, cols C–G = years 1–5) ───────────
-    _write_5yr_decimal = lambda ws, row, val: _write_5yr(
-        ws, row, [_to_decimal(v) for v in _as_list(val)]
-    )
+    # ── Income adjustments (5-year, one Inputs row per year) ────────
+    def write_5yr_decimal(rows, val):
+        _write_5yr_rows(ws, rows, [_to_decimal(v) for v in _as_list(val)])
+
     if body.get('lossToLeaseRate') is not None:
-        _write_5yr_decimal(ws, 72, body['lossToLeaseRate'])
+        write_5yr_decimal([24, 29, 34, 39, 44], body['lossToLeaseRate'])
     if body.get('vacancyRate') is not None:
-        _write_5yr_decimal(ws, 73, body['vacancyRate'])
+        write_5yr_decimal([25, 30, 35, 40, 45], body['vacancyRate'])
     if body.get('badDebtRate') is not None:
-        _write_5yr_decimal(ws, 74, body['badDebtRate'])
+        write_5yr_decimal([26, 31, 36, 41, 46], body['badDebtRate'])
     if body.get('concessionsRate') is not None:
-        _write_5yr_decimal(ws, 75, body['concessionsRate'])
+        write_5yr_decimal([27, 32, 37, 42, 47], body['concessionsRate'])
     if body.get('nonRevenueUnits') is not None:
-        _write_5yr(ws, 76, _as_list(body['nonRevenueUnits']))
+        _write_5yr_rows(ws, [28, 33, 38, 43, 48], _as_list(body['nonRevenueUnits']))
 
-    # ── Operating expenses ($/unit/yr, col J — except mgmt fee at I54) ──
-    opex_cells = {
-        'opexPayrollPerUnit':         'J42',
-        'opexAdminPerUnit':           'J43',
-        'opexMarketingPerUnit':       'J44',
-        'opexRmPerUnit':              'J45',
-        'opexContractServicePerUnit': 'J46',
-        'opexTurnoverPerUnit':        'J47',
-        'opexOtherPerUnit':           'J48',
-        'opexInsurancePerUnit':       'J52',
-        'opexUtilitiesPerUnit':       'J53',
-        'opexPropertyTaxPerUnit':     'J55',
+    # ── Operating expenses ($/unit/yr) ───────────────────────────────
+    opex_rows = {
+        'opexPayrollPerUnit':         72,
+        'opexAdminPerUnit':           73,
+        'opexMarketingPerUnit':       74,
+        'opexRmPerUnit':              75,
+        'opexContractServicePerUnit': 76,
+        'opexTurnoverPerUnit':        77,
+        'opexOtherPerUnit':           78,
+        'opexInsurancePerUnit':       60,
+        'opexUtilitiesPerUnit':       61,
+        'opexPropertyTaxPerUnit':     63,
     }
-    for field, cell in opex_cells.items():
+    for field, row in opex_rows.items():
         if body.get(field) is not None:
-            ws[cell] = float(body[field])
+            set_row(row, float(body[field]))
 
-    # Management fee pct lives in col I (feeds formula =I54*EGI)
+    # Management fee pct
     if body.get('managementFeePct') is not None:
-        ws['I54'] = _to_decimal(body['managementFeePct'])
+        set_row(62, _to_decimal(body['managementFeePct']))
 
-    # Cap reserve $/unit at C109 (J64 = =C109 by formula)
+    # Cap reserve $/unit
     if body.get('capReservePerUnit') is not None:
-        ws['C109'] = float(body['capReservePerUnit'])
+        set_row(58, float(body['capReservePerUnit']))
 
     # ── Senior / bridge loan ─────────────────────────────────────────
     if body.get('seniorLoanAmount') is not None:
-        ws['D46'] = float(body['seniorLoanAmount'])
+        set_row(67, float(body['seniorLoanAmount']))
     if body.get('seniorInterestRate') is not None:
-        ws['D48'] = _to_decimal(body['seniorInterestRate'])
+        set_row(68, _to_decimal(body['seniorInterestRate']))
     if body.get('seniorFinancingCostsPct') is not None:
-        ws['C49'] = _to_decimal(body['seniorFinancingCostsPct'])
+        set_row(79, _to_decimal(body['seniorFinancingCostsPct']))
     if body.get('seniorIoPeriods') is not None:
-        ws['C50'] = int(body['seniorIoPeriods'])
+        set_row(80, int(body['seniorIoPeriods']))
 
     # ── Refinance loan ───────────────────────────────────────────────
+    # Note: DSCR/DY/LTV sizing targets (F52/F53/F54 on Pro Forma) are fixed template
+    # constants, not per-deal inputs — intentionally not written here.
     if body.get('refiTermMonths') is not None:
-        ws['F47'] = int(body['refiTermMonths'])
+        set_row(69, int(body['refiTermMonths']))
     if body.get('refiInterestRate') is not None:
-        ws['C106'] = _to_decimal(body['refiInterestRate'])
+        set_row(55, _to_decimal(body['refiInterestRate']))
     if body.get('refiFinancingCostsPct') is not None:
-        ws['F49'] = _to_decimal(body['refiFinancingCostsPct'])
+        set_row(70, _to_decimal(body['refiFinancingCostsPct']))
     if body.get('refiIoPeriods') is not None:
-        ws['F50'] = int(body['refiIoPeriods'])
-    # Refi loan sizing constraints — template formula picks the binding one
-    if body.get('refiTargetDscr') is not None:
-        ws['F52'] = float(body['refiTargetDscr'])   # ratio, not %; don't use _to_decimal
-    if body.get('refiTargetDy') is not None:
-        ws['F53'] = _to_decimal(body['refiTargetDy'])
-    if body.get('refiTargetLtv') is not None:
-        ws['F54'] = _to_decimal(body['refiTargetLtv'])
+        set_row(71, int(body['refiIoPeriods']))
 
-    # ── Growth rates (Inputs section, rows 107–110) ─────────────────
+    # ── Growth rates ──────────────────────────────────────────────────
     if body.get('rentGrowthRate') is not None:
-        ws['C107'] = _to_decimal(body['rentGrowthRate'])
+        set_row(56, _to_decimal(body['rentGrowthRate']))
     if body.get('opexGrowthRate') is not None:
-        ws['C108'] = _to_decimal(body['opexGrowthRate'])
+        set_row(57, _to_decimal(body['opexGrowthRate']))
     if body.get('exitCapRate') is not None:
-        ws['C110'] = _to_decimal(body['exitCapRate'])
+        set_row(59, _to_decimal(body['exitCapRate']))
 
     # ── Waterfall ────────────────────────────────────────────────────
     if body.get('amFeePct') is not None:
-        ws['J110'] = _to_decimal(body['amFeePct'])
+        set_row(64, _to_decimal(body['amFeePct']))
     if body.get('pariPassu') is not None:
-        ws['J113'] = int(body['pariPassu'])
+        set_row(90, int(body['pariPassu']))
     if body.get('preferredReturnPct') is not None:
-        ws['J117'] = _to_decimal(body['preferredReturnPct'])
+        set_row(65, _to_decimal(body['preferredReturnPct']))
     if body.get('gpPromotePct') is not None:
-        ws['J126'] = _to_decimal(body['gpPromotePct'])
+        set_row(66, _to_decimal(body['gpPromotePct']))
 
     # ── Property tax ─────────────────────────────────────────────────
     if body.get('assessedValue') is not None:
-        ws['D85'] = float(body['assessedValue'])
+        set_row(49, float(body['assessedValue']))
     if body.get('assessedValueNextBuyer') is not None:
-        ws['E85'] = float(body['assessedValueNextBuyer'])
+        set_row(52, float(body['assessedValueNextBuyer']))
     if body.get('assessmentPct') is not None:
         # 1.0 = 100% (full assessment) — do NOT divide by 100 when already ≤ 1
-        ws['D87'] = _to_decimal(body['assessmentPct'])
+        set_row(51, _to_decimal(body['assessmentPct']))
     if body.get('millageRate') is not None:
-        rate = _to_decimal(body['millageRate'])
-        ws['D88'] = rate
-        ws['E88'] = rate
+        set_row(91, _to_decimal(body['millageRate']))
     if body.get('specialAssessments') is not None:
-        ws['D89'] = float(body['specialAssessments'])
-        ws['E89'] = float(body['specialAssessments'])
+        set_row(92, float(body['specialAssessments']))
 
     # ── Return file ──────────────────────────────────────────────────
     output = io.BytesIO()

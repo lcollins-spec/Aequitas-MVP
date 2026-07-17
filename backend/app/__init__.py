@@ -240,10 +240,6 @@ def create_app(test_config=None):
     from .api.v1.gp_routes import gp_routes
     app.register_blueprint(gp_routes, url_prefix='/api/v1')
 
-    # Excel export API
-    from .api.v1.excel_export_routes import excel_export_bp
-    app.register_blueprint(excel_export_bp, url_prefix='/api/v1')
-
     # Risk assessment API
     from .api.v1.risk_assessment_routes import risk_assessment_bp
     app.register_blueprint(risk_assessment_bp, url_prefix='/api/v1')

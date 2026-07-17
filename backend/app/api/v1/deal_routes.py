@@ -3,7 +3,7 @@ Deal management API routes
 Provides REST endpoints for CRUD operations on deals
 """
 import json
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify
 from app.services.deal_service import DealService
 from app.database import db, DealMetaModel, DealOpPerformanceModel
 
@@ -164,51 +164,6 @@ def delete_deal(deal_id):
             'success': True,
             'message': 'Deal deleted successfully'
         }), 200
-
-    except Exception as e:
-        return jsonify({
-            'error': str(e)
-        }), 500
-
-
-@deals_bp.route('/deals/<int:deal_id>/export', methods=['GET'])
-def export_deal(deal_id):
-    """
-    Export a deal to Excel
-
-    Path Parameters:
-        deal_id: ID of the deal to export
-
-    Returns:
-        Excel file download
-    """
-    try:
-        # Import here to avoid circular dependency
-        from app.services.excel_export_service import ExcelExportService
-
-        deal = DealService.get_deal(deal_id)
-
-        if not deal:
-            return jsonify({
-                'error': 'Deal not found'
-            }), 404
-
-        # Generate Excel file
-        excel_file = ExcelExportService.generate_excel(deal_id)
-
-        if not excel_file:
-            return jsonify({
-                'error': 'Failed to generate Excel file'
-            }), 500
-
-        # Send file as download
-        filename = f"{deal.deal_name.replace(' ', '_')}_financial_model.xlsx"
-        return send_file(
-            excel_file,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True,
-            download_name=filename
-        )
 
     except Exception as e:
         return jsonify({

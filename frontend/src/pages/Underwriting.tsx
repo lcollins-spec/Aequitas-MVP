@@ -19,8 +19,59 @@ import type { DealDocument, LoiExtractedData } from '../types/dealExecution';
 import { scrapingApi } from '../services/scrapingApi';
 import * as sourcingApi from '../services/sourcingApi';
 import ClimateCheckUpload, { ClimateScoreSummary } from '../components/ClimateCheckUpload';
+import ExtractionReviewModal, { type ReviewField } from '../components/ExtractionReviewModal';
 
 type UnitMixRow = { unitType: string; count: number; askingRent: number; avgSf: number };
+
+const OM_REVIEW_FIELDS: ReviewField[] = [
+  { key: 'propertyName', label: 'Property Name', group: 'Property', type: 'text' },
+  { key: 'numUnits', label: 'Total Units', group: 'Property', type: 'number' },
+  { key: 'askingPrice', label: 'Asking Price', group: 'Property', type: 'number' },
+  { key: 'city', label: 'City', group: 'Property', type: 'text' },
+  { key: 'state', label: 'State', group: 'Property', type: 'text' },
+  { key: 'zipcode', label: 'Zip Code', group: 'Property', type: 'text' },
+  { key: 'ttmNoi', label: 'TTM NOI', group: 'Property', type: 'number' },
+
+  { key: 'vacancyRate', label: 'Vacancy Rate', group: 'Vacancy & Credit Loss', type: 'percent' },
+  { key: 'badDebtRate', label: 'Bad Debt Rate', group: 'Vacancy & Credit Loss', type: 'percent' },
+  { key: 'lossToLeaseRate', label: 'Loss to Lease Rate', group: 'Vacancy & Credit Loss', type: 'percent' },
+  { key: 'concessionsRate', label: 'Concessions Rate', group: 'Vacancy & Credit Loss', type: 'percent' },
+
+  { key: 'rubsPct', label: 'RUBS %', group: 'Other Income', type: 'number' },
+  { key: 'parkingIncomePerUnit', label: 'Parking $/Unit/Mo', group: 'Other Income', type: 'number' },
+  { key: 'otherIncomePerUnit', label: 'Other Income $/Unit/Mo', group: 'Other Income', type: 'number' },
+  { key: 'laundryIncome', label: 'Laundry Income (Annual)', group: 'Other Income', type: 'number' },
+
+  { key: 'operatingExpenses.insuranceAnnual', label: 'Insurance (Annual)', group: 'Operating Expenses', type: 'number' },
+  { key: 'operatingExpenses.utilitiesAnnual', label: 'Utilities (Annual)', group: 'Operating Expenses', type: 'number' },
+  { key: 'operatingExpenses.propertyTaxAnnual', label: 'Property Tax (Annual)', group: 'Operating Expenses', type: 'number' },
+  { key: 'operatingExpenses.managementFeePct', label: 'Management Fee', group: 'Operating Expenses', type: 'percent' },
+  { key: 'opexPayrollPerUnit', label: 'Payroll $/Unit', group: 'Operating Expenses', type: 'number' },
+  { key: 'opexAdminPerUnit', label: 'Admin $/Unit', group: 'Operating Expenses', type: 'number' },
+  { key: 'opexMarketingPerUnit', label: 'Marketing $/Unit', group: 'Operating Expenses', type: 'number' },
+  { key: 'opexRmPerUnit', label: 'R&M $/Unit', group: 'Operating Expenses', type: 'number' },
+  { key: 'opexContractServicePerUnit', label: 'Contract Service $/Unit', group: 'Operating Expenses', type: 'number' },
+  { key: 'opexTurnoverPerUnit', label: 'Turnover $/Unit', group: 'Operating Expenses', type: 'number' },
+  { key: 'capexPerUnit', label: 'Capex Reserve $/Unit', group: 'Operating Expenses', type: 'number' },
+  { key: 'opexGrowthRate', label: 'Opex Growth Rate', group: 'Operating Expenses', type: 'percent' },
+
+  { key: 'assessedValue', label: 'Assessed Value', group: 'Property Tax & Deal Structure', type: 'number' },
+  { key: 'assessmentPct', label: 'Assessment %', group: 'Property Tax & Deal Structure', type: 'percent' },
+  { key: 'bridgePeriodMonths', label: 'Bridge Period (Months)', group: 'Property Tax & Deal Structure', type: 'number' },
+  { key: 'lpEquityShare', label: 'LP Equity Share', group: 'Property Tax & Deal Structure', type: 'percent' },
+];
+
+const RENT_ROLL_REVIEW_FIELDS: ReviewField[] = [
+  { key: 'numUnits', label: 'Total Units', group: 'Property', type: 'number' },
+  { key: 'city', label: 'City', group: 'Property', type: 'text' },
+  { key: 'state', label: 'State', group: 'Property', type: 'text' },
+  { key: 'zipcode', label: 'Zip Code', group: 'Property', type: 'text' },
+
+  { key: 'vacancyRate', label: 'Vacancy Rate', group: 'Vacancy & Credit Loss', type: 'percent' },
+  { key: 'badDebtRate', label: 'Bad Debt Rate', group: 'Vacancy & Credit Loss', type: 'percent' },
+
+  { key: 'annualRentGrowthCap', label: 'Annual Rent Growth Cap', group: 'Rent Stabilization', type: 'percent' },
+];
 
 const GP_PARTNERS_FALLBACK = ['Aequitas Housing'];
 
@@ -185,6 +236,9 @@ const Underwriting = () => {
   const [pipelineStatus, setPipelineStatusState] = useState<PipelineStatus>('Analyzing');
   const [showDataRoomModal, setShowDataRoomModal] = useState(false);
   const [showLoiModal, setShowLoiModal] = useState(false);
+  const [pendingOmData, setPendingOmData] = useState<any>(null);
+  const [pendingOmFile, setPendingOmFile] = useState<File | null>(null);
+  const [pendingRentRollData, setPendingRentRollData] = useState<any>(null);
 
   const isUnderwritingLocked =
     pipelineStatus === 'LOI Executed' ||
@@ -582,6 +636,91 @@ const Underwriting = () => {
 
   // ── Upload handlers ───────────────────────────────────────────────────────
 
+  // Applies (possibly user-edited) extracted OM data to the live underwriting form.
+  // Only called after the user confirms the extraction review modal.
+  const applyOmDataToForm = async (data: any, file: File) => {
+    if (data.propertyName) setDealName(data.propertyName);
+    if (data.numUnits) setTotalUnits(data.numUnits);
+    if (data.askingPrice) setPurchasePrice(data.askingPrice);
+    if (data.city && data.state) setLocation(`${data.city}, ${data.state}`);
+    if (data.zipcode) setZipCode(data.zipcode);
+    if (data.ttmNoi != null) setTtmNoi(data.ttmNoi);
+
+    if (data.unitMix?.length > 0) {
+      setUnitMix(data.unitMix.map((u: any) => ({
+        unitType: u.unitType ?? '',
+        count: u.count ?? 0,
+        askingRent: u.askingRent ?? 0,
+        avgSf: u.avgSf ?? 0,
+      })));
+    }
+
+    // Income adjustments
+    if (data.vacancyRate != null) { const v = data.vacancyRate; setVacancyRates([v, v, v, v, v]); }
+    if (data.badDebtRate != null) { const v = data.badDebtRate; setBadDebtRates([v, v, v, v, v]); }
+    if (data.lossToLeaseRate != null) { const v = data.lossToLeaseRate; setLossToLeaseRates([v, v, v, v, v]); }
+    if (data.concessionsRate != null) { const v = data.concessionsRate; setConcessionsRates([v, v, v, v, v]); }
+
+    // Other income (rubsPct from OM is 0-100)
+    if (data.rubsPct != null) setRubsPct(data.rubsPct / 100);
+    if (data.parkingIncomePerUnit != null) setParkingIncomePerUnit(data.parkingIncomePerUnit);
+    if (data.otherIncomePerUnit != null) setOtherIncomePerUnit(data.otherIncomePerUnit);
+
+    // Opex per unit
+    const unitCount = data.numUnits ?? (data.unitMix?.reduce((s: number, u: any) => s + (u.count ?? 0), 0) ?? 0);
+    if (data.operatingExpenses && unitCount > 0) {
+      const oe = data.operatingExpenses;
+      if (oe.insuranceAnnual != null) setOpexInsurancePerUnit(Math.round(oe.insuranceAnnual / unitCount));
+      if (oe.utilitiesAnnual != null) setOpexUtilitiesPerUnit(Math.round(oe.utilitiesAnnual / unitCount));
+      if (oe.propertyTaxAnnual != null) setOpexPropertyTaxPerUnit(Math.round(oe.propertyTaxAnnual / unitCount));
+      if (oe.repairsMaintenanceAnnual != null && data.opexRmPerUnit == null)
+        setOpexRmPerUnit(Math.round(oe.repairsMaintenanceAnnual / unitCount));
+      if (oe.managementFeePct != null) setManagementFeePct(oe.managementFeePct > 1 ? oe.managementFeePct / 100 : oe.managementFeePct);
+    }
+    if (data.opexPayrollPerUnit != null) setOpexPayrollPerUnit(data.opexPayrollPerUnit);
+    if (data.opexAdminPerUnit != null) setOpexAdminPerUnit(data.opexAdminPerUnit);
+    if (data.opexMarketingPerUnit != null) setOpexMarketingPerUnit(data.opexMarketingPerUnit);
+    if (data.opexRmPerUnit != null) setOpexRmPerUnit(data.opexRmPerUnit);
+    if (data.opexContractServicePerUnit != null) setOpexContractServicePerUnit(data.opexContractServicePerUnit);
+    if (data.opexTurnoverPerUnit != null) setOpexTurnoverPerUnit(data.opexTurnoverPerUnit);
+    if (data.capexPerUnit != null) setCapReservePerUnit(data.capexPerUnit);
+    if (data.opexGrowthRate != null) setOpexGrowthRate(data.opexGrowthRate > 1 ? data.opexGrowthRate / 100 : data.opexGrowthRate);
+
+    // Property tax / deal structure
+    if (data.assessedValue != null) setAssessedValue(data.assessedValue);
+    if (data.assessmentPct != null) setAssessmentPct(data.assessmentPct);
+    if (data.bridgePeriodMonths != null) setBridgePeriodMonths(data.bridgePeriodMonths);
+    if (data.lpEquityShare != null) setLpEquityShare(data.lpEquityShare > 1 ? data.lpEquityShare / 100 : data.lpEquityShare);
+
+    // OM extras
+    if (data.laundryIncome != null) setOmLaundryIncome(data.laundryIncome);
+    if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
+    if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
+
+    setOmUploaded(true);
+
+    // Create deal record
+    const dealLocation = data.city && data.state ? `${data.city}, ${data.state}` : data.address || 'Location TBD';
+    const created = await dealApi.createDeal({
+      dealName: data.propertyName || `Deal - ${data.address || dealLocation || 'OM Import'}`,
+      location: dealLocation,
+      status: 'potential',
+      propertyAddress: data.address || undefined,
+      purchasePrice: data.askingPrice || undefined,
+    });
+    if (created?.id) {
+      setCurrentDealId(created.id);
+      const url = new URL(window.location.href);
+      url.searchParams.set('dealId', String(created.id));
+      window.history.replaceState({}, '', url.toString());
+      const driveForm = new FormData();
+      driveForm.append('file', file);
+      driveForm.append('deal_id', String(created.id));
+      driveForm.append('document_type', 'OM');
+      fetch('/api/v1/documents/upload', { method: 'POST', body: driveForm }).catch(() => {});
+    }
+  };
+
   const handleOmUpload = async (file: File) => {
     setOmUploading(true);
     setOmError(null);
@@ -591,93 +730,34 @@ const Underwriting = () => {
       const res = await fetch('/api/v2/underwriting/extract-om', { method: 'POST', body: formData });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || 'Extraction failed');
-      const data = json.data;
-
-      if (data.propertyName) setDealName(data.propertyName);
-      if (data.numUnits) setTotalUnits(data.numUnits);
-      if (data.askingPrice) setPurchasePrice(data.askingPrice);
-      if (data.city && data.state) setLocation(`${data.city}, ${data.state}`);
-      if (data.zipcode) setZipCode(data.zipcode);
-      if (data.ttmNoi != null) setTtmNoi(data.ttmNoi);
-
-      if (data.unitMix?.length > 0) {
-        setUnitMix(data.unitMix.map((u: any) => ({
-          unitType: u.unitType ?? '',
-          count: u.count ?? 0,
-          askingRent: u.askingRent ?? 0,
-          avgSf: u.avgSf ?? 0,
-        })));
-      }
-
-      // Income adjustments
-      if (data.vacancyRate != null) { const v = data.vacancyRate; setVacancyRates([v, v, v, v, v]); }
-      if (data.badDebtRate != null) { const v = data.badDebtRate; setBadDebtRates([v, v, v, v, v]); }
-      if (data.lossToLeaseRate != null) { const v = data.lossToLeaseRate; setLossToLeaseRates([v, v, v, v, v]); }
-      if (data.concessionsRate != null) { const v = data.concessionsRate; setConcessionsRates([v, v, v, v, v]); }
-
-      // Other income (rubsPct from OM is 0-100)
-      if (data.rubsPct != null) setRubsPct(data.rubsPct / 100);
-      if (data.parkingIncomePerUnit != null) setParkingIncomePerUnit(data.parkingIncomePerUnit);
-      if (data.otherIncomePerUnit != null) setOtherIncomePerUnit(data.otherIncomePerUnit);
-
-      // Opex per unit
-      const unitCount = data.numUnits ?? (data.unitMix?.reduce((s: number, u: any) => s + (u.count ?? 0), 0) ?? 0);
-      if (data.operatingExpenses && unitCount > 0) {
-        const oe = data.operatingExpenses;
-        if (oe.insuranceAnnual != null) setOpexInsurancePerUnit(Math.round(oe.insuranceAnnual / unitCount));
-        if (oe.utilitiesAnnual != null) setOpexUtilitiesPerUnit(Math.round(oe.utilitiesAnnual / unitCount));
-        if (oe.propertyTaxAnnual != null) setOpexPropertyTaxPerUnit(Math.round(oe.propertyTaxAnnual / unitCount));
-        if (oe.repairsMaintenanceAnnual != null && data.opexRmPerUnit == null)
-          setOpexRmPerUnit(Math.round(oe.repairsMaintenanceAnnual / unitCount));
-        if (oe.managementFeePct != null) setManagementFeePct(oe.managementFeePct > 1 ? oe.managementFeePct / 100 : oe.managementFeePct);
-      }
-      if (data.opexPayrollPerUnit != null) setOpexPayrollPerUnit(data.opexPayrollPerUnit);
-      if (data.opexAdminPerUnit != null) setOpexAdminPerUnit(data.opexAdminPerUnit);
-      if (data.opexMarketingPerUnit != null) setOpexMarketingPerUnit(data.opexMarketingPerUnit);
-      if (data.opexRmPerUnit != null) setOpexRmPerUnit(data.opexRmPerUnit);
-      if (data.opexContractServicePerUnit != null) setOpexContractServicePerUnit(data.opexContractServicePerUnit);
-      if (data.opexTurnoverPerUnit != null) setOpexTurnoverPerUnit(data.opexTurnoverPerUnit);
-      if (data.capexPerUnit != null) setCapReservePerUnit(data.capexPerUnit);
-      if (data.opexGrowthRate != null) setOpexGrowthRate(data.opexGrowthRate > 1 ? data.opexGrowthRate / 100 : data.opexGrowthRate);
-
-      // Property tax / deal structure
-      if (data.assessedValue != null) setAssessedValue(data.assessedValue);
-      if (data.assessmentPct != null) setAssessmentPct(data.assessmentPct);
-      if (data.bridgePeriodMonths != null) setBridgePeriodMonths(data.bridgePeriodMonths);
-      if (data.lpEquityShare != null) setLpEquityShare(data.lpEquityShare > 1 ? data.lpEquityShare / 100 : data.lpEquityShare);
-
-      // OM extras
-      if (data.laundryIncome != null) setOmLaundryIncome(data.laundryIncome);
-      if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
-      if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
-
-      setOmUploaded(true);
-
-      // Create deal record
-      const dealLocation = data.city && data.state ? `${data.city}, ${data.state}` : data.address || 'Location TBD';
-      const created = await dealApi.createDeal({
-        dealName: data.propertyName || `Deal - ${data.address || dealLocation || 'OM Import'}`,
-        location: dealLocation,
-        status: 'potential',
-        propertyAddress: data.address || undefined,
-        purchasePrice: data.askingPrice || undefined,
-      });
-      if (created?.id) {
-        setCurrentDealId(created.id);
-        const url = new URL(window.location.href);
-        url.searchParams.set('dealId', String(created.id));
-        window.history.replaceState({}, '', url.toString());
-        const driveForm = new FormData();
-        driveForm.append('file', file);
-        driveForm.append('deal_id', String(created.id));
-        driveForm.append('document_type', 'OM');
-        fetch('/api/v1/documents/upload', { method: 'POST', body: driveForm }).catch(() => {});
-      }
+      // Hand off to the review modal instead of applying directly — user confirms/edits first.
+      setPendingOmData(json.data);
+      setPendingOmFile(file);
     } catch (err) {
       setOmError(err instanceof Error ? err.message : 'Failed to extract OM data');
     } finally {
       setOmUploading(false);
     }
+  };
+
+  // Applies (possibly user-edited) extracted rent-roll data to the live underwriting form.
+  const applyRentRollDataToForm = (data: any) => {
+    if (data.unitMix?.length > 0) {
+      setUnitMix(data.unitMix.map((u: any) => ({
+        unitType: u.unitType ?? '',
+        count: u.count ?? 0,
+        askingRent: u.askingRent ?? 0,
+        avgSf: u.avgSf ?? 0,
+      })));
+    }
+    if (data.numUnits) setTotalUnits(data.numUnits);
+    if (data.vacancyRate != null) { const v = data.vacancyRate; setVacancyRates([v, v, v, v, v]); }
+    if (data.badDebtRate != null) { const v = data.badDebtRate; setBadDebtRates([v, v, v, v, v]); }
+    if (data.city && data.state) setLocation(`${data.city}, ${data.state}`);
+    if (data.zipcode) setZipCode(data.zipcode);
+    if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
+    if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
+    setRrUploaded(true);
   };
 
   const handleRentRollUpload = async (file: File) => {
@@ -690,24 +770,7 @@ const Underwriting = () => {
       const res = await fetch('/api/v2/underwriting/extract-rent-roll', { method: 'POST', body: formData });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || 'Extraction failed');
-      const data = json.data;
-
-      if (data.unitMix?.length > 0) {
-        setUnitMix(data.unitMix.map((u: any) => ({
-          unitType: u.unitType ?? '',
-          count: u.count ?? 0,
-          askingRent: u.askingRent ?? 0,
-          avgSf: u.avgSf ?? 0,
-        })));
-      }
-      if (data.numUnits) setTotalUnits(data.numUnits);
-      if (data.vacancyRate != null) { const v = data.vacancyRate; setVacancyRates([v, v, v, v, v]); }
-      if (data.badDebtRate != null) { const v = data.badDebtRate; setBadDebtRates([v, v, v, v, v]); }
-      if (data.city && data.state) setLocation(`${data.city}, ${data.state}`);
-      if (data.zipcode) setZipCode(data.zipcode);
-      if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
-      if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
-      setRrUploaded(true);
+      setPendingRentRollData(json.data);
     } catch (err) {
       setRrError(err instanceof Error ? err.message : 'Failed to extract Rent Roll data');
     } finally {
@@ -737,35 +800,14 @@ const Underwriting = () => {
   // ── Build export payload ──────────────────────────────────────────────────
 
   const buildExportPayload = () => {
-    // Consolidate unit mix into at most 4 rows by bedroom count
-    type Bucket = { unitType: string; count: number; rentSum: number; sfSum: number };
-    const buckets: Record<string, Bucket> = {
-      '1BR': { unitType: '1BR', count: 0, rentSum: 0, sfSum: 0 },
-      '2BR': { unitType: '2BR', count: 0, rentSum: 0, sfSum: 0 },
-      '3BR': { unitType: '3BR', count: 0, rentSum: 0, sfSum: 0 },
-      'Other': { unitType: 'Studio/Other', count: 0, rentSum: 0, sfSum: 0 },
-    };
-    for (const u of unitMix) {
-      const t = (u.unitType ?? '').toLowerCase();
-      let key: string;
-      if (t.includes('studio')) key = 'Other';
-      else if (t.includes('1br') || t.includes('1 bed') || /\b1\/\d/.test(t)) key = '1BR';
-      else if (t.includes('2br') || t.includes('2 bed') || /\b2\/\d/.test(t)) key = '2BR';
-      else if (t.includes('3br') || t.includes('3 bed') || /\b3\/\d/.test(t)) key = '3BR';
-      else key = 'Other';
-      buckets[key].count += u.count;
-      buckets[key].rentSum += u.askingRent * u.count;
-      buckets[key].sfSum += (u.avgSf ?? 0) * u.count;
-    }
-    const normalizedMix = ['1BR', '2BR', '3BR', 'Other'].map(k => {
-      const b = buckets[k];
-      return {
-        unitType: b.unitType,
-        count: b.count,
-        askingRent: b.count > 0 ? Math.round(b.rentSum / b.count) : 0,
-        avgSf: b.count > 0 ? Math.round(b.sfSum / b.count) : 0,
-      };
-    });
+    // Pass unit types through as-is (up to the template's 16-slot capacity) — no bucketing.
+    // Portfolios with multiple buildings/unit types rely on every distinct row surviving export.
+    const normalizedMix = unitMix.slice(0, 16).map(u => ({
+      unitType: u.unitType,
+      count: u.count,
+      askingRent: u.askingRent,
+      avgSf: u.avgSf,
+    }));
 
     return {
       propertyName: dealName,
@@ -807,9 +849,8 @@ const Underwriting = () => {
       refiInterestRate,
       refiFinancingCostsPct,
       refiIoPeriods,
-      refiTargetDscr,  // ratio (1.25), backend uses float() directly
-      refiTargetDy,
-      refiTargetLtv,
+      // refiTargetDscr/Dy/Ltv intentionally omitted — F52/F53/F54 in the template are
+      // fixed sizing constants, not per-deal inputs (confirmed during the Inputs-tab redesign).
       rentGrowthRate,
       opexGrowthRate,
       exitCapRate,
@@ -1348,7 +1389,7 @@ const Underwriting = () => {
                         </td>
                       </tr>
                     ))}
-                    {unitMix.length < 4 && (
+                    {unitMix.length < 16 && (
                       <tr className="border-t border-gray-100">
                         <td colSpan={5} className="px-2 py-1.5">
                           <button onClick={() => setUnitMix([...unitMix, { unitType: '', count: 0, askingRent: 0, avgSf: 0 }])} className="text-xs text-blue-500 hover:text-blue-700">+ Add row</button>
@@ -1664,6 +1705,34 @@ const Underwriting = () => {
       {showLoiModal && (
         <LoiModal dealName={dealName} onConfirm={handleLoiConfirm} onSkip={handleLoiSkip} onClose={() => setShowLoiModal(false)} />
       )}
+      <ExtractionReviewModal
+        isOpen={pendingOmData != null}
+        title="Review Extracted OM Data"
+        subtitle="Double-check the values pulled from the Offering Memorandum before they're added to this deal."
+        data={pendingOmData}
+        fields={OM_REVIEW_FIELDS}
+        includeUnitMix
+        onCancel={() => { setPendingOmData(null); setPendingOmFile(null); }}
+        onConfirm={(edited) => {
+          const file = pendingOmFile;
+          setPendingOmData(null);
+          setPendingOmFile(null);
+          if (file) applyOmDataToForm(edited, file);
+        }}
+      />
+      <ExtractionReviewModal
+        isOpen={pendingRentRollData != null}
+        title="Review Extracted Rent Roll Data"
+        subtitle="Double-check the values pulled from the rent roll before they're added to this deal."
+        data={pendingRentRollData}
+        fields={RENT_ROLL_REVIEW_FIELDS}
+        includeUnitMix
+        onCancel={() => setPendingRentRollData(null)}
+        onConfirm={(edited) => {
+          setPendingRentRollData(null);
+          applyRentRollDataToForm(edited);
+        }}
+      />
       {isImportModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="relative w-full max-w-2xl p-6 bg-white rounded-lg shadow-xl">
