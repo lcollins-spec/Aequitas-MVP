@@ -6,10 +6,21 @@
   body {
     @apply min-h-screen bg-gray-50 antialiased;
     font-family: 'Newsreader', 'Times New Roman', serif;
+    font-weight: 500;
   }
 
-  h1, h2, h3, h4, h5, h6 {
+  /* Instrument Serif is a display face with thin, high-contrast strokes —
+     legible at page-title size (h1) but reads as fuzzy/blurry at the small
+     sizes most h2-h6 are actually used at across this app. Those keep the
+     brand purple but fall back to the sturdier Newsreader body face. */
+  h1 {
     font-family: 'Instrument Serif', 'Times New Roman', serif;
     color: theme('colors.brandPurple.700');
+  }
+
+  h2, h3, h4, h5, h6 {
+    font-family: 'Newsreader', 'Times New Roman', serif;
+    color: theme('colors.brandPurple.700');
+    font-weight: 600;
   }
 }
