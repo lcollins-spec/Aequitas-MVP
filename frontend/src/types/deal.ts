@@ -85,6 +85,7 @@ export interface Deal {
   dealName: string;
   location: string;
   status: DealStatus;
+  gpId?: number | null;
   createdAt?: string;
   updatedAt?: string;
 

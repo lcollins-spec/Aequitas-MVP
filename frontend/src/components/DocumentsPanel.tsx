@@ -86,7 +86,7 @@ const fmtVal = (key: string, val: string | number | null | undefined): string =>
 // ─── Type pill colors ──────────────────────────────────────────────────────────
 const TYPE_COLORS: Partial<Record<DocumentType, string>> = {
   'OM':              'bg-sky-50 text-sky-700',
-  'T12':             'bg-blue-50 text-blue-700',
+  'T12':             'bg-gray-50 text-gray-700',
   'Rent Roll':       'bg-violet-50 text-violet-700',
   'LOI Draft':       'bg-amber-50 text-amber-700',
   'PSA Draft':       'bg-orange-50 text-orange-700',
@@ -400,7 +400,7 @@ const DocumentsPanel = ({ dealId, onExtractionConfirmed }: DocumentsPanelProps) 
           onClick={() => fileInputRef.current?.click()}
           onDragOver={e => e.preventDefault()}
           onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFileSelect(f); }}
-          className="flex flex-col items-center justify-center gap-2 py-10 border-2 border-dashed border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50 rounded-xl cursor-pointer transition-colors"
+          className="flex flex-col items-center justify-center gap-2 py-10 border-2 border-dashed border-gray-200 bg-gray-50 hover:border-primary-400 hover:bg-primary-50 rounded-xl cursor-pointer transition-colors"
         >
           <Upload size={22} className="text-gray-300" />
           <p className="text-sm text-gray-400">Drop files here or click Upload</p>
@@ -431,7 +431,7 @@ const DocumentsPanel = ({ dealId, onExtractionConfirmed }: DocumentsPanelProps) 
                       href={doc.driveUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors flex-shrink-0"
+                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-primary-800 hover:text-gray-800 hover:bg-primary-50 rounded transition-colors flex-shrink-0"
                     >
                       <ExternalLink size={11} />
                       Drive
@@ -453,7 +453,7 @@ const DocumentsPanel = ({ dealId, onExtractionConfirmed }: DocumentsPanelProps) 
               onClick={() => fileInputRef.current?.click()}
               onDragOver={e => e.preventDefault()}
               onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFileSelect(f); }}
-              className="flex items-center justify-center gap-2 py-3 border border-dashed border-gray-200 hover:border-blue-300 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"
+              className="flex items-center justify-center gap-2 py-3 border border-dashed border-gray-200 hover:border-primary-400 hover:bg-primary-50 rounded-lg cursor-pointer transition-colors"
             >
               <Upload size={13} className="text-gray-300" />
               <span className="text-xs text-gray-400">Drop another file or click Upload</span>
@@ -471,8 +471,8 @@ const DocumentsPanel = ({ dealId, onExtractionConfirmed }: DocumentsPanelProps) 
 
       {/* ── Upload confirm form ── */}
       {pendingFile && (
-        <div className="mt-4 border border-blue-200 bg-blue-50 rounded-xl p-4 space-y-3">
-          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Confirm document type</p>
+        <div className="mt-4 border border-gray-200 bg-gray-50 rounded-xl p-4 space-y-3">
+          <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Confirm document type</p>
           <div className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg">
             <FileText size={14} className="text-gray-400 flex-shrink-0" />
             <span className="text-sm text-gray-700 truncate flex-1">{pendingFile.name}</span>
@@ -483,7 +483,7 @@ const DocumentsPanel = ({ dealId, onExtractionConfirmed }: DocumentsPanelProps) 
             <button
               type="button"
               onClick={() => setShowTypeMenu(v => !v)}
-              className="w-full flex items-center justify-between px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="w-full flex items-center justify-between px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
               <span>{pendingType}</span>
               <ChevronDown size={13} className="text-gray-400" />
@@ -497,7 +497,7 @@ const DocumentsPanel = ({ dealId, onExtractionConfirmed }: DocumentsPanelProps) 
                       key={t}
                       onClick={() => { setPendingType(t); setShowTypeMenu(false); }}
                       className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                        t === pendingType ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700 hover:bg-gray-50'
+                        t === pendingType ? 'bg-gray-50 text-gray-700 font-semibold' : 'text-gray-700 hover:bg-gray-50'
                       }`}
                     >
                       {t}
@@ -525,7 +525,7 @@ const DocumentsPanel = ({ dealId, onExtractionConfirmed }: DocumentsPanelProps) 
             <button
               onClick={confirmUpload}
               disabled={uploading}
-              className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-60"
+              className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-primary-800 hover:bg-primary-700 rounded-lg transition-colors disabled:opacity-60"
             >
               {uploading ? <><Loader2 size={12} className="animate-spin" />Uploading…</> : <><Upload size={12} />Upload to Drive</>}
             </button>

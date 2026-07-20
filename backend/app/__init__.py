@@ -107,6 +107,22 @@ def create_app(test_config=None):
     except Exception as e:
         logger.warning(f"activity_log column migration note: {e}")
 
+    # Inline migration: add 'gp_id' column to sourcing_properties and deals if not present.
+    try:
+        with app.app_context():
+            from sqlalchemy import text, inspect as sa_inspect
+            inspector = sa_inspect(db.engine)
+            for table in ('sourcing_properties', 'deals'):
+                if table in inspector.get_table_names():
+                    cols = [c['name'] for c in inspector.get_columns(table)]
+                    if 'gp_id' not in cols:
+                        with db.engine.connect() as conn:
+                            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN gp_id INTEGER"))
+                            conn.commit()
+                        logger.info(f"Added 'gp_id' column to {table}")
+    except Exception as e:
+        logger.warning(f"gp_id column migration note: {e}")
+
     # Enable CORS for frontend communication (only in development)
     # In production (Docker), CORS not needed as same-origin
     if not in_docker:

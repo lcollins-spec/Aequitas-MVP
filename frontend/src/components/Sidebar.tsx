@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
 } from 'lucide-react';
 import { useState } from 'react';
+import GlobalUploadDealButton from './GlobalUploadDealButton';
 
 const NAV_ITEMS = [
   { to: '/', icon: Home, label: 'Dashboard' },
@@ -50,19 +51,20 @@ const Sidebar = () => {
 
       {/* Sidebar */}
       <aside
-        className={`fixed left-0 top-0 h-screen w-48 bg-white border-r border-gray-200 z-40 transition-transform duration-300 lg:translate-x-0 ${
+        className={`fixed left-0 top-0 h-screen w-48 bg-brandPurple-700 z-40 transition-transform duration-300 lg:translate-x-0 ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         <div className="flex items-center gap-3 p-4 pt-16 lg:pt-5">
-          <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-            <Building2 size={22} className="text-blue-500" />
+          <div className="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center">
+            <Building2 size={22} className="text-primary-400" />
           </div>
           <div className="flex flex-col">
-            <span className="text-base font-semibold text-gray-800">Aequitas AI</span>
-            <span className="text-xs text-gray-500">Underwriting Platform</span>
+            <span className="text-base font-heading text-white">Aequitas AI</span>
+            <span className="text-xs text-white/60">Underwriting Platform</span>
           </div>
         </div>
+        <GlobalUploadDealButton onBeforeOpen={() => setIsOpen(false)} />
         <nav className="flex flex-col py-2">
           {NAV_ITEMS.map((item) => (
             <NavLink
@@ -73,8 +75,8 @@ const Sidebar = () => {
               className={({ isActive }) =>
                 `flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all border-l-3 ${
                   isActive
-                    ? 'bg-blue-50 text-blue-500 border-l-blue-500'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-800 border-l-transparent'
+                    ? 'bg-white/10 text-primary-400 border-l-primary-400'
+                    : 'text-white/70 hover:bg-white/10 hover:text-white border-l-transparent'
                 }`
               }
             >

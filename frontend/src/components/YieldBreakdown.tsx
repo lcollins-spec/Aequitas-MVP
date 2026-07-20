@@ -116,7 +116,7 @@ const YieldBreakdown: React.FC<YieldBreakdownProps> = ({
         </div>
         <div className="text-center">
           <div className="text-sm text-gray-600 mb-1">Net Yield</div>
-          <div className={`text-xl font-bold ${netYield >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+          <div className={`text-xl font-bold ${netYield >= 0 ? 'text-primary-800' : 'text-red-600'}`}>
             {netYield.toFixed(2)}%
           </div>
         </div>

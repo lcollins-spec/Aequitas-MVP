@@ -297,6 +297,7 @@ def create_property():
         priority=data.get('priority', 'medium'),
         notes=data.get('notes', ''),
         deal_id=data.get('deal_id'),
+        gp_id=data.get('gp_id'),
         lat=data.get('lat'),
         lng=data.get('lng'),
     )
@@ -328,6 +329,7 @@ def bulk_create_properties():
             priority=data.get('priority', 'medium'),
             notes=data.get('notes', ''),
             deal_id=data.get('deal_id'),
+            gp_id=data.get('gp_id'),
             lat=data.get('lat'),
             lng=data.get('lng'),
         )
@@ -351,6 +353,8 @@ def update_property(prop_id):
         prop.units = int(data['units'] or 0)
     if 'deal_id' in data:
         prop.deal_id = data['deal_id']
+    if 'gp_id' in data:
+        prop.gp_id = data['gp_id']
     if 'lat' in data:
         prop.lat = data['lat']
     if 'lng' in data:

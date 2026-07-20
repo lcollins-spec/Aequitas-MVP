@@ -30,7 +30,7 @@ const ArbitrageOpportunityCard: React.FC<ArbitrageOpportunityCardProps> = ({
     if (lowerLevel.includes('very high') || lowerLevel.includes('excellent')) {
       return 'bg-green-100 text-green-800 border-green-300';
     } else if (lowerLevel.includes('high')) {
-      return 'bg-blue-100 text-blue-800 border-blue-300';
+      return 'bg-gray-100 text-gray-800 border-primary-300';
     } else if (lowerLevel.includes('moderate') || lowerLevel.includes('medium')) {
       return 'bg-yellow-100 text-yellow-800 border-yellow-300';
     } else if (lowerLevel.includes('low')) {
@@ -49,7 +49,7 @@ const ArbitrageOpportunityCard: React.FC<ArbitrageOpportunityCardProps> = ({
 
   const getConstraintLabel = (score: number): { label: string; color: string } => {
     if (score >= 75) return { label: 'Very High', color: 'text-green-600' };
-    if (score >= 50) return { label: 'High', color: 'text-blue-600' };
+    if (score >= 50) return { label: 'High', color: 'text-primary-800' };
     if (score >= 25) return { label: 'Moderate', color: 'text-yellow-600' };
     return { label: 'Low', color: 'text-red-600' };
   };

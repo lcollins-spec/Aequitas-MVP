@@ -36,7 +36,7 @@ const FundSettingsModal = ({ settings, onSave, onClose }: FundSettingsModalProps
     onSave(updated);
   };
 
-  const fieldClass = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white';
+  const fieldClass = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white';
   const labelClass = 'block text-xs font-medium text-gray-600 mb-1';
 
   return (
@@ -122,7 +122,7 @@ const FundSettingsModal = ({ settings, onSave, onClose }: FundSettingsModalProps
           </button>
           <button
             onClick={handleSave}
-            className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+            className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-primary-800 hover:bg-primary-700 rounded-lg transition-colors"
           >
             <Save size={15} />
             Save Settings

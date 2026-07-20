@@ -106,14 +106,14 @@ const PropertyUrlInput = ({ onDataExtracted, onError }: PropertyUrlInputProps) =
                 }
               }}
               placeholder="Paste LoopNet, Crexi, or property listing URL..."
-              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               disabled={isExtracting}
             />
           </div>
           <button
             onClick={handleExtract}
             disabled={isExtracting || !url.trim()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+            className="px-4 py-2 bg-primary-800 text-white rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {isExtracting ? (
               <>
@@ -194,7 +194,7 @@ const PropertyUrlInput = ({ onDataExtracted, onError }: PropertyUrlInputProps) =
                   e.stopPropagation();
                   handleUseData();
                 }}
-                className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-3 py-1.5 bg-primary-800 text-white text-sm rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
               >
                 Use This Data
               </button>
@@ -362,11 +362,11 @@ const PropertyUrlInput = ({ onDataExtracted, onError }: PropertyUrlInputProps) =
 
               {/* Missing Fields */}
               {extractedData.missingFields && extractedData.missingFields.length > 0 && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                  <p className="text-sm font-medium text-blue-900 mb-1">
+                <div className="p-3 bg-gray-50 border border-gray-200 rounded-md">
+                  <p className="text-sm font-medium text-gray-900 mb-1">
                     Missing Fields:
                   </p>
-                  <p className="text-sm text-blue-700">
+                  <p className="text-sm text-gray-700">
                     {extractedData.missingFields.join(', ')}
                   </p>
                 </div>

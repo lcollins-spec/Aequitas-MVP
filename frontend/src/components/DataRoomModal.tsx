@@ -92,7 +92,7 @@ const DataRoomModal = ({ dealName, onConfirm, onSkip, onClose }: DataRoomModalPr
         {/* Body */}
         <div className="overflow-y-auto flex-1 p-6 space-y-5">
           {/* Instructional copy */}
-          <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl text-sm text-blue-800 leading-relaxed">
+          <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 leading-relaxed">
             Upload any documents the operator shared — T12, rent roll, existing financials.
             Claude will attempt to extract key figures from T12 and Rent Roll files.
             <span className="font-medium"> All extracted values will be flagged for your review.</span>
@@ -106,8 +106,8 @@ const DataRoomModal = ({ dealName, onConfirm, onSkip, onClose }: DataRoomModalPr
             onClick={() => fileInputRef.current?.click()}
             className={`flex flex-col items-center justify-center gap-3 w-full min-h-[120px] border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
               dragging
-                ? 'border-blue-400 bg-blue-50'
-                : 'border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50'
+                ? 'border-primary-400 bg-primary-50'
+                : 'border-gray-200 bg-gray-50 hover:border-primary-400 hover:bg-primary-50'
             }`}
           >
             <Upload size={28} className="text-gray-400" />
@@ -146,7 +146,7 @@ const DataRoomModal = ({ dealName, onConfirm, onSkip, onClose }: DataRoomModalPr
                     <select
                       value={s.docType}
                       onChange={e => updateDocType(idx, e.target.value as DocumentType)}
-                      className="appearance-none pl-2.5 pr-7 py-1.5 text-xs font-medium border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                      className="appearance-none pl-2.5 pr-7 py-1.5 text-xs font-medium border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
                     >
                       {DOCUMENT_TYPES.map(t => (
                         <option key={t} value={t}>{t}</option>
@@ -196,7 +196,7 @@ const DataRoomModal = ({ dealName, onConfirm, onSkip, onClose }: DataRoomModalPr
           <button
             onClick={handleConfirm}
             disabled={confirming}
-            className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-primary-800 hover:bg-primary-700 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {confirming ? (
               <>

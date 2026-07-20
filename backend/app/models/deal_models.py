@@ -21,6 +21,7 @@ class Deal:
 
     # Status
     status: str = 'potential'
+    gp_id: Optional[int] = None
 
     # Timestamps
     created_at: Optional[datetime] = None
@@ -84,6 +85,7 @@ class Deal:
             'dealName': self.deal_name,
             'location': self.location,
             'status': self.status,
+            'gpId': self.gp_id,
             'createdAt': self.created_at.isoformat() if self.created_at else None,
             'updatedAt': self.updated_at.isoformat() if self.updated_at else None,
 
@@ -162,6 +164,7 @@ class Deal:
             deal_name=data.get('dealName', ''),
             location=data.get('location', ''),
             status=data.get('status', 'potential'),
+            gp_id=data.get('gpId'),
             created_at=created_at,
             updated_at=updated_at,
 

@@ -220,7 +220,7 @@ const FundReturns = () => {
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">{settings.fundName}</h1>
+          <h1 className="text-2xl md:text-3xl font-semibold text-brandPurple-700">{settings.fundName}</h1>
           <p className="text-sm text-gray-500 mt-1">
             Vintage {settings.vintageYear} · Pref {fmtPct(settings.prefReturn * 100)} · Carry {fmtPct(settings.carry * 100)} · Acq Fee {fmtPct(settings.acqFee * 100)} · AM Fee {fmtPct(settings.amFee * 100)}
           </p>
@@ -237,7 +237,7 @@ const FundReturns = () => {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 mb-6">
-        <KpiCard label="Fund Size" value={fmt$(settings.targetFundSize)} icon={<DollarSign size={20} className="text-blue-500" />} bg="bg-blue-50" />
+        <KpiCard label="Fund Size" value={fmt$(settings.targetFundSize)} icon={<DollarSign size={20} className="text-primary-800" />} bg="bg-gray-50" />
         <KpiCard label="Capital Raised" value={fmt$(capitalCommitted)} sub={capitalCommitted === 0 ? 'No LPs committed yet' : undefined} icon={<TrendingUp size={20} className="text-emerald-500" />} bg="bg-emerald-50" />
         <KpiCard label="Capital Deployed" value={fmt$(capitalDeployed)} sub={capitalDeployed === 0 ? '—' : `${fmtPct(capitalCommitted > 0 ? (capitalDeployed / capitalCommitted) * 100 : 0)} of raised`} icon={<BarChart2 size={20} className="text-violet-500" />} bg="bg-violet-50" />
         <KpiCard
@@ -262,7 +262,7 @@ const FundReturns = () => {
         </div>
         <div className="w-full bg-gray-100 rounded-full h-3 mb-2">
           <div
-            className="bg-blue-500 h-3 rounded-full transition-all duration-500"
+            className="bg-primary-800 h-3 rounded-full transition-all duration-500"
             style={{ width: `${Math.max(deploymentPct, capitalDeployed > 0 ? 2 : 0)}%` }}
           />
         </div>
@@ -393,7 +393,7 @@ const FundReturns = () => {
                     <tr
                       key={ex.dealId}
                       onClick={() => navigate(`/deal-execution/${ex.dealId}`)}
-                      className="border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
+                      className="border-b border-gray-100 hover:bg-primary-50 cursor-pointer transition-colors"
                     >
                       <td className="py-3 px-4">
                         <div className="font-medium text-gray-900 max-w-[160px] truncate">{ex.dealName}</div>

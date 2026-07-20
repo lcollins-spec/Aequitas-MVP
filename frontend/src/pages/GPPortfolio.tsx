@@ -93,7 +93,7 @@ const GPPortfolio = () => {
       case 'premium':
         return 'bg-purple-100 text-purple-700';
       case 'standard':
-        return 'bg-blue-100 text-blue-700';
+        return 'bg-gray-100 text-gray-700';
       case 'excellent':
         return 'bg-green-100 text-green-700';
       default:
@@ -106,7 +106,7 @@ const GPPortfolio = () => {
       case 'outstanding':
         return 'bg-green-100 text-green-700';
       case 'excellent':
-        return 'bg-blue-100 text-blue-700';
+        return 'bg-gray-100 text-gray-700';
       default:
         return 'bg-gray-100 text-gray-700';
     }
@@ -143,7 +143,7 @@ const GPPortfolio = () => {
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-800 md:text-3xl">GP Portfolio</h1>
+          <h1 className="text-2xl font-semibold text-brandPurple-700 md:text-3xl">GP Portfolio</h1>
           <p className="mt-1 text-sm text-gray-500">General Partner relationships and performance analytics</p>
         </div>
 
@@ -152,7 +152,7 @@ const GPPortfolio = () => {
           <select
             value={partnerFilter}
             onChange={(e) => setPartnerFilter(e.target.value)}
-            className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
             <option value="all">All Partners</option>
             <option value="10">10 Partners</option>
@@ -162,7 +162,7 @@ const GPPortfolio = () => {
           <select
             value={timeFilter}
             onChange={(e) => setTimeFilter(e.target.value)}
-            className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
             <option value="1year">Last 1 Yr</option>
             <option value="3years">Last 3 Yrs</option>
@@ -233,8 +233,8 @@ const GPPortfolio = () => {
                 {topPerformers?.topPerformer?.gpName || 'No data'}
               </p>
             </div>
-            <div className="flex items-center justify-center w-12 h-12 bg-blue-50 rounded-xl">
-              <Users size={24} className="text-blue-500" />
+            <div className="flex items-center justify-center w-12 h-12 bg-gray-50 rounded-xl">
+              <Users size={24} className="text-primary-800" />
             </div>
           </div>
         </div>
@@ -326,7 +326,7 @@ const GPPortfolio = () => {
                     </div>
                     <div className="w-full h-2 bg-gray-200 rounded-full">
                       <div
-                        className="h-2 bg-blue-500 rounded-full"
+                        className="h-2 bg-primary-800 rounded-full"
                         style={{ width: `${Math.min((gp.netIrr || 0) * 5, 100)}%` }}
                       ></div>
                     </div>

@@ -85,7 +85,7 @@ const PropertySearchBar = ({
             disabled={isLoading}
             className={`px-4 py-2 text-sm font-medium transition-colors rounded-l-lg ${
               searchParams.searchType === 'zipcode'
-                ? 'bg-blue-500 text-white'
+                ? 'bg-primary-800 text-white'
                 : 'bg-white text-gray-700 hover:bg-gray-50'
             } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
@@ -96,7 +96,7 @@ const PropertySearchBar = ({
             disabled={isLoading}
             className={`px-4 py-2 text-sm font-medium transition-colors rounded-r-lg ${
               searchParams.searchType === 'address'
-                ? 'bg-blue-500 text-white'
+                ? 'bg-primary-800 text-white'
                 : 'bg-white text-gray-700 hover:bg-gray-50'
             } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
@@ -118,7 +118,7 @@ const PropertySearchBar = ({
                   ? 'Enter 5-digit zipcode (e.g., 95814)'
                   : 'Enter full address (e.g., 123 Main St, City, State)'
               }
-              className={`w-full px-4 py-2 text-sm text-gray-700 bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              className={`w-full px-4 py-2 text-sm text-gray-700 bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 ${
                 validationError ? 'border-red-500' : 'border-gray-300'
               } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             />
@@ -130,7 +130,7 @@ const PropertySearchBar = ({
           <button
             onClick={handleSearchClick}
             disabled={isLoading || !localSearchValue.trim()}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white transition-colors bg-blue-500 rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white transition-colors bg-primary-800 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -144,14 +144,14 @@ const PropertySearchBar = ({
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${
               hasActiveFilters
-                ? 'bg-blue-500 text-white'
+                ? 'bg-primary-800 text-white'
                 : 'bg-white text-gray-700 hover:bg-gray-100'
             }`}
           >
             <Filter size={16} />
             Filters
             {hasActiveFilters && (
-              <span className="flex items-center justify-center w-5 h-5 text-xs bg-white rounded-full text-blue-500">
+              <span className="flex items-center justify-center w-5 h-5 text-xs bg-white rounded-full text-primary-800">
                 !
               </span>
             )}
@@ -187,7 +187,7 @@ const PropertySearchBar = ({
                     handleFilterChange('priceMin', e.target.value ? parseInt(e.target.value) : undefined)
                   }
                   placeholder="Any"
-                  className="w-full pl-7 pr-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-7 pr-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
               </div>
             </div>
@@ -205,7 +205,7 @@ const PropertySearchBar = ({
                     handleFilterChange('priceMax', e.target.value ? parseInt(e.target.value) : undefined)
                   }
                   placeholder="Any"
-                  className="w-full pl-7 pr-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-7 pr-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
               </div>
             </div>
@@ -220,7 +220,7 @@ const PropertySearchBar = ({
                 onChange={(e) =>
                   handleFilterChange('bedrooms', e.target.value ? parseInt(e.target.value) : undefined)
                 }
-                className="w-full px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
               >
                 <option value="">Any</option>
                 <option value="1">1</option>
@@ -240,7 +240,7 @@ const PropertySearchBar = ({
                 onChange={(e) =>
                   handleFilterChange('bathrooms', e.target.value ? parseFloat(e.target.value) : undefined)
                 }
-                className="w-full px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
               >
                 <option value="">Any</option>
                 <option value="1">1</option>
@@ -264,7 +264,7 @@ const PropertySearchBar = ({
                   onClick={() => handleFilterChange('propertyType', type)}
                   className={`px-4 py-2 text-sm font-medium transition-colors rounded-lg ${
                     filters.propertyType === type
-                      ? 'bg-blue-500 text-white'
+                      ? 'bg-primary-800 text-white'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >

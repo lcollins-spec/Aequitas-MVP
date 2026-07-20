@@ -136,7 +136,7 @@ function formatTimestamp(iso: string): string {
 function getStatusColors(status: ApiRegulationStatus) {
   switch (status) {
     case 'funding': return { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' };
-    case 'enabling': return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' };
+    case 'enabling': return { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' };
     case 'risk': return { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' };
     default: return { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' };
   }
@@ -186,7 +186,7 @@ const PinnedDrawer = ({ open, onClose, pins, markets, onUnpin, onNoteChange }: P
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
           <div className="flex items-center gap-2">
-            <Pin size={16} className="text-blue-500" />
+            <Pin size={16} className="text-primary-800" />
             <h2 className="text-base font-semibold text-gray-800">Pinned Regulations</h2>
             <span className="text-xs text-gray-400">({allPinned.length})</span>
           </div>
@@ -250,7 +250,7 @@ const PinnedDrawer = ({ open, onClose, pins, markets, onUnpin, onNoteChange }: P
                               defaultValue={p.note}
                               placeholder="Add notes, questions, or ideas…"
                               onBlur={(e) => onNoteChange(m.id, p.id, e.target.value)}
-                              className="w-full text-sm px-2.5 py-2 border border-gray-200 rounded-md resize-none focus:outline-none focus:border-blue-400 text-gray-700 placeholder-gray-300"
+                              className="w-full text-sm px-2.5 py-2 border border-gray-200 rounded-md resize-none focus:outline-none focus:border-primary-500 text-gray-700 placeholder-gray-300"
                             />
                           </div>
                         </div>
@@ -281,7 +281,7 @@ interface RegCardProps {
 const RegCard = ({ item, expanded, onToggle, icon, isPinned, onPin }: RegCardProps) => {
   const colors = getStatusColors(item.status);
   return (
-    <div className={`p-5 hover:bg-gray-50 transition-colors ${isPinned ? 'border-l-2 border-blue-400' : ''}`}>
+    <div className={`p-5 hover:bg-gray-50 transition-colors ${isPinned ? 'border-l-2 border-primary-400' : ''}`}>
       <div className="flex items-start justify-between cursor-pointer" onClick={onToggle}>
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-2">
@@ -302,7 +302,7 @@ const RegCard = ({ item, expanded, onToggle, icon, isPinned, onPin }: RegCardPro
           {/* Pin button */}
           <button
             onClick={onPin}
-            className={`p-1 rounded transition-colors ${isPinned ? 'text-blue-500 hover:text-blue-700' : 'text-gray-300 hover:text-blue-400'}`}
+            className={`p-1 rounded transition-colors ${isPinned ? 'text-primary-800 hover:text-primary-700' : 'text-gray-300 hover:text-primary-800'}`}
             aria-label={isPinned ? 'Unpin' : 'Pin'}
           >
             {isPinned ? <Pin size={15} /> : <PinOff size={15} />}
@@ -641,7 +641,7 @@ const Regulations = () => {
     return (
       <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
         <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">Legislation and Government Funding</h1>
+          <h1 className="text-2xl md:text-3xl font-semibold text-brandPurple-700">Legislation and Government Funding</h1>
           <p className="text-sm text-gray-500 mt-1">Track local regulations affecting affordable housing development</p>
         </div>
 
@@ -654,17 +654,17 @@ const Regulations = () => {
               value={newMarketInput}
               onChange={(e) => setNewMarketInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') addMarket(); if (e.key === 'Escape') setShowAddMarket(false); }}
-              className="w-full text-sm px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 mb-3"
+              className="w-full text-sm px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500 mb-3"
             />
             <div className="flex gap-2">
-              <button onClick={addMarket} className="flex-1 text-sm py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">Add</button>
+              <button onClick={addMarket} className="flex-1 text-sm py-1.5 bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium">Add</button>
               <button onClick={() => setShowAddMarket(false)} className="flex-1 text-sm py-1.5 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
             </div>
           </div>
         ) : (
           <button
             onClick={() => setShowAddMarket(true)}
-            className="mb-6 flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            className="mb-6 flex items-center gap-2 px-4 py-2 bg-primary-800 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
           >
             <Plus size={15} /> Add Market
           </button>
@@ -686,19 +686,19 @@ const Regulations = () => {
                 <div
                   key={m.id}
                   onClick={() => { setSelectedMarket(m); setView('detail'); }}
-                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all group"
+                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 cursor-pointer hover:border-primary-400 hover:shadow-md transition-all group"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-3">
-                        <h2 className="text-base font-semibold text-gray-800 group-hover:text-blue-700 transition-colors">{m.name}</h2>
-                        {refreshing && <RefreshCw size={13} className="text-blue-400 animate-spin flex-shrink-0" />}
+                        <h2 className="text-base font-semibold text-gray-800 group-hover:text-primary-700 transition-colors">{m.name}</h2>
+                        {refreshing && <RefreshCw size={13} className="text-gray-400 animate-spin flex-shrink-0" />}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="flex items-center gap-1 px-2.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-full text-xs font-medium">
                           <CheckCircle size={11} /> {fCount} Funding
                         </span>
-                        <span className="flex items-center gap-1 px-2.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs font-medium">
+                        <span className="flex items-center gap-1 px-2.5 py-0.5 bg-gray-50 text-gray-700 border border-gray-200 rounded-full text-xs font-medium">
                           <FileText size={11} /> {eCount} Enabling
                         </span>
                         <span className="flex items-center gap-1 px-2.5 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded-full text-xs font-medium">
@@ -755,7 +755,7 @@ const Regulations = () => {
               onClick={() => setSelectedMarket(m)}
               className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
                 selectedMarket?.id === m.id
-                  ? 'bg-blue-50 text-blue-700 font-medium border-r-2 border-blue-500'
+                  ? 'bg-gray-50 text-gray-700 font-medium border-r-2 border-primary-700'
                   : 'text-gray-600 hover:bg-gray-50 hover:text-gray-800'
               }`}
             >
@@ -769,14 +769,14 @@ const Regulations = () => {
         {/* Header */}
         <div className="flex items-start justify-between mb-6">
           <div>
-            <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">Legislation and Government Funding</h1>
+            <h1 className="text-2xl md:text-3xl font-semibold text-brandPurple-700">Legislation and Government Funding</h1>
             <p className="text-sm text-gray-500 mt-1">Track local regulations affecting affordable housing development</p>
           </div>
           {/* Pinned button */}
           {totalPinCount > 0 && (
             <button
               onClick={() => setDrawerOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
+              className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 border border-gray-200 text-gray-700 rounded-lg hover:bg-primary-100 transition-colors text-sm font-medium"
             >
               <Pin size={14} />
               Pinned ({totalPinCount})
@@ -795,7 +795,7 @@ const Regulations = () => {
               {activeData ? (
                 <span className="text-xs text-gray-500">Last checked: {formatTimestamp(activeData.lastChecked)}</span>
               ) : isLoading ? (
-                <span className="text-xs text-blue-500">Fetching regulations…</span>
+                <span className="text-xs text-primary-800">Fetching regulations…</span>
               ) : null}
             </div>
             <button
@@ -826,7 +826,7 @@ const Regulations = () => {
             <div className="px-4 pb-4 border-t border-gray-100">
               <div className="flex flex-wrap gap-2 mt-3">
                 {topics.map((t) => (
-                  <span key={t} className="flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs">
+                  <span key={t} className="flex items-center gap-1 px-2.5 py-1 bg-gray-50 text-gray-700 border border-gray-200 rounded-full text-xs">
                     {t}
                     <button onClick={() => removeTopic(t)} className="hover:text-red-500 ml-0.5"><X size={11} /></button>
                   </span>
@@ -839,9 +839,9 @@ const Regulations = () => {
                   value={newTopic}
                   onChange={(e) => setNewTopic(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') addTopic(); }}
-                  className="flex-1 text-sm px-3 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+                  className="flex-1 text-sm px-3 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
                 />
-                <button onClick={addTopic} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Add</button>
+                <button onClick={addTopic} className="px-3 py-1.5 text-sm bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors">Add</button>
               </div>
             </div>
           )}
@@ -857,12 +857,12 @@ const Regulations = () => {
               </div>
               <div className="text-3xl font-bold text-green-800">{fundingCount}</div>
             </div>
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5 border border-blue-200">
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5 border border-gray-200">
               <div className="flex items-start justify-between mb-2">
-                <span className="text-sm font-medium text-blue-700">Enabling Legislation</span>
-                <FileText size={20} className="text-blue-600" />
+                <span className="text-sm font-medium text-gray-700">Enabling Legislation</span>
+                <FileText size={20} className="text-primary-800" />
               </div>
-              <div className="text-3xl font-bold text-blue-800">{enablingCount}</div>
+              <div className="text-3xl font-bold text-gray-800">{enablingCount}</div>
             </div>
             <div className="bg-gradient-to-br from-red-50 to-orange-50 rounded-xl p-5 border border-red-200">
               <div className="flex items-start justify-between mb-2">
@@ -877,7 +877,7 @@ const Regulations = () => {
         {/* Loading */}
         {isLoading && regulations.length === 0 && (
           <div className="bg-white rounded-xl shadow-sm p-12 text-center">
-            <RefreshCw size={32} className="animate-spin text-blue-400 mx-auto mb-3" />
+            <RefreshCw size={32} className="animate-spin text-gray-400 mx-auto mb-3" />
             <p className="text-gray-500 text-sm">Fetching real-time regulations for {selectedMarket?.name}…</p>
             <p className="text-gray-400 text-xs mt-1">This may take 20–30 seconds while Claude searches the web.</p>
           </div>

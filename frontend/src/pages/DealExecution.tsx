@@ -108,7 +108,7 @@ const Field = ({ label, value, onChange, onBlur, type = 'text', placeholder, rea
       onBlur={onBlur}
       placeholder={placeholder}
       readOnly={readOnly}
-      className={`w-full px-3 py-2 border rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400 ${
+      className={`w-full px-3 py-2 border rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500 ${
         readOnly
           ? 'bg-gray-50 border-gray-200 text-gray-500 cursor-default'
           : 'border-gray-200 bg-white focus:bg-white'
@@ -125,7 +125,7 @@ const Toggle = ({ label, value, onChange, onBlur }: { label: string; value: bool
         type="button"
         onClick={() => { onChange(!value); onBlur?.(); }}
         className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
-          value ? 'bg-blue-600' : 'bg-gray-300'
+          value ? 'bg-primary-800' : 'bg-gray-300'
         }`}
       >
         <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
@@ -148,7 +148,7 @@ const TextArea = ({ label, value, onChange, onBlur, placeholder, rows = 3 }: {
       onBlur={onBlur}
       placeholder={placeholder}
       rows={rows}
-      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
     />
   </div>
 );
@@ -201,19 +201,19 @@ const StageHeader = ({
 }) => {
   const colors = {
     completed: 'bg-green-50 border-green-200 text-green-700',
-    active:    'bg-blue-50  border-blue-200  text-blue-700',
+    active:    'bg-gray-50  border-gray-200  text-gray-700',
     locked:    'bg-gray-50  border-gray-200  text-gray-400',
   };
   const icon = {
     completed: <CheckCircle2 size={15} className="text-green-500" />,
-    active:    <Clock size={15} className="text-blue-500" />,
+    active:    <Clock size={15} className="text-primary-800" />,
     locked:    <Clock size={15} className="text-gray-300" />,
   };
   return (
     <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${colors[status]} mb-4`}>
       <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
         status === 'completed' ? 'bg-green-200 text-green-700' :
-        status === 'active'    ? 'bg-blue-200  text-blue-700'  :
+        status === 'active'    ? 'bg-gray-200  text-gray-700'  :
                                  'bg-gray-200  text-gray-400'
       }`}>
         {number}
@@ -787,7 +787,7 @@ const DealExecution = () => {
         <p className="text-gray-600 text-sm max-w-sm">
           No deal execution record found for this deal. Advance a deal to <strong>Data Room Received</strong> on the Underwriting page first.
         </p>
-        <Link to="/deal-execution" className="flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:underline">
+        <Link to="/deal-execution" className="flex items-center gap-1.5 text-sm font-medium text-primary-800 hover:underline">
           <ArrowLeft size={14} /> All Deals
         </Link>
       </div>
@@ -824,14 +824,14 @@ const DealExecution = () => {
           </Link>
           <div>
             <p className="text-xs text-gray-400 mb-0.5 uppercase tracking-wide">
-              <Link to="/deal-execution" className="hover:text-blue-500 transition-colors">
+              <Link to="/deal-execution" className="hover:text-primary-800 transition-colors">
                 All Deals
               </Link>
             </p>
 
             {/* Deal name + switcher */}
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold text-gray-900">{record.dealName}</h1>
+              <h1 className="text-2xl font-semibold text-brandPurple-700">{record.dealName}</h1>
               {allDeals.length > 1 && (
                 <div className="relative">
                   <button
@@ -874,7 +874,7 @@ const DealExecution = () => {
             {linkedPropAddress && (
               <Link
                 to={`/sourcing?address=${encodeURIComponent(linkedPropAddress)}`}
-                className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 mt-0.5"
+                className="inline-flex items-center gap-1 text-xs text-primary-800 hover:text-primary-700 mt-0.5"
               >
                 View in Sourcing →
               </Link>
@@ -988,7 +988,7 @@ const DealExecution = () => {
               <div className="mt-4 flex justify-end">
                 <button
                   onClick={() => advanceToStage(2, 'LOI Executed')}
-                  className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition-colors"
+                  className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-primary-800 hover:bg-primary-700 rounded-xl shadow-sm transition-colors"
                 >
                   Proceed to LOI <ChevronRight size={15} />
                 </button>
@@ -1023,12 +1023,12 @@ const DealExecution = () => {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-gray-900">Financial Model</p>
                         <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5">
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] bg-blue-50 text-blue-600 rounded-full font-medium">
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] bg-gray-50 text-primary-800 rounded-full font-medium">
                             <Sparkles size={8} /> {sourceLabel}
                           </span>
                           {record?.modelDriveUrl && (
                             <a href={record.modelDriveUrl} target="_blank" rel="noopener noreferrer"
-                               className="inline-flex items-center gap-0.5 text-blue-500 hover:text-blue-700">
+                               className="inline-flex items-center gap-0.5 text-primary-800 hover:text-primary-700">
                               <ExternalLink size={10} /> Drive
                             </a>
                           )}
@@ -1079,7 +1079,7 @@ const DealExecution = () => {
                     value={transactionType}
                     onChange={e => setTransactionType(e.target.value)}
                     onBlur={saveSectionAExtra}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
                   >
                     {TRANSACTION_TYPES.map(t => (
                       <option key={t} value={t}>{t || '— Select —'}</option>
@@ -1123,7 +1123,7 @@ const DealExecution = () => {
                       value={psaDraftedBy}
                       onChange={e => setPsaDraftedBy(e.target.value)}
                       onBlur={saveSectionAExtra}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
                     >
                       <option value="">— Select —</option>
                       <option value="Buyer">Buyer</option>
@@ -1162,7 +1162,7 @@ const DealExecution = () => {
                           const autoLtv = ppNum > 0 && loanAmt > 0
                             ? ((loanAmt / ppNum) * 100).toFixed(1)
                             : '';
-                          const cellCls = 'w-full px-2 py-1 border border-gray-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400';
+                          const cellCls = 'w-full px-2 py-1 border border-gray-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary-500';
                           return (
                             <tr key={idx}>
                               <td className="py-2 pr-3 font-medium text-gray-500 whitespace-nowrap">
@@ -1180,7 +1180,7 @@ const DealExecution = () => {
                               </td>
                               <td className="py-2 pr-3">
                                 {autoLtv
-                                  ? <span className="inline-block px-2 py-1 text-xs text-blue-700 bg-blue-50 rounded font-medium">{autoLtv}%</span>
+                                  ? <span className="inline-block px-2 py-1 text-xs text-gray-700 bg-gray-50 rounded font-medium">{autoLtv}%</span>
                                   : <input type="text" value={row.ltvOverride ?? ''} placeholder="—"
                                       onChange={e => updateLoanRow(idx, 'ltvOverride', e.target.value)}
                                       onBlur={saveLoanDetails} className={cellCls} />
@@ -1310,7 +1310,7 @@ const DealExecution = () => {
                             type="checkbox"
                             checked={approvalRights.includes(opt.key)}
                             onChange={() => toggleApprovalRight(opt.key)}
-                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-400"
+                            className="w-4 h-4 rounded border-gray-300 text-primary-800 focus:ring-primary-500"
                           />
                           <span className="text-sm text-gray-700 group-hover:text-gray-900">{opt.label}</span>
                         </label>
@@ -1376,7 +1376,7 @@ const DealExecution = () => {
                       onChange={e => setNewCapexDesc(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && addCapexItem()}
                       placeholder="e.g. Roof replacement"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
                     />
                   </div>
                   <div className="w-36">
@@ -1387,12 +1387,12 @@ const DealExecution = () => {
                       onChange={e => setNewCapexAmt(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && addCapexItem()}
                       placeholder="e.g. 50000"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
                     />
                   </div>
                   <button
                     onClick={addCapexItem}
-                    className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-lg transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary-800 hover:text-primary-700 hover:bg-primary-50 border border-gray-200 rounded-lg transition-colors"
                   >
                     <Plus size={14} /> Add
                   </button>
@@ -1473,7 +1473,7 @@ const DealExecution = () => {
               <h2 className="text-sm font-semibold text-gray-900">Model Status</h2>
               <Link
                 to="/underwriting"
-                className="text-xs text-blue-600 hover:underline flex items-center gap-0.5"
+                className="text-xs text-primary-800 hover:underline flex items-center gap-0.5"
               >
                 View Full Model →
               </Link>
@@ -1533,26 +1533,26 @@ const DealExecution = () => {
             <SectionHeader label="Capital Structure" />
 
             {/* Live equity waterfall */}
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-2">
-              <div className="flex justify-between text-xs text-blue-800">
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
+              <div className="flex justify-between text-xs text-gray-800">
                 <span>Purchase Price</span>
                 <span className="font-semibold tabular-nums">{ppNum > 0 ? fmt$(ppNum) : '—'}</span>
               </div>
-              <div className="flex justify-between text-xs text-blue-800">
+              <div className="flex justify-between text-xs text-gray-800">
                 <span>Acq. Loan Amount</span>
                 <span className={`font-semibold tabular-nums ${acqLoanAmt > 0 ? 'text-red-600' : ''}`}>
                   {acqLoanAmt > 0 ? `− ${fmt$(acqLoanAmt)}` : '—'}
                 </span>
               </div>
-              <div className="flex justify-between text-xs text-blue-800">
+              <div className="flex justify-between text-xs text-gray-800">
                 <span>Total CapEx</span>
                 <span className="font-semibold tabular-nums">
                   {capexTotal > 0 ? `+ ${fmt$(capexTotal)}` : '—'}
                 </span>
               </div>
-              <div className="border-t border-blue-200 pt-2 flex justify-between">
-                <span className="text-sm font-semibold text-blue-900">Equity Required</span>
-                <span className="text-sm font-bold text-blue-900 tabular-nums">
+              <div className="border-t border-gray-200 pt-2 flex justify-between">
+                <span className="text-sm font-semibold text-gray-900">Equity Required</span>
+                <span className="text-sm font-bold text-gray-900 tabular-nums">
                   {totalEquityRequired > 0 ? fmt$(totalEquityRequired) : '—'}
                 </span>
               </div>
@@ -1566,7 +1566,7 @@ const DealExecution = () => {
                 value={strategy}
                 onChange={e => setStrategy(e.target.value as typeof strategy)}
                 onBlur={saveProForma}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
               >
                 <option>Acquisition</option>
                 <option>Light Rehab</option>

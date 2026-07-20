@@ -182,7 +182,7 @@ const RiskAssessmentPanel: React.FC<RiskAssessmentPanelProps> = ({
     return (
       <div className="bg-white rounded-lg shadow p-6">
         <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-800"></div>
           <span className="ml-3 text-gray-600">Loading assessment...</span>
         </div>
       </div>
@@ -480,7 +480,7 @@ const RiskAssessmentPanel: React.FC<RiskAssessmentPanelProps> = ({
             </p>
             <button
               onClick={handleCalculateAssessment}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+              className="px-6 py-3 bg-primary-800 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors"
             >
               Calculate Risk Assessment
             </button>

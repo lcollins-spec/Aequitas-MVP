@@ -160,7 +160,7 @@ export default function ClimateCheckUpload({ dealId, onConfirmed }: Props) {
             href="https://climatecheck.com"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[11px] text-blue-500 hover:underline flex items-center gap-0.5"
+            className="text-[11px] text-primary-800 hover:underline flex items-center gap-0.5"
           >
             Get your free report at ClimateCheck.com <ExternalLink size={10} />
           </a>
@@ -168,7 +168,7 @@ export default function ClimateCheckUpload({ dealId, onConfirmed }: Props) {
         {confirmed && (
           <button
             onClick={handleReupload}
-            className="flex items-center gap-1 px-2 py-1 text-[11px] text-gray-400 hover:text-blue-600 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 rounded-lg transition-colors"
+            className="flex items-center gap-1 px-2 py-1 text-[11px] text-gray-400 hover:text-primary-700 hover:bg-primary-50 border border-gray-200 hover:border-primary-400 rounded-lg transition-colors"
           >
             <RefreshCw size={11} /> Re-upload
           </button>
@@ -274,7 +274,7 @@ function ConfirmedPanel({ data }: { data: ConfirmedClimate }) {
         Confirmed · {data.pdf_filename ?? 'report uploaded'}
         {data.pdf_drive_url && (
           <a href={data.pdf_drive_url} target="_blank" rel="noopener noreferrer"
-            className="ml-1 text-blue-500 hover:underline flex items-center gap-0.5">
+            className="ml-1 text-primary-800 hover:underline flex items-center gap-0.5">
             View <ExternalLink size={10} />
           </a>
         )}
@@ -315,11 +315,11 @@ function ReviewPanel({
 }) {
   const keyRisks = Array.isArray(extracted.key_risks) ? extracted.key_risks : [];
   return (
-    <div className="border border-blue-200 bg-blue-50 rounded-xl p-3 space-y-3">
-      <p className="text-xs font-semibold text-blue-800">Review extracted data — confirm to save</p>
+    <div className="border border-gray-200 bg-gray-50 rounded-xl p-3 space-y-3">
+      <p className="text-xs font-semibold text-gray-800">Review extracted data — confirm to save</p>
 
       {extracted.property_address && (
-        <div className="text-[11px] text-blue-700">
+        <div className="text-[11px] text-gray-700">
           <span className="font-medium">Property:</span> {extracted.property_address}
         </div>
       )}
@@ -348,7 +348,7 @@ function ReviewPanel({
           File: {filename}
           {driveUrl && (
             <a href={driveUrl} target="_blank" rel="noopener noreferrer"
-              className="text-blue-500 hover:underline flex items-center gap-0.5 ml-1">
+              className="text-primary-800 hover:underline flex items-center gap-0.5 ml-1">
               View in Drive <ExternalLink size={9} />
             </a>
           )}
@@ -359,7 +359,7 @@ function ReviewPanel({
         <button
           onClick={onConfirm}
           disabled={confirming}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-semibold rounded-lg transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-800 hover:bg-primary-700 disabled:opacity-60 text-white text-xs font-semibold rounded-lg transition-colors"
         >
           {confirming ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
           {confirming ? 'Saving…' : 'Confirm & Save'}
@@ -367,7 +367,7 @@ function ReviewPanel({
         <button
           onClick={onReupload}
           disabled={confirming}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-blue-600 border border-gray-200 hover:border-blue-200 rounded-lg transition-colors disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-primary-700 border border-gray-200 hover:border-primary-400 rounded-lg transition-colors disabled:opacity-50"
         >
           <RefreshCw size={12} /> Re-upload
         </button>

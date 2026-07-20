@@ -20,8 +20,11 @@ import {
   Mail,
 } from 'lucide-react';
 import * as sourcingApi from '../services/sourcingApi';
-import type { MarketEntry, SourcingProperty, SourcingBroker, SourcingOperator, ParsedDealFields } from '../services/sourcingApi';
+import type { MarketEntry, SourcingProperty, SourcingBroker, SourcingOperator } from '../services/sourcingApi';
 import { dealApi } from '../services/dealApi';
+import { gpApi } from '../services/gpApi';
+import type { GP } from '../types/gp';
+import UploadDealModal from '../components/UploadDealModal';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -51,7 +54,7 @@ const LS_MARKETS = 'sourcing_markets';
 const PROP_STATUSES: { value: PropertyStatus; label: string; cls: string; pin: string }[] = [
   { value: 'Identified',      label: 'Identified',      cls: 'bg-gray-100 text-gray-700 border-gray-200',       pin: '#9CA3AF' },
   { value: 'Contacted',       label: 'Contacted',       cls: 'bg-yellow-50 text-yellow-700 border-yellow-200',  pin: '#F59E0B' },
-  { value: 'In Conversation', label: 'In Conversation', cls: 'bg-blue-50 text-blue-700 border-blue-200',         pin: '#3B82F6' },
+  { value: 'In Conversation', label: 'In Conversation', cls: 'bg-gray-50 text-gray-700 border-gray-200',         pin: '#3B82F6' },
   { value: 'LOI',             label: 'LOI',             cls: 'bg-purple-50 text-purple-700 border-purple-200',   pin: '#8B5CF6' },
   { value: 'Dead',            label: 'Dead',            cls: 'bg-red-50 text-red-700 border-red-200',            pin: '#EF4444' },
 ];
@@ -60,14 +63,14 @@ const TRANSACTION_TYPES = ['Acquisition', 'Recap', 'JV'] as const;
 
 const BROKER_STATUSES: { value: BrokerStatus; label: string; cls: string }[] = [
   { value: 'cold',       label: 'Cold',       cls: 'bg-gray-100 text-gray-700 border-gray-200'     },
-  { value: 'introduced', label: 'Introduced', cls: 'bg-blue-50 text-blue-700 border-blue-200'       },
+  { value: 'introduced', label: 'Introduced', cls: 'bg-gray-50 text-gray-700 border-gray-200'       },
   { value: 'active',     label: 'Active',     cls: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
   { value: 'strong',     label: 'Strong',     cls: 'bg-green-50 text-green-700 border-green-200'    },
 ];
 
 const OPERATOR_STATUSES: { value: OperatorStatus; label: string; cls: string }[] = [
   { value: 'prospecting',            label: 'Prospecting',            cls: 'bg-gray-100 text-gray-700 border-gray-200'      },
-  { value: 'intro_made',             label: 'Intro Made',             cls: 'bg-blue-50 text-blue-700 border-blue-200'        },
+  { value: 'intro_made',             label: 'Intro Made',             cls: 'bg-gray-50 text-gray-700 border-gray-200'        },
   { value: 'meeting_held',           label: 'Meeting Held',           cls: 'bg-purple-50 text-purple-700 border-purple-200'  },
   { value: 'partnership_discussion', label: 'Partnership Discussion', cls: 'bg-yellow-50 text-yellow-700 border-yellow-200'  },
   { value: 'active_partner',         label: 'Active Partner',         cls: 'bg-green-50 text-green-700 border-green-200'     },
@@ -401,7 +404,7 @@ const PropertyModal = ({ initial, market, onSave, onClose }: PropertyModalProps)
     });
   };
 
-  const inputCls = 'w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400';
+  const inputCls = 'w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -562,7 +565,7 @@ const PropertyModal = ({ initial, market, onSave, onClose }: PropertyModalProps)
                       <p className="text-xs font-medium text-gray-800 leading-tight">{item.title}</p>
                       <span className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${
                         item.status === 'funding' ? 'bg-green-100 text-green-700' :
-                        item.status === 'enabling' ? 'bg-blue-100 text-blue-700' :
+                        item.status === 'enabling' ? 'bg-gray-100 text-gray-700' :
                         'bg-red-100 text-red-700'
                       }`}>{item.jurisdiction} · {item.status}</span>
                     </div>
@@ -574,7 +577,7 @@ const PropertyModal = ({ initial, market, onSave, onClose }: PropertyModalProps)
           </div>
         </div>
         <div className="flex gap-3 px-6 py-4 border-t border-gray-200">
-          <button onClick={save} className="flex-1 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+          <button onClick={save} className="flex-1 py-2 text-sm font-medium bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors">
             {initial?.id ? 'Save Changes' : 'Add Property'}
           </button>
           <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
@@ -631,7 +634,7 @@ const BrokerModal = ({ initial, market, onSave, onClose }: BrokerModalProps) => 
               <input
                 type="text" value={form.name || ''}
                 onChange={e => f('name', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
               />
             </div>
             <div>
@@ -639,7 +642,7 @@ const BrokerModal = ({ initial, market, onSave, onClose }: BrokerModalProps) => 
               <input
                 type="text" value={form.firm || ''}
                 onChange={e => f('firm', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
               />
             </div>
           </div>
@@ -648,7 +651,7 @@ const BrokerModal = ({ initial, market, onSave, onClose }: BrokerModalProps) => 
             <select
               value={form.status || 'cold'}
               onChange={e => f('status', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
             >
               {BROKER_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
@@ -659,7 +662,7 @@ const BrokerModal = ({ initial, market, onSave, onClose }: BrokerModalProps) => 
               <input
                 type="date" value={form.last_contact_date || ''}
                 onChange={e => f('last_contact_date', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
               />
             </div>
             <div>
@@ -668,7 +671,7 @@ const BrokerModal = ({ initial, market, onSave, onClose }: BrokerModalProps) => 
                 type="text" value={form.last_deal_sent || ''}
                 onChange={e => f('last_deal_sent', e.target.value)}
                 placeholder="Deal name or date"
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
               />
             </div>
           </div>
@@ -677,12 +680,12 @@ const BrokerModal = ({ initial, market, onSave, onClose }: BrokerModalProps) => 
             <textarea
               rows={3} value={form.notes || ''}
               onChange={e => f('notes', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 resize-none"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500 resize-none"
             />
           </div>
         </div>
         <div className="flex gap-3 px-6 py-4 border-t border-gray-200">
-          <button onClick={save} className="flex-1 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+          <button onClick={save} className="flex-1 py-2 text-sm font-medium bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors">
             {initial?.id ? 'Save Changes' : 'Add Broker'}
           </button>
           <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
@@ -739,7 +742,7 @@ const OperatorModal = ({ initial, market, onSave, onClose }: OperatorModalProps)
               <input
                 type="text" value={form.name || ''}
                 onChange={e => f('name', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
               />
             </div>
             <div>
@@ -747,7 +750,7 @@ const OperatorModal = ({ initial, market, onSave, onClose }: OperatorModalProps)
               <input
                 type="text" value={form.firm || ''}
                 onChange={e => f('firm', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
               />
             </div>
           </div>
@@ -757,7 +760,7 @@ const OperatorModal = ({ initial, market, onSave, onClose }: OperatorModalProps)
               <select
                 value={form.status || 'prospecting'}
                 onChange={e => f('status', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
               >
                 {OPERATOR_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
@@ -768,7 +771,7 @@ const OperatorModal = ({ initial, market, onSave, onClose }: OperatorModalProps)
                 type="text" value={form.properties_managed || ''}
                 onChange={e => f('properties_managed', e.target.value)}
                 placeholder="e.g. 500 units"
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
               />
             </div>
           </div>
@@ -777,7 +780,7 @@ const OperatorModal = ({ initial, market, onSave, onClose }: OperatorModalProps)
             <input
               type="date" value={form.last_contact_date || ''}
               onChange={e => f('last_contact_date', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
             />
           </div>
           <div>
@@ -785,12 +788,12 @@ const OperatorModal = ({ initial, market, onSave, onClose }: OperatorModalProps)
             <textarea
               rows={3} value={form.notes || ''}
               onChange={e => f('notes', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 resize-none"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500 resize-none"
             />
           </div>
         </div>
         <div className="flex gap-3 px-6 py-4 border-t border-gray-200">
-          <button onClick={save} className="flex-1 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+          <button onClick={save} className="flex-1 py-2 text-sm font-medium bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors">
             {initial?.id ? 'Save Changes' : 'Add Operator'}
           </button>
           <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
@@ -928,7 +931,7 @@ const ImportModal = ({ tab, market, onImport, onClose }: ImportModalProps) => {
             <button
               onClick={parse}
               disabled={!file || loading}
-              className="flex-1 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              className="flex-1 py-2 text-sm font-medium bg-primary-800 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
             >
               {loading ? (
                 <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Parsing with Claude…</>
@@ -939,233 +942,6 @@ const ImportModal = ({ tab, market, onImport, onClose }: ImportModalProps) => {
               Import {preview.length} {typeLabel}
             </button>
           )}
-          <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ── ImportDealModal ────────────────────────────────────────────────────────────
-
-interface ImportDealModalProps {
-  market: string;
-  markets: MarketEntry[];
-  onSave: (p: SourcingProperty) => void;
-  onClose: () => void;
-  mode?: 'email' | 'om';
-}
-
-const ImportDealModal = ({ market, markets, onSave, onClose, mode = 'email' }: ImportDealModalProps) => {
-  const [text, setText] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  const [parsing, setParsing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [fields, setFields] = useState<ParsedDealFields | null>(null);
-  const [targetMarket, setTargetMarket] = useState(market);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const parse = async () => {
-    if (!text.trim() && !file) return;
-    setParsing(true);
-    setError(null);
-    try {
-      const result = await sourcingApi.parseDeal(text, file);
-      setFields({
-        property_address:   result.property_address   || '',
-        unit_count:         result.unit_count         || '',
-        asking_price:       result.asking_price       || '',
-        seller_broker_name: result.seller_broker_name || '',
-        operator_name:      result.operator_name      || '',
-        market_city:        result.market_city        || '',
-        contact_name:       result.contact_name       || '',
-        contact_phone:      result.contact_phone      || '',
-        contact_email:      result.contact_email      || '',
-      });
-      // Default "Add to Market" to extracted market if it matches an existing entry
-      const extracted = (result.market_city || '').toLowerCase().split(',')[0].trim();
-      const matched = markets.find(m => {
-        const n = m.name.toLowerCase();
-        return n === extracted || n.includes(extracted) || extracted.includes(n);
-      });
-      setTargetMarket(matched ? matched.name : '');
-    } catch (e: any) {
-      setError(e.message || 'Failed to parse');
-    } finally {
-      setParsing(false);
-    }
-  };
-
-  const handleSave = () => {
-    if (!fields) return;
-    const noteParts: string[] = [];
-    if (fields.asking_price) noteParts.push(`Asking: ${fields.asking_price}`);
-    const prop: SourcingProperty = {
-      id: Date.now().toString(),
-      market: targetMarket,
-      address:        fields.property_address,
-      units:          parseInt(fields.unit_count) || 0,
-      transaction_type: 'Acquisition',
-      owner_name:     fields.seller_broker_name,
-      operator_name:  fields.operator_name,
-      contact_name:   fields.contact_name,
-      contact_phone:  fields.contact_phone,
-      contact_email:  fields.contact_email,
-      status:   'Identified',
-      priority: 'medium',
-      notes:    noteParts.join(' | '),
-      deal_id:  null,
-    };
-    onSave(prop);
-  };
-
-  const inputCls = 'w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400';
-
-  if (fields) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-        <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-            <h2 className="text-base font-semibold text-gray-800">Review Extracted Deal</h2>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={18} /></button>
-          </div>
-          <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-            <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
-              Review and edit the extracted fields before saving. Blank fields were not found in the source material.
-            </p>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Property Address</label>
-              <input type="text" value={fields.property_address}
-                onChange={e => setFields(f => f ? { ...f, property_address: e.target.value } : f)}
-                className={inputCls} placeholder="Not found" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Unit Count</label>
-                <input type="text" value={fields.unit_count}
-                  onChange={e => setFields(f => f ? { ...f, unit_count: e.target.value } : f)}
-                  className={inputCls} placeholder="Not found" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Asking Price</label>
-                <input type="text" value={fields.asking_price}
-                  onChange={e => setFields(f => f ? { ...f, asking_price: e.target.value } : f)}
-                  className={inputCls} placeholder="Not found" />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Owner / Broker Name</label>
-              <input type="text" value={fields.seller_broker_name}
-                onChange={e => setFields(f => f ? { ...f, seller_broker_name: e.target.value } : f)}
-                className={inputCls} placeholder="Not found" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Operator Name</label>
-              <input type="text" value={fields.operator_name}
-                onChange={e => setFields(f => f ? { ...f, operator_name: e.target.value } : f)}
-                className={inputCls} placeholder="Not found" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Market / City</label>
-              <input type="text" value={fields.market_city}
-                onChange={e => setFields(f => f ? { ...f, market_city: e.target.value } : f)}
-                className={inputCls} placeholder="Not found" />
-            </div>
-            <div className="space-y-3 pt-1">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Contact</p>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Contact Name</label>
-                <input type="text" value={fields.contact_name}
-                  onChange={e => setFields(f => f ? { ...f, contact_name: e.target.value } : f)}
-                  className={inputCls} placeholder="Not found" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Contact Phone</label>
-                  <input type="tel" value={fields.contact_phone}
-                    onChange={e => setFields(f => f ? { ...f, contact_phone: e.target.value } : f)}
-                    className={inputCls} placeholder="Not found" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Contact Email</label>
-                  <input type="email" value={fields.contact_email}
-                    onChange={e => setFields(f => f ? { ...f, contact_email: e.target.value } : f)}
-                    className={inputCls} placeholder="Not found" />
-                </div>
-              </div>
-            </div>
-            {markets.length > 0 && (
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Add to Market</label>
-                <select value={targetMarket} onChange={e => setTargetMarket(e.target.value)} className={inputCls}>
-                  <option value="">— select market —</option>
-                  {markets.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-                </select>
-              </div>
-            )}
-          </div>
-          <div className="flex gap-3 px-6 py-4 border-t border-gray-200">
-            <button onClick={handleSave} className="flex-1 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-              Save Deal
-            </button>
-            <button onClick={() => setFields(null)} className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
-              Back
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-base font-semibold text-gray-800">{mode === 'om' ? 'Import from OM' : 'Import from Email'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={18} /></button>
-        </div>
-        <div className="p-6 space-y-4">
-          {mode === 'email' && (
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Paste email or deal material</label>
-              <textarea
-                rows={6} value={text} onChange={e => setText(e.target.value)}
-                placeholder="Paste email, OM summary, or any deal text here…"
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 resize-none"
-              />
-            </div>
-          )}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-2">{mode === 'om' ? 'Upload OM (PDF)' : 'Or upload a PDF'}</label>
-            <div className="flex items-center gap-3">
-              <button onClick={() => fileRef.current?.click()}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors">
-                Choose PDF
-              </button>
-              <span className="text-sm text-gray-500">{file ? file.name : 'No file selected'}</span>
-              <input ref={fileRef} type="file" accept=".pdf"
-                onChange={e => setFile(e.target.files?.[0] ?? null)} className="hidden" />
-            </div>
-          </div>
-          {error && (
-            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <AlertCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
-              <span className="text-sm text-red-700">{error}</span>
-            </div>
-          )}
-        </div>
-        <div className="flex gap-3 px-6 py-4 border-t border-gray-200">
-          <button
-            onClick={parse}
-            disabled={(!text.trim() && !file) || parsing}
-            className="flex-1 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-          >
-            {parsing
-              ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Parsing…</>
-              : 'Parse'}
-          </button>
           <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
             Cancel
           </button>
@@ -1197,8 +973,8 @@ const BrokersTable = ({ brokers, onEdit, onDelete }: BrokersTableProps) => {
 
   const SortIcon = ({ col }: { col: keyof SourcingBroker }) =>
     sort.col !== col ? <ChevronDown size={12} className="text-gray-300" />
-      : sort.dir === 'asc' ? <ChevronUp size={12} className="text-blue-500" />
-      : <ChevronDown size={12} className="text-blue-500" />;
+      : sort.dir === 'asc' ? <ChevronUp size={12} className="text-primary-800" />
+      : <ChevronDown size={12} className="text-primary-800" />;
 
   const Th = ({ col, label }: { col: keyof SourcingBroker; label: string }) => (
     <th onClick={() => toggle(col)} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700 select-none whitespace-nowrap">
@@ -1234,7 +1010,7 @@ const BrokersTable = ({ brokers, onEdit, onDelete }: BrokersTableProps) => {
             {sorted.map(b => {
               const si = brokerStatus(b.status);
               return (
-                <tr key={b.id} onClick={() => onEdit(b)} className="cursor-pointer hover:bg-blue-50 transition-colors">
+                <tr key={b.id} onClick={() => onEdit(b)} className="cursor-pointer hover:bg-primary-50 transition-colors">
                   <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{b.name}</td>
                   <td className="px-4 py-3 text-gray-600">{b.firm || '—'}</td>
                   <td className="px-4 py-3">
@@ -1280,8 +1056,8 @@ const OperatorsTable = ({ operators, onEdit, onDelete }: OperatorsTableProps) =>
 
   const SortIcon = ({ col }: { col: keyof SourcingOperator }) =>
     sort.col !== col ? <ChevronDown size={12} className="text-gray-300" />
-      : sort.dir === 'asc' ? <ChevronUp size={12} className="text-blue-500" />
-      : <ChevronDown size={12} className="text-blue-500" />;
+      : sort.dir === 'asc' ? <ChevronUp size={12} className="text-primary-800" />
+      : <ChevronDown size={12} className="text-primary-800" />;
 
   const Th = ({ col, label }: { col: keyof SourcingOperator; label: string }) => (
     <th onClick={() => toggle(col)} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700 select-none whitespace-nowrap">
@@ -1317,7 +1093,7 @@ const OperatorsTable = ({ operators, onEdit, onDelete }: OperatorsTableProps) =>
             {sorted.map(op => {
               const si = operatorStatus(op.status);
               return (
-                <tr key={op.id} onClick={() => onEdit(op)} className="cursor-pointer hover:bg-blue-50 transition-colors">
+                <tr key={op.id} onClick={() => onEdit(op)} className="cursor-pointer hover:bg-primary-50 transition-colors">
                   <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{op.name}</td>
                   <td className="px-4 py-3 text-gray-600">{op.firm || '—'}</td>
                   <td className="px-4 py-3">
@@ -1378,8 +1154,8 @@ const PropertiesTable = ({
 
   const SortIcon = ({ col }: { col: keyof SourcingProperty }) =>
     sort.col !== col ? <ChevronDown size={12} className="text-gray-300" />
-      : sort.dir === 'asc' ? <ChevronUp size={12} className="text-blue-500" />
-      : <ChevronDown size={12} className="text-blue-500" />;
+      : sort.dir === 'asc' ? <ChevronUp size={12} className="text-primary-800" />
+      : <ChevronDown size={12} className="text-primary-800" />;
 
   const Th = ({ col, label }: { col: keyof SourcingProperty; label: string }) => (
     <th onClick={() => toggle(col)} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700 select-none whitespace-nowrap">
@@ -1421,7 +1197,7 @@ const PropertiesTable = ({
                   key={p.id}
                   ref={isHighlighted ? highlightedRowRef : null}
                   onClick={() => onRowClick(p)}
-                  className={`cursor-pointer hover:bg-blue-50 transition-colors ${isHighlighted ? 'ring-2 ring-inset ring-blue-400 bg-blue-50' : ''}`}
+                  className={`cursor-pointer hover:bg-primary-50 transition-colors ${isHighlighted ? 'ring-2 ring-inset ring-primary-400 bg-gray-50' : ''}`}
                 >
                   <td className="px-4 py-3 font-medium text-gray-800 max-w-[220px] truncate">{p.address}</td>
                   <td className="px-4 py-3 text-gray-600">{p.units || '—'}</td>
@@ -1608,12 +1384,12 @@ const PropertyDetailPanel = ({ prop, onClose, onEdit, onStartUnderwriting, start
                 onChange={e => setActivityNote(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') submitActivity(); }}
                 placeholder="Add a note…"
-                className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+                className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
               />
               <button
                 onClick={submitActivity}
                 disabled={!activityNote.trim() || addingActivity}
-                className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors"
+                className="px-3 py-1.5 text-sm font-medium bg-primary-800 text-white rounded-lg hover:bg-primary-700 disabled:opacity-40 transition-colors"
               >
                 {addingActivity ? '…' : 'Add'}
               </button>
@@ -1698,12 +1474,14 @@ function addressMatch(a: string, b: string): boolean {
 }
 
 const Sourcing = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const addressParam = searchParams.get('address') ?? '';
+  const uploadedPropertyId = searchParams.get('uploadedPropertyId');
 
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
+  const [gps, setGps] = useState<GP[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<MarketEntry | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('properties');
   const [data, setData] = useState<SourcingData>({ properties: [], brokers: [], operators: [] });
@@ -1802,7 +1580,27 @@ const Sourcing = () => {
       setLoading(false);
     };
     init();
+    gpApi.getAllGPs().then(setGps).catch(() => {});
   }, []);
+
+  // Pick up a property saved via the global "Upload Deal" button while this page
+  // was already mounted (its own in-memory state wouldn't otherwise learn about it).
+  useEffect(() => {
+    if (!uploadedPropertyId) return;
+    (async () => {
+      const [freshProps, freshMarkets] = await Promise.all([
+        sourcingApi.fetchProperties().catch(() => null),
+        sourcingApi.fetchMarkets().catch(() => null),
+      ]);
+      if (freshProps) setData(prev => ({ ...prev, properties: freshProps }));
+      if (freshMarkets) setMarkets(freshMarkets);
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('uploadedPropertyId');
+        return next;
+      }, { replace: true });
+    })();
+  }, [uploadedPropertyId]);
 
   // ── Geocode ────────────────────────────────────────────────────────────────
   const handleGeocode = useCallback((id: string, lat: number, lng: number) => {
@@ -1904,6 +1702,7 @@ const Sourcing = () => {
         propertyAddress: p.address || '',
         status: 'potential',
         purchasePrice,
+        gpId: p.gp_id ?? null,
         underwritingJson: JSON.stringify({ totalUnits: p.units || 0 }),
       });
 
@@ -1990,7 +1789,7 @@ const Sourcing = () => {
     return (
       <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
         <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">Sourcing</h1>
+          <h1 className="text-2xl md:text-3xl font-semibold text-brandPurple-700">Sourcing</h1>
           <p className="text-sm text-gray-500 mt-1">Track properties, brokers, and operators by market</p>
         </div>
 
@@ -2000,17 +1799,17 @@ const Sourcing = () => {
               autoFocus type="text" placeholder="City, ST" value={newMarketInput}
               onChange={e => setNewMarketInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') addMarket(); if (e.key === 'Escape') setShowAddMarket(false); }}
-              className="w-full text-sm px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 mb-3"
+              className="w-full text-sm px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500 mb-3"
             />
             <div className="flex gap-2">
-              <button onClick={addMarket} className="flex-1 text-sm py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">Add</button>
+              <button onClick={addMarket} className="flex-1 text-sm py-1.5 bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium">Add</button>
               <button onClick={() => setShowAddMarket(false)} className="flex-1 text-sm py-1.5 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
             </div>
           </div>
         ) : (
           <button
             onClick={() => setShowAddMarket(true)}
-            className="mb-6 flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            className="mb-6 flex items-center gap-2 px-4 py-2 bg-primary-800 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
           >
             <Plus size={15} /> Add Market
           </button>
@@ -2032,13 +1831,13 @@ const Sourcing = () => {
                 <div
                   key={m.id}
                   onClick={() => { setSelectedMarket(m); setView('detail'); }}
-                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all group"
+                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 cursor-pointer hover:border-primary-400 hover:shadow-md transition-all group"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4 flex-wrap">
-                      <h2 className="text-base font-semibold text-gray-800 group-hover:text-blue-700 transition-colors">{m.name}</h2>
+                      <h2 className="text-base font-semibold text-gray-800 group-hover:text-primary-700 transition-colors">{m.name}</h2>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="flex items-center gap-1 px-2.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs font-medium">
+                        <span className="flex items-center gap-1 px-2.5 py-0.5 bg-gray-50 text-gray-700 border border-gray-200 rounded-full text-xs font-medium">
                           <Building2 size={11} /> {pCount} Properties
                         </span>
                         <span className="flex items-center gap-1 px-2.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-full text-xs font-medium">
@@ -2082,7 +1881,7 @@ const Sourcing = () => {
               onClick={() => setSelectedMarket(m)}
               className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
                 selectedMarket?.id === m.id
-                  ? 'bg-blue-50 text-blue-700 font-medium border-r-2 border-blue-500'
+                  ? 'bg-gray-50 text-gray-700 font-medium border-r-2 border-primary-700'
                   : 'text-gray-600 hover:bg-gray-50 hover:text-gray-800'
               }`}
             >
@@ -2143,18 +1942,20 @@ const Sourcing = () => {
           />
         )}
         {showImportDeal && (
-          <ImportDealModal
+          <UploadDealModal
             market={selectedMarket?.name ?? ''}
             markets={markets}
+            gps={gps}
             onSave={(p) => { saveProp(p); setShowImportDeal(false); }}
             onClose={() => setShowImportDeal(false)}
           />
         )}
         {showImportOM && (
-          <ImportDealModal
+          <UploadDealModal
             mode="om"
             market={selectedMarket?.name ?? ''}
             markets={markets}
+            gps={gps}
             onSave={(p) => { saveProp(p); setShowImportOM(false); }}
             onClose={() => setShowImportOM(false)}
           />
@@ -2163,7 +1964,7 @@ const Sourcing = () => {
         {/* Main Content */}
         <div className="p-4 md:p-6 lg:p-8 min-w-0">
           <div className="mb-6">
-            <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">{selectedMarket?.name ?? 'Sourcing'}</h1>
+            <h1 className="text-2xl md:text-3xl font-semibold text-brandPurple-700">{selectedMarket?.name ?? 'Sourcing'}</h1>
             <p className="text-sm text-gray-500 mt-1">Track properties, brokers, and operators</p>
           </div>
 
@@ -2177,12 +1978,12 @@ const Sourcing = () => {
                     key={tab}
                     onClick={() => setActiveTab(tab)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      activeTab === tab ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                      activeTab === tab ? 'bg-primary-800 text-white shadow-sm' : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
                     }`}
                   >
                     {cfg.icon}
                     {cfg.label}
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${activeTab === tab ? 'bg-blue-500 text-blue-100' : 'bg-gray-100 text-gray-500'}`}>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${activeTab === tab ? 'bg-primary-800 text-gray-100' : 'bg-gray-100 text-gray-500'}`}>
                       {cfg.count}
                     </span>
                   </button>
@@ -2194,7 +1995,7 @@ const Sourcing = () => {
                 <div className="relative" ref={addMenuRef}>
                   <button
                     onClick={() => setShowAddMenu(v => !v)}
-                    className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                    className="flex items-center gap-2 px-3 py-2 text-sm bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
                   >
                     <Plus size={15} /> Add Deal <ChevronDown size={13} />
                   </button>
@@ -2204,7 +2005,7 @@ const Sourcing = () => {
                         onClick={() => { setShowImportDeal(true); setShowAddMenu(false); }}
                         className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                       >
-                        <Mail size={14} className="text-blue-500 shrink-0" /> Import from Email
+                        <Mail size={14} className="text-primary-800 shrink-0" /> Import from Email
                       </button>
                       <button
                         onClick={() => { setShowImportOM(true); setShowAddMenu(false); }}
@@ -2231,7 +2032,7 @@ const Sourcing = () => {
               ) : (
                 <button
                   onClick={handleAdd}
-                  className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  className="flex items-center gap-2 px-3 py-2 text-sm bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
                 >
                   <Plus size={15} /> {addLabel}
                 </button>
@@ -2243,7 +2044,7 @@ const Sourcing = () => {
           <div className="flex items-center gap-6 mb-5 px-4 py-3 bg-white border border-gray-200 rounded-xl shadow-sm">
             <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">{selectedMarket ? selectedMarket.name : 'All Markets'}</span>
             <div className="flex items-center gap-1.5">
-              <Building2 size={14} className="text-blue-500" />
+              <Building2 size={14} className="text-primary-800" />
               <span className="text-sm font-semibold text-gray-800">{filteredProps.length}</span>
               <span className="text-xs text-gray-500">properties</span>
             </div>

@@ -23,6 +23,7 @@ class DealModel(db.Model):
     deal_name = Column(String(255), nullable=False)
     location = Column(String(255), nullable=False)
     status = Column(String(50), default='potential', nullable=False)
+    gp_id = Column(Integer, ForeignKey('gps.id'), nullable=True)
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -189,6 +190,7 @@ class DealModel(db.Model):
             'dealName': self.deal_name,
             'location': self.location,
             'status': self.status,
+            'gpId': self.gp_id,
             'createdAt': self.created_at.isoformat() if self.created_at else None,
             'updatedAt': self.updated_at.isoformat() if self.updated_at else None,
 
@@ -313,6 +315,7 @@ class DealModel(db.Model):
             deal_name=data.get('dealName'),
             location=data.get('location'),
             status=data.get('status', 'potential'),
+            gp_id=data.get('gpId'),
 
             # Property Information
             property_address=data.get('propertyAddress'),
@@ -380,6 +383,8 @@ class DealModel(db.Model):
             self.location = data['location']
         if 'status' in data:
             self.status = data['status']
+        if 'gpId' in data:
+            self.gp_id = data['gpId']
 
         # Property Information
         if 'propertyAddress' in data:
@@ -1823,6 +1828,7 @@ class SourcingPropertyModel(db.Model):
     priority = Column(String(20), nullable=False, default='medium')
     notes = Column(Text, nullable=False, default='')
     deal_id = Column(Integer, nullable=True)
+    gp_id = Column(Integer, ForeignKey('gps.id'), nullable=True)
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
@@ -1845,6 +1851,7 @@ class SourcingPropertyModel(db.Model):
             'priority': self.priority,
             'notes': self.notes,
             'deal_id': self.deal_id,
+            'gp_id': self.gp_id,
             'lat': self.lat,
             'lng': self.lng,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,

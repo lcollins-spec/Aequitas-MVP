@@ -143,7 +143,7 @@ const DealsListSidebar = ({ onSelectDeal, activeDealId, onDealsUpdate }: DealsLi
       <div className="p-6 bg-white shadow-sm rounded-xl">
         <h3 className="mb-4 text-lg font-semibold text-gray-800">Underwritten Deals</h3>
         <div className="flex items-center justify-center py-8">
-          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-6 h-6 border-2 border-primary-700 border-t-transparent rounded-full animate-spin"></div>
         </div>
       </div>
     );
@@ -156,7 +156,7 @@ const DealsListSidebar = ({ onSelectDeal, activeDealId, onDealsUpdate }: DealsLi
         <div className="p-4 text-sm text-red-800 bg-red-100 border border-red-200 rounded-lg">{error}</div>
         <button
           onClick={fetchDeals}
-          className="w-full px-4 py-2 mt-3 text-sm font-medium text-blue-600 transition-colors bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100"
+          className="w-full px-4 py-2 mt-3 text-sm font-medium text-primary-800 transition-colors bg-gray-50 border border-gray-200 rounded-lg hover:bg-primary-100"
         >
           Retry
         </button>
@@ -170,7 +170,7 @@ const DealsListSidebar = ({ onSelectDeal, activeDealId, onDealsUpdate }: DealsLi
       <div className="p-4 border-b border-gray-100">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-semibold text-gray-800">Underwritten Deals</h3>
-          <span className="px-2 py-1 text-xs font-medium text-blue-600 rounded-full bg-blue-50">
+          <span className="px-2 py-1 text-xs font-medium text-primary-800 rounded-full bg-gray-50">
             {filteredDeals.length}
           </span>
         </div>
@@ -183,7 +183,7 @@ const DealsListSidebar = ({ onSelectDeal, activeDealId, onDealsUpdate }: DealsLi
               onClick={() => setActiveFilter(tab)}
               className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${
                 activeFilter === tab
-                  ? 'bg-blue-600 text-white border-blue-600'
+                  ? 'bg-primary-800 text-white border-primary-800'
                   : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
               }`}
             >
@@ -212,13 +212,13 @@ const DealsListSidebar = ({ onSelectDeal, activeDealId, onDealsUpdate }: DealsLi
                   onClick={() => onSelectDeal(deal)}
                   className={`p-3 rounded-lg cursor-pointer transition-all border ${
                     isActive
-                      ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-200'
+                      ? 'bg-gray-50 border-primary-300 ring-2 ring-primary-300'
                       : 'bg-gray-50 border-gray-200 hover:bg-gray-100 hover:border-gray-300'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <h4 className={`text-sm font-semibold truncate ${isActive ? 'text-blue-900' : 'text-gray-800'}`}>
+                      <h4 className={`text-sm font-semibold truncate ${isActive ? 'text-gray-900' : 'text-gray-800'}`}>
                         {deal.dealName}
                       </h4>
                       <p className="mt-1 text-xs text-gray-600 truncate">{deal.location}</p>

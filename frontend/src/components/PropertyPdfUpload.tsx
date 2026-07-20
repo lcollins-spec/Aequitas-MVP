@@ -141,7 +141,7 @@ const PropertyPdfUpload = ({ onDataExtracted, onError }: PropertyPdfUploadProps)
         <div
           onDragOver={handleDragOver}
           onDrop={handleDrop}
-          className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors"
+          className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary-400 transition-colors"
         >
           <input
             ref={fileInputRef}
@@ -155,7 +155,7 @@ const PropertyPdfUpload = ({ onDataExtracted, onError }: PropertyPdfUploadProps)
 
           {selectedFile ? (
             <div className="flex items-center justify-center gap-3">
-              <FileText className="h-8 w-8 text-blue-600" />
+              <FileText className="h-8 w-8 text-primary-800" />
               <div className="text-left">
                 <p className="text-sm font-medium text-gray-900">{selectedFile.name}</p>
                 <p className="text-xs text-gray-500">
@@ -183,7 +183,7 @@ const PropertyPdfUpload = ({ onDataExtracted, onError }: PropertyPdfUploadProps)
                 Drag and drop your PDF here, or{' '}
                 <label
                   htmlFor="pdf-upload"
-                  className="text-blue-600 hover:text-blue-700 cursor-pointer underline"
+                  className="text-primary-800 hover:text-primary-700 cursor-pointer underline"
                 >
                   browse
                 </label>
@@ -201,7 +201,7 @@ const PropertyPdfUpload = ({ onDataExtracted, onError }: PropertyPdfUploadProps)
             <button
               onClick={handleExtract}
               disabled={isExtracting}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full px-4 py-2 bg-primary-800 text-white rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {isExtracting ? (
                 <>
@@ -283,7 +283,7 @@ const PropertyPdfUpload = ({ onDataExtracted, onError }: PropertyPdfUploadProps)
                   e.stopPropagation();
                   handleUseData();
                 }}
-                className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-3 py-1.5 bg-primary-800 text-white text-sm rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
               >
                 Use This Data
               </button>
@@ -428,11 +428,11 @@ const PropertyPdfUpload = ({ onDataExtracted, onError }: PropertyPdfUploadProps)
 
               {/* Missing Fields */}
               {extractedData.missingFields && extractedData.missingFields.length > 0 && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                  <p className="text-sm font-medium text-blue-900 mb-1">
+                <div className="p-3 bg-gray-50 border border-gray-200 rounded-md">
+                  <p className="text-sm font-medium text-gray-900 mb-1">
                     Missing Fields:
                   </p>
-                  <p className="text-sm text-blue-700">
+                  <p className="text-sm text-gray-700">
                     {extractedData.missingFields.join(', ')}
                   </p>
                 </div>

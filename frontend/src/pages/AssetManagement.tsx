@@ -231,7 +231,7 @@ function ReportFormModal({ dealId, dealName, initialReport, onSaved, onClose }: 
   const [pdfUrl, setPdfUrl] = useState(initialReport?.pdf_drive_url ?? '');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const inputCls = "w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400";
+  const inputCls = "w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500";
   const labelCls = "block text-xs font-medium text-gray-500 mb-1";
 
   const handleSave = async () => {
@@ -364,7 +364,7 @@ function ReportFormModal({ dealId, dealName, initialReport, onSaved, onClose }: 
                 <span className="text-xs text-gray-700 truncate flex-1">{pdfName}</span>
                 {pdfUrl && (
                   <a href={pdfUrl} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700">
+                    className="flex items-center gap-1 text-xs text-primary-800 hover:text-primary-700">
                     <ExternalLink size={12} /> View
                   </a>
                 )}
@@ -375,7 +375,7 @@ function ReportFormModal({ dealId, dealName, initialReport, onSaved, onClose }: 
             <button
               onClick={() => fileRef.current?.click()}
               disabled={uploadingPdf}
-              className="mt-2 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg transition-colors disabled:opacity-50"
+              className="mt-2 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-800 hover:bg-primary-50 border border-gray-200 rounded-lg transition-colors disabled:opacity-50"
             >
               <Upload size={12} />
               {uploadingPdf ? 'Uploading…' : pdfName ? 'Replace PDF' : 'Upload PDF'}
@@ -393,7 +393,7 @@ function ReportFormModal({ dealId, dealName, initialReport, onSaved, onClose }: 
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-lg transition-colors disabled:opacity-50"
+            className="px-4 py-2 text-sm font-medium text-white bg-primary-800 hover:bg-primary-700 rounded-lg transition-colors disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save Report'}
           </button>
@@ -725,7 +725,7 @@ const AssetManagement = () => {
   };
 
   // ─── Input helpers ────────────────────────────────────────────────────────
-  const inputCls = "w-full px-2 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400";
+  const inputCls = "w-full px-2 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500";
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -734,7 +734,7 @@ const AssetManagement = () => {
       {/* ── Left sidebar: deal list ───────────────────────────────────────── */}
       <aside className="w-64 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
         <div className="px-4 py-5 border-b border-gray-100">
-          <h1 className="text-sm font-semibold text-gray-800">Asset Management</h1>
+          <h1 className="text-sm font-semibold text-brandPurple-700">Asset Management</h1>
           <p className="text-xs text-gray-400 mt-0.5">Active &amp; closed deals</p>
         </div>
         <div className="flex-1 overflow-y-auto py-2">
@@ -754,11 +754,11 @@ const AssetManagement = () => {
                 onClick={() => setSelectedDealId(deal.id)}
                 className={`w-full text-left px-4 py-3 transition-colors border-l-2 ${
                   selectedDealId === deal.id
-                    ? 'bg-blue-50 border-l-blue-500'
+                    ? 'bg-gray-50 border-l-blue-500'
                     : 'border-l-transparent hover:bg-gray-50'
                 }`}
               >
-                <p className={`text-sm font-medium truncate ${selectedDealId === deal.id ? 'text-blue-700' : 'text-gray-800'}`}>
+                <p className={`text-sm font-medium truncate ${selectedDealId === deal.id ? 'text-gray-700' : 'text-gray-800'}`}>
                   {deal.dealName}
                 </p>
                 {deal.location && (
@@ -795,7 +795,7 @@ const AssetManagement = () => {
                     onClick={() => setSelectedDealId(deal.deal_id)}
                     className={`text-left p-4 rounded-xl border transition-all hover:shadow-md ${
                       selectedDealId === deal.deal_id
-                        ? 'border-blue-300 bg-blue-50/60'
+                        ? 'border-primary-300 bg-gray-50/60'
                         : 'border-gray-200 bg-white hover:border-gray-300'
                     }`}
                   >
@@ -841,14 +841,14 @@ const AssetManagement = () => {
             {/* Deal header */}
             <div className="flex items-start justify-between">
               <div>
-                <h1 className="text-xl font-semibold text-gray-900">{selectedDeal.dealName}</h1>
+                <h1 className="text-xl font-semibold text-brandPurple-700">{selectedDeal.dealName}</h1>
                 {selectedDeal.location && (
                   <p className="text-sm text-gray-500 mt-0.5">{selectedDeal.location}</p>
                 )}
               </div>
               <button
                 onClick={() => { setEditingReport(activeReport); setShowModal(true); }}
-                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-lg transition-colors"
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-primary-800 hover:text-primary-700 hover:bg-primary-50 border border-gray-200 rounded-lg transition-colors"
               >
                 <Plus size={14} />
                 {activeReport ? 'Edit Report' : 'Add Report'}
@@ -864,7 +864,7 @@ const AssetManagement = () => {
                   <select
                     value={selectedQuarter}
                     onChange={e => setSelectedQuarter(e.target.value)}
-                    className="appearance-none pl-3 pr-8 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer"
+                    className="appearance-none pl-3 pr-8 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
                   >
                     {generateQuarters().map(q => (
                       <option key={q} value={q}>{q}</option>
@@ -893,7 +893,7 @@ const AssetManagement = () => {
                   <span className="text-xs text-gray-500">{activeReport.pdf_filename}</span>
                   {activeReport.pdf_drive_url && (
                     <a href={activeReport.pdf_drive_url} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700">
+                      className="flex items-center gap-1 text-xs text-primary-800 hover:text-primary-700">
                       <ExternalLink size={11} /> View PDF
                     </a>
                   )}
@@ -969,7 +969,7 @@ const AssetManagement = () => {
                   </select>
                 </div>
                 <div className="flex items-end">
-                  <button onClick={addCapitalCall} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-lg transition-colors">
+                  <button onClick={addCapitalCall} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium text-primary-800 hover:text-primary-700 hover:bg-primary-50 border border-gray-200 rounded-lg transition-colors">
                     <Plus size={14} /> Add
                   </button>
                 </div>
@@ -996,7 +996,7 @@ const AssetManagement = () => {
                         <td className="py-2.5 text-right text-gray-700 tabular-nums">{fmt$(dist.amount)}</td>
                         <td className="py-2.5 pl-4">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                            dist.type === 'Operating'         ? 'bg-blue-100 text-blue-700' :
+                            dist.type === 'Operating'         ? 'bg-gray-100 text-gray-700' :
                             dist.type === 'Return of Capital' ? 'bg-purple-100 text-purple-700' :
                                                                 'bg-teal-100 text-teal-700'
                           }`}>{dist.type}</span>
@@ -1022,12 +1022,12 @@ const AssetManagement = () => {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
-                  <select value={newDistType} onChange={e => setNewDistType(e.target.value as Distribution['type'])} className="px-2 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
+                  <select value={newDistType} onChange={e => setNewDistType(e.target.value as Distribution['type'])} className="px-2 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500">
                     <option>Operating</option><option>Return of Capital</option><option>Disposition</option>
                   </select>
                 </div>
                 <div className="flex items-end">
-                  <button onClick={addDistribution} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-lg transition-colors">
+                  <button onClick={addDistribution} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary-800 hover:text-primary-700 hover:bg-primary-50 border border-gray-200 rounded-lg transition-colors">
                     <Plus size={14} /> Add
                   </button>
                 </div>
@@ -1072,16 +1072,16 @@ const AssetManagement = () => {
                   <input type="text" value={newCapexDesc} onChange={e => setNewCapexDesc(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && addCapexItem()}
                     placeholder="e.g. Roof replacement"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 </div>
                 <div className="w-36">
                   <label className="block text-xs font-medium text-gray-500 mb-1">Amount ($)</label>
                   <input type="text" value={newCapexAmt} onChange={e => setNewCapexAmt(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && addCapexItem()}
                     placeholder="e.g. 50000"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 </div>
-                <button onClick={addCapexItem} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-lg transition-colors">
+                <button onClick={addCapexItem} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary-800 hover:text-primary-700 hover:bg-primary-50 border border-gray-200 rounded-lg transition-colors">
                   <Plus size={14} /> Add
                 </button>
               </div>
@@ -1128,22 +1128,22 @@ const AssetManagement = () => {
                   <label className="block text-xs font-medium text-gray-500 mb-1">Year</label>
                   <input type="text" value={newOpYear} onChange={e => setNewOpYear(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && addOpPerfRow()} placeholder="2025"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 </div>
                 <div className="w-36">
                   <label className="block text-xs font-medium text-gray-500 mb-1">Projected NOI ($)</label>
                   <input type="text" value={newOpProjNoi} onChange={e => setNewOpProjNoi(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && addOpPerfRow()} placeholder="e.g. 200000"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 </div>
                 <div className="w-36">
                   <label className="block text-xs font-medium text-gray-500 mb-1">Actual NOI ($)</label>
                   <input type="text" value={newOpActualNoi} onChange={e => setNewOpActualNoi(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && addOpPerfRow()} placeholder="e.g. 185000"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 </div>
                 <div className="flex items-end">
-                  <button onClick={addOpPerfRow} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-lg transition-colors">
+                  <button onClick={addOpPerfRow} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary-800 hover:text-primary-700 hover:bg-primary-50 border border-gray-200 rounded-lg transition-colors">
                     <Plus size={14} /> Add Row
                   </button>
                 </div>

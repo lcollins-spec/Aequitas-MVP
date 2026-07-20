@@ -263,7 +263,7 @@ const MapPage = () => {
     <div className="min-h-screen p-4 md:p-6 lg:p-8 bg-gray-50">
       <div className="flex flex-col items-start justify-between gap-4 mb-6 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-800 md:text-3xl">Property Search Map</h1>
+          <h1 className="text-2xl font-semibold text-brandPurple-700 md:text-3xl">Property Search Map</h1>
           <p className="mt-1 text-sm text-gray-500">
             Search for rental properties by zipcode or address
           </p>
@@ -348,8 +348,8 @@ const MapPage = () => {
             <h3 className="mb-4 text-lg font-semibold text-gray-800">Search Results</h3>
             <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center flex-shrink-0 w-10 h-10 rounded-lg bg-blue-50">
-                  <Home size={16} className="text-blue-500" />
+                <div className="flex items-center justify-center flex-shrink-0 w-10 h-10 rounded-lg bg-gray-50">
+                  <Home size={16} className="text-primary-800" />
                 </div>
                 <div className="flex-1">
                   <span className="block text-xs text-gray-500">Total Properties</span>

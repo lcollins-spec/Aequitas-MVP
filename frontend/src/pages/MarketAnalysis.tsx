@@ -106,7 +106,7 @@ export default function MarketAnalysis() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold text-gray-900 mb-6">Market Analysis</h1>
+      <h1 className="text-3xl font-bold text-brandPurple-700 mb-6">Market Analysis</h1>
 
       {/* Search Section */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
@@ -118,12 +118,12 @@ export default function MarketAnalysis() {
             value={zipcode}
             onChange={(e) => setZipcode(e.target.value)}
             maxLength={5}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           />
           <button
             onClick={handleSearch}
             disabled={loading}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            className="px-6 py-2 bg-primary-800 text-white rounded-lg hover:bg-primary-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             {loading ? 'Loading...' : 'Search'}
           </button>
@@ -148,9 +148,9 @@ export default function MarketAnalysis() {
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-4 bg-blue-50 rounded-lg">
+              <div className="p-4 bg-gray-50 rounded-lg">
                 <p className="text-sm text-gray-600">Total Population</p>
-                <p className="text-2xl font-bold text-blue-900">
+                <p className="text-2xl font-bold text-gray-900">
                   {formatNumber(demographics.population.total_population)}
                 </p>
               </div>
@@ -219,7 +219,7 @@ export default function MarketAnalysis() {
                     <div className="w-32 text-sm text-gray-600">{formattedBracket}</div>
                     <div className="flex-1 bg-gray-200 rounded-full h-6 relative">
                       <div
-                        className="bg-blue-600 h-6 rounded-full transition-all"
+                        className="bg-primary-800 h-6 rounded-full transition-all"
                         style={{ width: `${percentage}%` }}
                       />
                       <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold">
@@ -300,9 +300,9 @@ export default function MarketAnalysis() {
                     {marketStats.medianRentAll ? formatCurrency(marketStats.medianRentAll) : 'N/A'}
                   </p>
                 </div>
-                <div className="p-4 bg-blue-50 rounded-lg">
+                <div className="p-4 bg-gray-50 rounded-lg">
                   <p className="text-sm text-gray-600">Total Listings</p>
-                  <p className="text-xl font-bold text-blue-900">
+                  <p className="text-xl font-bold text-gray-900">
                     {marketStats.totalListings ? formatNumber(marketStats.totalListings) : 'N/A'}
                   </p>
                 </div>
@@ -404,7 +404,7 @@ export default function MarketAnalysis() {
                 <select
                   value={amiPercent}
                   onChange={(e) => setAmiPercent(parseInt(e.target.value) as 30 | 50 | 60 | 80)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
                 >
                   <option value={30}>30% AMI</option>
                   <option value={50}>50% AMI</option>
@@ -423,7 +423,7 @@ export default function MarketAnalysis() {
                   max="5"
                   value={bedrooms}
                   onChange={(e) => setBedrooms(parseInt(e.target.value))}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
                 />
               </div>
 

@@ -25,7 +25,6 @@ type UnitMixRow = { unitType: string; count: number; askingRent: number; avgSf: 
 
 const OM_REVIEW_FIELDS: ReviewField[] = [
   { key: 'propertyName', label: 'Property Name', group: 'Property', type: 'text' },
-  { key: 'numUnits', label: 'Total Units', group: 'Property', type: 'number' },
   { key: 'askingPrice', label: 'Asking Price', group: 'Property', type: 'number' },
   { key: 'city', label: 'City', group: 'Property', type: 'text' },
   { key: 'state', label: 'State', group: 'Property', type: 'text' },
@@ -59,10 +58,14 @@ const OM_REVIEW_FIELDS: ReviewField[] = [
   { key: 'assessmentPct', label: 'Assessment %', group: 'Property Tax & Deal Structure', type: 'percent' },
   { key: 'bridgePeriodMonths', label: 'Bridge Period (Months)', group: 'Property Tax & Deal Structure', type: 'number' },
   { key: 'lpEquityShare', label: 'LP Equity Share', group: 'Property Tax & Deal Structure', type: 'percent' },
+
+  { key: 'seniorLoanAmount', label: 'Loan Amount', group: 'Senior Loan (enter manually)', type: 'number' },
+  { key: 'seniorInterestRate', label: 'Interest Rate', group: 'Senior Loan (enter manually)', type: 'percent' },
+  { key: 'seniorIoPeriods', label: 'IO Periods (Months)', group: 'Senior Loan (enter manually)', type: 'number' },
+  { key: 'seniorFinancingCostsPct', label: 'Financing Costs', group: 'Senior Loan (enter manually)', type: 'percent' },
 ];
 
 const RENT_ROLL_REVIEW_FIELDS: ReviewField[] = [
-  { key: 'numUnits', label: 'Total Units', group: 'Property', type: 'number' },
   { key: 'city', label: 'City', group: 'Property', type: 'text' },
   { key: 'state', label: 'State', group: 'Property', type: 'text' },
   { key: 'zipcode', label: 'Zip Code', group: 'Property', type: 'text' },
@@ -71,6 +74,11 @@ const RENT_ROLL_REVIEW_FIELDS: ReviewField[] = [
   { key: 'badDebtRate', label: 'Bad Debt Rate', group: 'Vacancy & Credit Loss', type: 'percent' },
 
   { key: 'annualRentGrowthCap', label: 'Annual Rent Growth Cap', group: 'Rent Stabilization', type: 'percent' },
+
+  { key: 'seniorLoanAmount', label: 'Loan Amount', group: 'Senior Loan (enter manually)', type: 'number' },
+  { key: 'seniorInterestRate', label: 'Interest Rate', group: 'Senior Loan (enter manually)', type: 'percent' },
+  { key: 'seniorIoPeriods', label: 'IO Periods (Months)', group: 'Senior Loan (enter manually)', type: 'number' },
+  { key: 'seniorFinancingCostsPct', label: 'Financing Costs', group: 'Senior Loan (enter manually)', type: 'percent' },
 ];
 
 const GP_PARTNERS_FALLBACK = ['Aequitas Housing'];
@@ -111,7 +119,7 @@ function MarketAnalysisPanelBlock({ isOpen, loading, error, demographics, market
         className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors"
       >
         <div className="flex items-center gap-2">
-          <TrendingUp size={18} className="text-blue-500" />
+          <TrendingUp size={18} className="text-primary-800" />
           <span className="text-sm font-semibold text-gray-800">Market Analysis</span>
           {(cityName || zipCode) && (
             <span className="text-xs text-gray-400">
@@ -134,9 +142,9 @@ function MarketAnalysisPanelBlock({ isOpen, loading, error, demographics, market
           {!loading && !error && demographics && (
             <div className="space-y-4 pt-4">
               <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-blue-50 rounded-lg">
+                <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-xs text-gray-500">Population</p>
-                  <p className="text-sm font-bold text-blue-900">{demographics.population.total_population.toLocaleString()}</p>
+                  <p className="text-sm font-bold text-gray-900">{demographics.population.total_population.toLocaleString()}</p>
                 </div>
                 <div className="p-3 bg-yellow-50 rounded-lg">
                   <p className="text-xs text-gray-500">Median Income</p>
@@ -217,7 +225,7 @@ const pctInput = (
     step={step}
     value={parseFloat((val * 100).toFixed(4))}
     onChange={(e) => onChange((Number(e.target.value) || 0) / 100)}
-    className={`w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white ${extraClass}`}
+    className={`w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white ${extraClass}`}
   />
 );
 
@@ -640,7 +648,11 @@ const Underwriting = () => {
   // Only called after the user confirms the extraction review modal.
   const applyOmDataToForm = async (data: any, file: File) => {
     if (data.propertyName) setDealName(data.propertyName);
-    if (data.numUnits) setTotalUnits(data.numUnits);
+    if (data.unitMix?.length > 0) {
+      setTotalUnits(data.unitMix.reduce((s: number, u: any) => s + (u.count ?? 0), 0));
+    } else if (data.numUnits) {
+      setTotalUnits(data.numUnits);
+    }
     if (data.askingPrice) setPurchasePrice(data.askingPrice);
     if (data.city && data.state) setLocation(`${data.city}, ${data.state}`);
     if (data.zipcode) setZipCode(data.zipcode);
@@ -697,6 +709,12 @@ const Underwriting = () => {
     if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
     if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
 
+    // Senior loan (asked manually in the review modal, not extracted)
+    if (data.seniorLoanAmount != null) setSeniorLoanAmount(data.seniorLoanAmount);
+    if (data.seniorInterestRate != null) setSeniorInterestRate(data.seniorInterestRate);
+    if (data.seniorIoPeriods != null) setSeniorIoPeriods(data.seniorIoPeriods);
+    if (data.seniorFinancingCostsPct != null) setSeniorFinancingCostsPct(data.seniorFinancingCostsPct);
+
     setOmUploaded(true);
 
     // Create deal record
@@ -731,7 +749,14 @@ const Underwriting = () => {
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || 'Extraction failed');
       // Hand off to the review modal instead of applying directly — user confirms/edits first.
-      setPendingOmData(json.data);
+      // Seed senior-loan fields with current form state (not extracted) so the modal opens pre-filled.
+      setPendingOmData({
+        ...json.data,
+        seniorLoanAmount,
+        seniorInterestRate,
+        seniorIoPeriods,
+        seniorFinancingCostsPct,
+      });
       setPendingOmFile(file);
     } catch (err) {
       setOmError(err instanceof Error ? err.message : 'Failed to extract OM data');
@@ -750,13 +775,24 @@ const Underwriting = () => {
         avgSf: u.avgSf ?? 0,
       })));
     }
-    if (data.numUnits) setTotalUnits(data.numUnits);
+    if (data.unitMix?.length > 0) {
+      setTotalUnits(data.unitMix.reduce((s: number, u: any) => s + (u.count ?? 0), 0));
+    } else if (data.numUnits) {
+      setTotalUnits(data.numUnits);
+    }
     if (data.vacancyRate != null) { const v = data.vacancyRate; setVacancyRates([v, v, v, v, v]); }
     if (data.badDebtRate != null) { const v = data.badDebtRate; setBadDebtRates([v, v, v, v, v]); }
     if (data.city && data.state) setLocation(`${data.city}, ${data.state}`);
     if (data.zipcode) setZipCode(data.zipcode);
     if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
     if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
+
+    // Senior loan (asked manually in the review modal, not extracted)
+    if (data.seniorLoanAmount != null) setSeniorLoanAmount(data.seniorLoanAmount);
+    if (data.seniorInterestRate != null) setSeniorInterestRate(data.seniorInterestRate);
+    if (data.seniorIoPeriods != null) setSeniorIoPeriods(data.seniorIoPeriods);
+    if (data.seniorFinancingCostsPct != null) setSeniorFinancingCostsPct(data.seniorFinancingCostsPct);
+
     setRrUploaded(true);
   };
 
@@ -770,7 +806,14 @@ const Underwriting = () => {
       const res = await fetch('/api/v2/underwriting/extract-rent-roll', { method: 'POST', body: formData });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || 'Extraction failed');
-      setPendingRentRollData(json.data);
+      // Seed senior-loan fields with current form state (not extracted) so the modal opens pre-filled.
+      setPendingRentRollData({
+        ...json.data,
+        seniorLoanAmount,
+        seniorInterestRate,
+        seniorIoPeriods,
+        seniorFinancingCostsPct,
+      });
     } catch (err) {
       setRrError(err instanceof Error ? err.message : 'Failed to extract Rent Roll data');
     } finally {
@@ -1066,7 +1109,7 @@ const Underwriting = () => {
 
   // ── Shared input class ────────────────────────────────────────────────────
 
-  const inp = 'w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white';
+  const inp = 'w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white';
   const lbl = 'block text-xs font-medium text-gray-600 mb-1.5';
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -1076,15 +1119,15 @@ const Underwriting = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">Deal Underwriting</h1>
+          <h1 className="text-2xl md:text-3xl font-semibold text-brandPurple-700">Deal Underwriting</h1>
           <p className="text-sm text-gray-500 mt-1">
             Analyze projected returns and export financial models
-            {currentDealId && <span className="ml-2 text-blue-600 font-medium">• Deal #{currentDealId} loaded</span>}
+            {currentDealId && <span className="ml-2 text-primary-800 font-medium">• Deal #{currentDealId} loaded</span>}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
           {currentDealId && pipelineStatus === 'Analyzing' && (
-            <button onClick={() => setShowDataRoomModal(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg font-medium text-sm transition-colors">
+            <button onClick={() => setShowDataRoomModal(true)} className="flex items-center gap-2 px-4 py-2 bg-gray-50 hover:bg-primary-100 text-gray-700 border border-gray-200 rounded-lg font-medium text-sm transition-colors">
               <Upload size={16} /> Data Room Received
             </button>
           )}
@@ -1101,7 +1144,7 @@ const Underwriting = () => {
           <button onClick={handleSaveDeal} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50">
             <Save size={16} /> {saving ? 'Saving...' : 'Save Deal'}
           </button>
-          <button onClick={handleExportExcel} disabled={exporting} className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50">
+          <button onClick={handleExportExcel} disabled={exporting} className="flex items-center gap-2 px-4 py-2 bg-primary-800 hover:bg-primary-700 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50">
             <Download size={16} /> {exporting ? 'Exporting...' : 'Export Excel Model'}
           </button>
         </div>
@@ -1133,9 +1176,9 @@ const Underwriting = () => {
               {/* OM Upload */}
               <div>
                 {omUploading ? (
-                  <div className="flex flex-col items-center justify-center gap-3 w-full min-h-[120px] border-2 border-dashed border-blue-300 rounded-xl bg-blue-50 px-4 py-5 text-center">
-                    <Loader2 size={28} className="text-blue-500 animate-spin" />
-                    <p className="text-sm font-semibold text-blue-700">Analyzing OM… (20–30 sec)</p>
+                  <div className="flex flex-col items-center justify-center gap-3 w-full min-h-[120px] border-2 border-dashed border-primary-300 rounded-xl bg-gray-50 px-4 py-5 text-center">
+                    <Loader2 size={28} className="text-primary-800 animate-spin" />
+                    <p className="text-sm font-semibold text-gray-700">Analyzing OM… (20–30 sec)</p>
                   </div>
                 ) : omUploaded ? (
                   <div className="flex items-start gap-3 p-4 bg-green-50 border border-green-200 rounded-xl">
@@ -1145,7 +1188,7 @@ const Underwriting = () => {
                       <p className="text-xs text-green-700 mt-0.5 truncate">{dealName}</p>
                       <p className="text-xs text-green-600">{totalUnits} units · {unitMix.length} types</p>
                     </div>
-                    <label className="text-xs text-green-600 hover:text-blue-600 cursor-pointer flex-shrink-0">
+                    <label className="text-xs text-green-600 hover:text-primary-700 cursor-pointer flex-shrink-0">
                       Re-upload
                       <input type="file" accept=".pdf" className="hidden" onChange={(e) => {
                         const f = e.target.files?.[0];
@@ -1154,11 +1197,11 @@ const Underwriting = () => {
                     </label>
                   </div>
                 ) : (
-                  <label className="flex flex-col items-center justify-center gap-3 w-full min-h-[120px] border-2 border-dashed border-blue-300 rounded-xl bg-blue-50 hover:bg-blue-100 hover:border-blue-400 transition-colors cursor-pointer px-4 py-5 text-center">
-                    <Upload size={28} className="text-blue-400" />
+                  <label className="flex flex-col items-center justify-center gap-3 w-full min-h-[120px] border-2 border-dashed border-primary-300 rounded-xl bg-primary-50 hover:bg-primary-100 hover:border-primary-400 transition-colors cursor-pointer px-4 py-5 text-center">
+                    <Upload size={28} className="text-primary-800" />
                     <div>
-                      <p className="text-sm font-semibold text-blue-700">Upload Offering Memorandum</p>
-                      <p className="text-xs text-blue-500 mt-1">PDF · max 20 MB</p>
+                      <p className="text-sm font-semibold text-primary-800">Upload Offering Memorandum</p>
+                      <p className="text-xs text-primary-800 mt-1">PDF · max 20 MB</p>
                     </div>
                     <input type="file" accept=".pdf" className="hidden" onChange={(e) => {
                       const f = e.target.files?.[0];
@@ -1183,7 +1226,7 @@ const Underwriting = () => {
                       <p className="text-sm font-semibold text-green-800">Rent Roll Parsed</p>
                       <p className="text-xs text-green-600">{unitMix.length} unit types · {totalUnits} total</p>
                     </div>
-                    <label className="text-xs text-green-600 hover:text-blue-600 cursor-pointer flex-shrink-0">
+                    <label className="text-xs text-green-600 hover:text-primary-700 cursor-pointer flex-shrink-0">
                       Re-upload
                       <input type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden" onChange={(e) => {
                         const f = e.target.files?.[0];
@@ -1270,7 +1313,7 @@ const Underwriting = () => {
                 <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="City, State" className={inp} />
                 {location && (
                   <div className="flex flex-wrap gap-3 mt-1 items-center">
-                    <Link to={`/sourcing?address=${encodeURIComponent(location)}`} className="text-xs text-blue-500 hover:text-blue-700" tabIndex={-1}>View in Sourcing →</Link>
+                    <Link to={`/sourcing?address=${encodeURIComponent(location)}`} className="text-xs text-primary-800 hover:text-primary-700" tabIndex={-1}>View in Sourcing →</Link>
                     <Link to={`/regulations?market=${encodeURIComponent(location.split(',').map(p => p.trim()).slice(-2).join(', '))}`} className="text-xs text-indigo-500 hover:text-indigo-700" tabIndex={-1}>Local Regs →</Link>
                     <button onClick={handleFetchLegislation} disabled={legislationFetching} className="text-xs px-2 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 transition-colors">
                       {legislationFetching ? <><Loader2 size={10} className="inline animate-spin mr-1" />Fetching…</> :
@@ -1349,7 +1392,7 @@ const Underwriting = () => {
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-700">Unit Mix</h3>
                 {weightedAvgRent !== null && (
-                  <span className="text-xs text-blue-600 font-semibold">Avg ${weightedAvgRent.toLocaleString()}/mo</span>
+                  <span className="text-xs text-primary-800 font-semibold">Avg ${weightedAvgRent.toLocaleString()}/mo</span>
                 )}
               </div>
 
@@ -1370,19 +1413,19 @@ const Underwriting = () => {
                       <tr key={idx} className="border-t border-gray-100">
                         <td className="px-2 py-1">
                           <input type="text" value={row.unitType} onChange={e => { const u = [...unitMix]; u[idx] = { ...u[idx], unitType: e.target.value }; setUnitMix(u); }}
-                            className="w-full px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                            className="w-full px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary-500" />
                         </td>
                         <td className="px-1 py-1">
                           <input type="number" value={row.count} onChange={e => { const u = [...unitMix]; u[idx] = { ...u[idx], count: Number(e.target.value) || 0 }; setUnitMix(u); }}
-                            className="w-14 px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                            className="w-14 px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary-500" />
                         </td>
                         <td className="px-1 py-1">
                           <input type="number" value={row.askingRent} onChange={e => { const u = [...unitMix]; u[idx] = { ...u[idx], askingRent: Number(e.target.value) || 0 }; setUnitMix(u); }}
-                            className="w-16 px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                            className="w-16 px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary-500" />
                         </td>
                         <td className="px-1 py-1">
                           <input type="number" value={row.avgSf} onChange={e => { const u = [...unitMix]; u[idx] = { ...u[idx], avgSf: Number(e.target.value) || 0 }; setUnitMix(u); }}
-                            className="w-16 px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                            className="w-16 px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary-500" />
                         </td>
                         <td className="px-1">
                           <button onClick={() => setUnitMix(unitMix.filter((_, i) => i !== idx))} className="text-gray-300 hover:text-red-400 text-xs">✕</button>
@@ -1392,7 +1435,7 @@ const Underwriting = () => {
                     {unitMix.length < 16 && (
                       <tr className="border-t border-gray-100">
                         <td colSpan={5} className="px-2 py-1.5">
-                          <button onClick={() => setUnitMix([...unitMix, { unitType: '', count: 0, askingRent: 0, avgSf: 0 }])} className="text-xs text-blue-500 hover:text-blue-700">+ Add row</button>
+                          <button onClick={() => setUnitMix([...unitMix, { unitType: '', count: 0, askingRent: 0, avgSf: 0 }])} className="text-xs text-primary-800 hover:text-primary-700">+ Add row</button>
                         </td>
                       </tr>
                     )}
@@ -1417,7 +1460,7 @@ const Underwriting = () => {
               {/* Rent comps */}
               {comparables.length > 0 && (
                 <div className="border-t border-gray-100 pt-3">
-                  <button onClick={() => setShowComparables(!showComparables)} className="text-xs text-blue-500 hover:text-blue-700">
+                  <button onClick={() => setShowComparables(!showComparables)} className="text-xs text-primary-800 hover:text-primary-700">
                     {showComparables ? 'Hide' : 'View'} {comparables.length} Rent Comps
                   </button>
                   {currentMortgageRate && !loadingRates && (
@@ -1462,7 +1505,7 @@ const Underwriting = () => {
                               updated[i] = pct ? (Number(e.target.value) || 0) / 100 : (Number(e.target.value) || 0);
                               setVals(updated);
                             }}
-                            className="w-full px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            className="w-full px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-right focus:outline-none focus:ring-1 focus:ring-primary-500"
                           />
                         </td>
                       ))}
@@ -1534,7 +1577,7 @@ const Underwriting = () => {
                   {currentMortgageRate && !loadingRates && (
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-xs text-green-600">FRED 30-yr: {currentMortgageRate.toFixed(2)}%</span>
-                      <button onClick={() => setSeniorInterestRate(currentMortgageRate / 100)} className="text-xs text-blue-600 hover:text-blue-700 underline">Use</button>
+                      <button onClick={() => setSeniorInterestRate(currentMortgageRate / 100)} className="text-xs text-primary-800 hover:text-primary-700 underline">Use</button>
                     </div>
                   )}
                 </div>
@@ -1686,7 +1729,7 @@ const Underwriting = () => {
                         </p>
                       </div>
                       <div className="text-right">
-                        {comp.listedRent && <p className="text-lg font-bold text-blue-600">${comp.listedRent.toLocaleString()}/mo</p>}
+                        {comp.listedRent && <p className="text-lg font-bold text-primary-800">${comp.listedRent.toLocaleString()}/mo</p>}
                         {comp.pricePerSqft && <p className="text-xs text-gray-500">${comp.pricePerSqft.toFixed(2)}/sqft</p>}
                       </div>
                     </div>

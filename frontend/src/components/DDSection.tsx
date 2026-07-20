@@ -96,7 +96,7 @@ const ISSUE_STATUS_OPTIONS = ['Open', 'In Progress', 'Resolved', 'Monitoring'];
 
 const STATUS_STYLE: Record<string, string> = {
   'Open':        'bg-gray-100 text-gray-600',
-  'In Progress': 'bg-blue-100 text-blue-700',
+  'In Progress': 'bg-gray-100 text-gray-700',
   'Complete':    'bg-green-100 text-green-700',
   'Waived':      'bg-yellow-100 text-yellow-700',
   'N/A':         'bg-gray-100 text-gray-400',
@@ -151,7 +151,7 @@ const InlineInput = ({
     onChange={e => onChange(e.target.value)}
     onBlur={onBlur}
     placeholder={placeholder}
-    className={`w-full px-2 py-1 border border-transparent rounded hover:border-gray-200 focus:border-blue-300 focus:outline-none focus:ring-1 focus:ring-blue-300 text-sm text-gray-800 bg-transparent focus:bg-white transition-colors ${className}`}
+    className={`w-full px-2 py-1 border border-transparent rounded hover:border-gray-200 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 text-sm text-gray-800 bg-transparent focus:bg-white transition-colors ${className}`}
   />
 );
 
@@ -163,7 +163,7 @@ const InlineSelect = ({
   <select
     value={value}
     onChange={e => onChange(e.target.value)}
-    className={`px-2 py-1 rounded text-xs font-semibold border border-transparent hover:border-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-300 bg-transparent cursor-pointer ${className}`}
+    className={`px-2 py-1 rounded text-xs font-semibold border border-transparent hover:border-gray-200 focus:outline-none focus:ring-1 focus:ring-primary-500 bg-transparent cursor-pointer ${className}`}
   >
     {options.map(o => <option key={o} value={o}>{o}</option>)}
   </select>
@@ -208,7 +208,7 @@ const KeyDatesBar = ({ dealId }: { dealId: number }) => {
       <div className="flex items-center gap-2 mb-3">
         <Calendar size={14} className="text-gray-400" />
         <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Key Dates</span>
-        {saving && <Loader2 size={12} className="text-blue-400 animate-spin ml-1" />}
+        {saving && <Loader2 size={12} className="text-primary-800 animate-spin ml-1" />}
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {fields.map(({ key, label }) => (
@@ -218,7 +218,7 @@ const KeyDatesBar = ({ dealId }: { dealId: number }) => {
               type="date"
               value={dates[key] ?? ''}
               onChange={e => save({ [key]: e.target.value || undefined })}
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
         ))}
@@ -352,7 +352,7 @@ const DDChecklist = ({ dealId }: { dealId: number }) => {
           <button
             onClick={seed}
             disabled={seeding}
-            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-5 py-2.5 bg-primary-800 hover:bg-primary-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50"
           >
             {seeding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
             Initialize DD Checklist
@@ -369,7 +369,7 @@ const DDChecklist = ({ dealId }: { dealId: number }) => {
         <div className="flex items-center gap-3 flex-1 min-w-[200px]">
           <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+              className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-green-500' : 'bg-primary-800'}`}
               style={{ width: `${pct}%` }}
             />
           </div>
@@ -397,7 +397,7 @@ const DDChecklist = ({ dealId }: { dealId: number }) => {
           </select>
           {(filterResp || filterStatus) && (
             <button onClick={() => { setFilterResp(''); setFilterStatus(''); }}
-              className="text-xs text-blue-500 hover:underline flex items-center gap-0.5">
+              className="text-xs text-primary-800 hover:underline flex items-center gap-0.5">
               <X size={10} /> Clear
             </button>
           )}
@@ -451,7 +451,7 @@ const DDChecklist = ({ dealId }: { dealId: number }) => {
                             <ChevronRight size={12} className={`text-gray-400 transition-transform ${secOpen ? 'rotate-90' : ''}`} />
                             {secAllDone
                               ? <CheckCircle2 size={13} className="text-green-500" />
-                              : <div className={`w-3 h-3 rounded-full border-2 ${secDone > 0 ? 'border-blue-400' : 'border-gray-300'}`} />
+                              : <div className={`w-3 h-3 rounded-full border-2 ${secDone > 0 ? 'border-primary-400' : 'border-gray-300'}`} />
                             }
                             <span className="text-xs font-semibold text-gray-600">
                               {sectionCode} — {sectionName}
@@ -476,7 +476,7 @@ const DDChecklist = ({ dealId }: { dealId: number }) => {
                                     <select
                                       value={item.status}
                                       onChange={e => patch(item.id, { status: e.target.value })}
-                                      className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold border-0 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300 ${STATUS_STYLE[item.status] ?? 'bg-gray-100 text-gray-500'}`}
+                                      className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold border-0 cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary-500 ${STATUS_STYLE[item.status] ?? 'bg-gray-100 text-gray-500'}`}
                                     >
                                       {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
@@ -494,7 +494,7 @@ const DDChecklist = ({ dealId }: { dealId: number }) => {
                                     <select
                                       value={item.responsible}
                                       onChange={e => patch(item.id, { responsible: e.target.value })}
-                                      className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold border-0 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300 ${RESP_STYLE[item.responsible] ?? 'bg-gray-100 text-gray-600'}`}
+                                      className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold border-0 cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary-500 ${RESP_STYLE[item.responsible] ?? 'bg-gray-100 text-gray-600'}`}
                                     >
                                       {RESPONSIBLE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
                                     </select>
@@ -504,7 +504,7 @@ const DDChecklist = ({ dealId }: { dealId: number }) => {
                                       type="date"
                                       value={item.due_date ?? ''}
                                       onChange={e => patch(item.id, { due_date: e.target.value || undefined })}
-                                      className="shrink-0 px-2 py-0.5 border border-gray-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-300 w-[120px]"
+                                      className="shrink-0 px-2 py-0.5 border border-gray-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 w-[120px]"
                                       title="Due date"
                                     />
 
@@ -530,7 +530,7 @@ const DDChecklist = ({ dealId }: { dealId: number }) => {
                                             onBlur={() => patch(item.id, { comments: item.comments })}
                                             rows={2}
                                             placeholder="Add a comment…"
-                                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-300 resize-none"
+                                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 resize-none"
                                           />
                                         </div>
                                         <div>
@@ -541,7 +541,7 @@ const DDChecklist = ({ dealId }: { dealId: number }) => {
                                             onBlur={() => patch(item.id, { analyst_notes: item.analyst_notes })}
                                             rows={2}
                                             placeholder="Internal notes…"
-                                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-300 resize-none"
+                                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 resize-none"
                                           />
                                         </div>
                                       </div>
@@ -552,7 +552,7 @@ const DDChecklist = ({ dealId }: { dealId: number }) => {
                                             href={item.drive_url}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors"
+                                            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-primary-800 hover:text-gray-800 bg-gray-50 hover:bg-primary-100 border border-gray-200 rounded-lg transition-colors"
                                           >
                                             <ExternalLink size={11} />
                                             View in Drive
@@ -644,7 +644,7 @@ const IssuesTab = ({ dealId }: { dealId: number }) => {
   return (
     <div>
       <div className="flex justify-end mb-4">
-        <button onClick={add} className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors">
+        <button onClick={add} className="flex items-center gap-1.5 px-3 py-2 bg-primary-800 hover:bg-primary-700 text-white text-xs font-semibold rounded-lg transition-colors">
           <Plus size={13} /> Add Issue
         </button>
       </div>
@@ -754,7 +754,7 @@ const QATab = ({ dealId }: { dealId: number }) => {
           <input type="checkbox" checked={showResolved} onChange={e => setShowResolved(e.target.checked)} className="rounded" />
           Show resolved
         </label>
-        <button onClick={add} className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors">
+        <button onClick={add} className="flex items-center gap-1.5 px-3 py-2 bg-primary-800 hover:bg-primary-700 text-white text-xs font-semibold rounded-lg transition-colors">
           <Plus size={13} /> Add Question
         </button>
       </div>
@@ -872,7 +872,7 @@ const BudgetTab = ({ dealId }: { dealId: number }) => {
   return (
     <div>
       <div className="flex justify-end mb-4">
-        <button onClick={add} className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors">
+        <button onClick={add} className="flex items-center gap-1.5 px-3 py-2 bg-primary-800 hover:bg-primary-700 text-white text-xs font-semibold rounded-lg transition-colors">
           <Plus size={13} /> Add Service
         </button>
       </div>
@@ -974,7 +974,7 @@ const ContactsTab = ({ dealId }: { dealId: number }) => {
   return (
     <div>
       <div className="flex justify-end mb-4">
-        <button onClick={add} className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors">
+        <button onClick={add} className="flex items-center gap-1.5 px-3 py-2 bg-primary-800 hover:bg-primary-700 text-white text-xs font-semibold rounded-lg transition-colors">
           <Plus size={13} /> Add Contact
         </button>
       </div>
@@ -1051,7 +1051,7 @@ export default function DDSection({ dealId }: { dealId: number }) {
             onClick={() => setActiveTab(tab.id)}
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
               activeTab === tab.id
-                ? 'border-blue-600 text-blue-700'
+                ? 'border-primary-800 text-primary-800'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >

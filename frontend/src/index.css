@@ -5,7 +5,11 @@
 @layer base {
   body {
     @apply min-h-screen bg-gray-50 antialiased;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
-      Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    font-family: 'Newsreader', 'Times New Roman', serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Instrument Serif', 'Times New Roman', serif;
+    color: theme('colors.brandPurple.700');
   }
 }

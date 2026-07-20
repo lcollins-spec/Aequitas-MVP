@@ -53,7 +53,7 @@ const PropertyMap = ({
       };
 
       const bgClass = colorClasses[color as keyof typeof colorClasses] || colorClasses.red;
-      const selectedClass = isSelected ? 'ring-4 ring-blue-400 ring-offset-2' : '';
+      const selectedClass = isSelected ? 'ring-4 ring-primary-400 ring-offset-2' : '';
 
       const safePrice = String(property.priceFormatted || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -87,7 +87,7 @@ const PropertyMap = ({
       {/* Loading Overlay */}
       {loading && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white bg-opacity-75 rounded-xl">
-          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-12 h-12 border-4 border-primary-700 border-t-transparent rounded-full animate-spin"></div>
           <p className="mt-3 text-sm font-medium text-gray-700">Loading properties...</p>
         </div>
       )}
@@ -158,7 +158,7 @@ const PropertyMap = ({
                   </p>
                 )}
                 {property.distanceMiles !== undefined && (
-                  <p className="text-blue-600 text-xs mt-1">
+                  <p className="text-primary-800 text-xs mt-1">
                     {property.distanceMiles.toFixed(2)} miles away
                   </p>
                 )}

@@ -52,7 +52,7 @@ const DealExecutionIndex = () => {
     <div className="p-4 md:p-6 lg:p-8 bg-gray-50 min-h-screen">
       <div className="mb-8">
         <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Pipeline</p>
-        <h1 className="text-2xl font-semibold text-gray-900">Deal Execution</h1>
+        <h1 className="text-2xl font-semibold text-brandPurple-700">Deal Execution</h1>
         <p className="text-sm text-gray-500 mt-1">
           {cards.length} deal{cards.length !== 1 ? 's' : ''} in execution
         </p>
@@ -60,8 +60,8 @@ const DealExecutionIndex = () => {
 
       {cards.length === 0 ? (
         <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4 text-center">
-          <div className="w-14 h-14 bg-blue-50 rounded-full flex items-center justify-center">
-            <Briefcase size={26} className="text-blue-400" />
+          <div className="w-14 h-14 bg-gray-50 rounded-full flex items-center justify-center">
+            <Briefcase size={26} className="text-gray-400" />
           </div>
           <div>
             <p className="text-gray-700 font-medium">No deals in execution yet</p>
@@ -71,7 +71,7 @@ const DealExecutionIndex = () => {
           </div>
           <Link
             to="/underwriting"
-            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-primary-800 bg-gray-50 hover:bg-primary-100 rounded-xl transition-colors"
           >
             Go to Underwriting <ArrowRight size={14} />
           </Link>
@@ -93,7 +93,7 @@ const DealExecutionIndex = () => {
               <Link
                 key={card.dealId}
                 to={`/deal-execution/${card.dealId}`}
-                className="group bg-white rounded-xl p-5 shadow-sm border border-gray-100 hover:border-blue-200 hover:shadow-md transition-all"
+                className="group bg-white rounded-xl p-5 shadow-sm border border-gray-100 hover:border-primary-400 hover:shadow-md transition-all"
               >
                 {/* Top row: status badge + stage */}
                 <div className="flex items-center justify-between mb-3">
@@ -107,7 +107,7 @@ const DealExecutionIndex = () => {
                 </div>
 
                 {/* Deal name */}
-                <h2 className="text-base font-semibold text-gray-900 group-hover:text-blue-600 transition-colors leading-tight mb-1">
+                <h2 className="text-base font-semibold text-gray-900 group-hover:text-primary-700 transition-colors leading-tight mb-1">
                   {card.dealName}
                 </h2>
 

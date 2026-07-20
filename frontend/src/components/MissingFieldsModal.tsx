@@ -148,7 +148,7 @@ const MissingFieldsModal: React.FC<MissingFieldsModalProps> = ({
                   }}
                   min="0"
                   step="1"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   placeholder="e.g., 3"
                   disabled={submitting}
                   required
@@ -174,7 +174,7 @@ const MissingFieldsModal: React.FC<MissingFieldsModalProps> = ({
                   }}
                   min="0"
                   step="0.5"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   placeholder="e.g., 2.5"
                   disabled={submitting}
                   required
@@ -200,7 +200,7 @@ const MissingFieldsModal: React.FC<MissingFieldsModalProps> = ({
                   }}
                   min="0"
                   step="1"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   placeholder="e.g., 1500"
                   disabled={submitting}
                   required
@@ -222,7 +222,7 @@ const MissingFieldsModal: React.FC<MissingFieldsModalProps> = ({
             <button
               type="submit"
               disabled={submitting}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              className="px-4 py-2 bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
               {submitting ? (
                 <>

@@ -25,7 +25,7 @@ const PropertyDetailsSidebar = ({ property, onClose, onCreateDeal }: PropertyDet
       <div className="flex items-start justify-between p-4 border-b border-gray-200">
         <div className="flex-1">
           <h3 className="text-lg font-semibold text-gray-800">Property Details</h3>
-          <p className="mt-1 text-2xl font-bold text-blue-600">{property.priceFormatted}</p>
+          <p className="mt-1 text-2xl font-bold text-primary-800">{property.priceFormatted}</p>
         </div>
         <button
           onClick={onClose}
@@ -40,8 +40,8 @@ const PropertyDetailsSidebar = ({ property, onClose, onCreateDeal }: PropertyDet
       <div className="p-4 space-y-4">
         {/* Address */}
         <div className="flex items-start gap-3">
-          <div className="flex items-center justify-center flex-shrink-0 w-10 h-10 rounded-lg bg-blue-50">
-            <Home size={18} className="text-blue-500" />
+          <div className="flex items-center justify-center flex-shrink-0 w-10 h-10 rounded-lg bg-gray-50">
+            <Home size={18} className="text-primary-800" />
           </div>
           <div className="flex-1 min-w-0">
             <span className="block text-xs text-gray-500">Location</span>
@@ -155,7 +155,7 @@ const PropertyDetailsSidebar = ({ property, onClose, onCreateDeal }: PropertyDet
               href={safeHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center w-full gap-2 px-4 py-3 text-sm font-medium text-white transition-colors bg-blue-500 rounded-lg hover:bg-blue-600"
+              className="flex items-center justify-center w-full gap-2 px-4 py-3 text-sm font-medium text-white transition-colors bg-primary-800 rounded-lg hover:bg-primary-700"
             >
               View Full Listing
               <ExternalLink size={16} />

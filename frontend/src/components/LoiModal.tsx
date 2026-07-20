@@ -94,7 +94,7 @@ const LoiModal = ({ dealName, onConfirm, onSkip, onClose }: LoiModalProps) => {
               onClick={() => fileInputRef.current?.click()}
               onDragOver={e => e.preventDefault()}
               onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFileSelect(f); }}
-              className="flex flex-col items-center justify-center gap-3 w-full min-h-[120px] border-2 border-dashed border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50 rounded-xl cursor-pointer transition-colors"
+              className="flex flex-col items-center justify-center gap-3 w-full min-h-[120px] border-2 border-dashed border-gray-200 bg-gray-50 hover:border-primary-400 hover:bg-primary-50 rounded-xl cursor-pointer transition-colors"
             >
               <Upload size={28} className="text-gray-400" />
               <div className="text-center">
@@ -129,7 +129,7 @@ const LoiModal = ({ dealName, onConfirm, onSkip, onClose }: LoiModalProps) => {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
         <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl p-10 flex flex-col items-center gap-4">
-          <Loader2 size={36} className="text-blue-500 animate-spin" />
+          <Loader2 size={36} className="text-primary-800 animate-spin" />
           <div className="text-center">
             <p className="text-sm font-semibold text-gray-800">Extracting LOI terms…</p>
             <p className="text-xs text-gray-400 mt-1 truncate max-w-xs">{fileName}</p>

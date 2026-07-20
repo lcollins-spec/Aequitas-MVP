@@ -90,7 +90,7 @@ const Dashboard = () => {
     <div className="p-4 md:p-6 lg:p-8 bg-gray-50 min-h-screen">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">Dashboard</h1>
+          <h1 className="text-2xl md:text-3xl font-semibold text-brandPurple-700">Dashboard</h1>
           <p className="text-sm text-gray-500 mt-1">Investment Overview</p>
         </div>
         <div className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 cursor-pointer">
@@ -107,8 +107,8 @@ const Dashboard = () => {
             <span className="text-2xl md:text-3xl font-bold text-gray-800 mb-1">{metricsLoading ? '—' : (metrics?.total_affordable_units ?? 12847)}</span>
             <span className="text-xs font-medium text-green-500">+15.2%</span>
           </div>
-          <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
-            <Home size={24} className="text-blue-500" />
+          <div className="w-12 h-12 bg-gray-50 rounded-xl flex items-center justify-center">
+            <Home size={24} className="text-primary-800" />
           </div>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm flex justify-between items-start">
@@ -219,7 +219,7 @@ const Dashboard = () => {
           <div className="space-y-3">
             {dealsLoading ? (
               <div className="flex items-center justify-center py-8">
-                <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-6 h-6 border-2 border-primary-700 border-t-transparent rounded-full animate-spin"></div>
               </div>
             ) : recentDeals.length === 0 ? (
               <div className="py-8 text-center">

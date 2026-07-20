@@ -18,6 +18,7 @@ export interface SourcingProperty {
   priority: string;
   notes: string;
   deal_id: number | null;
+  gp_id?: number | null;
   lat?: number;
   lng?: number;
   updated_at?: string;

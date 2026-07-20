@@ -137,7 +137,7 @@ const DealFormModal = ({ isOpen, onClose, onSubmit, initialData, showUrlImport =
               type="button"
               onClick={() => setShowUrlInput(!showUrlInput)}
               disabled={loading}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 transition-colors bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 transition-colors bg-gray-50 border border-gray-200 rounded-lg hover:bg-primary-100 disabled:opacity-50"
             >
               {showUrlInput ? (
                 <>
@@ -173,7 +173,7 @@ const DealFormModal = ({ isOpen, onClose, onSubmit, initialData, showUrlImport =
                 id="dealName"
                 value={formData.dealName}
                 onChange={(e) => setFormData({ ...formData, dealName: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 placeholder="e.g., Sacramento Rental Property"
                 disabled={loading}
                 required
@@ -190,7 +190,7 @@ const DealFormModal = ({ isOpen, onClose, onSubmit, initialData, showUrlImport =
                 id="location"
                 value={formData.location}
                 onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 placeholder="e.g., Sacramento, CA"
                 disabled={loading}
                 required
@@ -224,7 +224,7 @@ const DealFormModal = ({ isOpen, onClose, onSubmit, initialData, showUrlImport =
                 id="status"
                 value={formData.status}
                 onChange={(e) => setFormData({ ...formData, status: e.target.value as DealStatus })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 disabled={loading}
               >
                 <option value="potential">{DEAL_STATUS_LABELS.potential}</option>
@@ -247,7 +247,7 @@ const DealFormModal = ({ isOpen, onClose, onSubmit, initialData, showUrlImport =
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 px-4 py-2 text-sm font-medium text-white transition-colors bg-blue-500 rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 px-4 py-2 text-sm font-medium text-white transition-colors bg-primary-800 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Creating...' : 'Create Deal'}
               </button>

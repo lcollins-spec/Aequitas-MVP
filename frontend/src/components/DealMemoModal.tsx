@@ -71,7 +71,7 @@ const DealMemoModal: React.FC<DealMemoModalProps> = ({
   const getRatingColor = (rating: string): string => {
     const lowerRating = rating.toLowerCase();
     if (lowerRating.includes('strong buy')) return 'text-green-700 bg-green-100';
-    if (lowerRating.includes('buy')) return 'text-blue-700 bg-blue-100';
+    if (lowerRating.includes('buy')) return 'text-gray-700 bg-gray-100';
     if (lowerRating.includes('hold')) return 'text-yellow-700 bg-yellow-100';
     if (lowerRating.includes('consider')) return 'text-orange-700 bg-orange-100';
     if (lowerRating.includes('pass')) return 'text-red-700 bg-red-100';
@@ -95,27 +95,27 @@ const DealMemoModal: React.FC<DealMemoModalProps> = ({
                     <div className="flex items-center">
                       <h2 className="text-2xl font-bold text-white">Investment Memo</h2>
                       {memo && (
-                        <span className="ml-4 text-blue-100">Deal #{dealId}</span>
+                        <span className="ml-4 text-gray-100">Deal #{dealId}</span>
                       )}
                     </div>
                     <div className="flex items-center space-x-3">
                       <button
                         onClick={handlePrint}
-                        className="flex items-center px-4 py-2 bg-white text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                        className="flex items-center px-4 py-2 bg-white text-primary-800 rounded-lg hover:bg-primary-50 transition-colors"
                       >
                         <Printer size={18} className="mr-2" />
                         Print
                       </button>
                       <button
                         onClick={handleExportPDF}
-                        className="flex items-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-400 transition-colors"
+                        className="flex items-center px-4 py-2 bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors"
                       >
                         <Download size={18} className="mr-2" />
                         Export PDF
                       </button>
                       <button
                         onClick={onClose}
-                        className="text-white hover:text-blue-100 transition-colors"
+                        className="text-white hover:text-gray-100 transition-colors"
                       >
                         <X size={28} />
                       </button>
@@ -127,7 +127,7 @@ const DealMemoModal: React.FC<DealMemoModalProps> = ({
                 <div className="flex-1 px-8 py-6" id="memo-content">
                   {loading && (
                     <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-800"></div>
                       <span className="ml-3 text-gray-600">Loading memo...</span>
                     </div>
                   )}
@@ -168,10 +168,10 @@ const DealMemoModal: React.FC<DealMemoModalProps> = ({
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t border-blue-200">
+                          <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t border-gray-200">
                             <div>
                               <div className="text-xs text-gray-600 mb-1">Rent Tier</div>
-                              <div className="text-xl font-bold text-blue-700">
+                              <div className="text-xl font-bold text-gray-700">
                                 {memo.executiveSummary.rentTier}
                               </div>
                               <div className="text-xs text-gray-600">{memo.executiveSummary.tierCategory}</div>
@@ -196,7 +196,7 @@ const DealMemoModal: React.FC<DealMemoModalProps> = ({
                             </div>
                           </div>
 
-                          <div className="mt-4 pt-4 border-t border-blue-200">
+                          <div className="mt-4 pt-4 border-t border-gray-200">
                             <div className="text-xs text-gray-600 mb-1">Target Investor</div>
                             <div className="text-base font-medium text-gray-900">
                               {memo.executiveSummary.targetInvestor}
@@ -304,11 +304,11 @@ const DealMemoModal: React.FC<DealMemoModalProps> = ({
                       {/* Rent Analysis */}
                       <section className="border-b pb-6">
                         <h2 className="text-xl font-bold text-gray-900 mb-4">Rent Tier Classification</h2>
-                        <div className="bg-blue-50 rounded-lg p-4">
+                        <div className="bg-gray-50 rounded-lg p-4">
                           <div className="grid grid-cols-3 gap-4">
                             <div>
                               <div className="text-xs text-gray-600 mb-1">Tier</div>
-                              <div className="text-2xl font-bold text-blue-700">
+                              <div className="text-2xl font-bold text-gray-700">
                                 {memo.tierClassification.tierLabel}
                               </div>
                             </div>
@@ -325,7 +325,7 @@ const DealMemoModal: React.FC<DealMemoModalProps> = ({
                               </div>
                             </div>
                           </div>
-                          <div className="mt-4 pt-4 border-t border-blue-200">
+                          <div className="mt-4 pt-4 border-t border-gray-200">
                             <p className="text-sm text-gray-700">
                               {memo.tierClassification.interpretation.description}
                             </p>
@@ -348,7 +348,7 @@ const DealMemoModal: React.FC<DealMemoModalProps> = ({
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-sm text-gray-600">Net Yield:</span>
-                                <span className="text-sm font-semibold text-blue-700">
+                                <span className="text-sm font-semibold text-gray-700">
                                   {memo.yieldAnalysis.netYield.toFixed(2)}%
                                 </span>
                               </div>
@@ -412,7 +412,7 @@ const DealMemoModal: React.FC<DealMemoModalProps> = ({
                               </thead>
                               <tbody className="bg-white divide-y divide-gray-200">
                                 {Object.values(memo.sensitivityAnalysis.scenarios).map((scenario, idx) => (
-                                  <tr key={idx} className={scenario.name.toLowerCase().includes('base') ? 'bg-blue-50' : ''}>
+                                  <tr key={idx} className={scenario.name.toLowerCase().includes('base') ? 'bg-gray-50' : ''}>
                                     <td className="px-4 py-2 text-sm font-medium text-gray-900">{scenario.name}</td>
                                     <td className="px-4 py-2 text-sm text-right text-gray-700">{scenario.netYield.toFixed(2)}%</td>
                                     <td className="px-4 py-2 text-sm text-right text-gray-700">{scenario.totalReturnUnlevered.toFixed(2)}%</td>

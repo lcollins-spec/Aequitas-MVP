@@ -112,7 +112,7 @@ const ExtractionReviewModal: React.FC<ExtractionReviewModalProps> = ({
   };
 
   const inputCls =
-    'w-full px-2 py-1.5 bg-blue-50 border border-blue-200 rounded text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500';
+    'w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary-500';
   const labelCls = 'block text-xs font-medium text-gray-500 mb-1';
 
   return (
@@ -129,8 +129,8 @@ const ExtractionReviewModal: React.FC<ExtractionReviewModalProps> = ({
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm text-blue-800">
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <p className="text-sm text-gray-800">
               Review the values extracted below before they're added to the deal. Only what you confirm here
               flows into the exported model.
             </p>
@@ -160,7 +160,12 @@ const ExtractionReviewModal: React.FC<ExtractionReviewModalProps> = ({
 
           {includeUnitMix && (
             <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Unit Mix</p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Unit Mix</p>
+                <span className="text-xs text-gray-500">
+                  {unitMix.reduce((s, u) => s + (u.count || 0), 0)} units total
+                </span>
+              </div>
               <div className="border border-gray-200 rounded-lg overflow-hidden text-xs">
                 <table className="w-full">
                   <thead>
@@ -184,7 +189,7 @@ const ExtractionReviewModal: React.FC<ExtractionReviewModalProps> = ({
                               u[idx] = { ...u[idx], unitType: e.target.value };
                               setUnitMix(u);
                             }}
-                            className="w-full px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            className="w-full px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary-500"
                           />
                         </td>
                         <td className="px-1 py-1">
@@ -196,7 +201,7 @@ const ExtractionReviewModal: React.FC<ExtractionReviewModalProps> = ({
                               u[idx] = { ...u[idx], count: Number(e.target.value) || 0 };
                               setUnitMix(u);
                             }}
-                            className="w-16 px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            className="w-16 px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary-500"
                           />
                         </td>
                         <td className="px-1 py-1">
@@ -208,7 +213,7 @@ const ExtractionReviewModal: React.FC<ExtractionReviewModalProps> = ({
                               u[idx] = { ...u[idx], askingRent: Number(e.target.value) || 0 };
                               setUnitMix(u);
                             }}
-                            className="w-20 px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            className="w-20 px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary-500"
                           />
                         </td>
                         <td className="px-1 py-1">
@@ -220,7 +225,7 @@ const ExtractionReviewModal: React.FC<ExtractionReviewModalProps> = ({
                               u[idx] = { ...u[idx], avgSf: Number(e.target.value) || 0 };
                               setUnitMix(u);
                             }}
-                            className="w-20 px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            className="w-20 px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-right text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary-500"
                           />
                         </td>
                         <td className="px-1">
@@ -238,7 +243,7 @@ const ExtractionReviewModal: React.FC<ExtractionReviewModalProps> = ({
                         <td colSpan={5} className="px-2 py-1.5">
                           <button
                             onClick={() => setUnitMix([...unitMix, { unitType: '', count: 0, askingRent: 0, avgSf: 0 }])}
-                            className="text-xs text-blue-500 hover:text-blue-700"
+                            className="text-xs text-primary-800 hover:text-primary-700"
                           >
                             + Add row
                           </button>
@@ -261,7 +266,7 @@ const ExtractionReviewModal: React.FC<ExtractionReviewModalProps> = ({
           </button>
           <button
             onClick={handleConfirm}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors"
           >
             Confirm & Apply
           </button>
