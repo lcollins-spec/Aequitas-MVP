@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UploadCloud } from 'lucide-react';
 import * as sourcingApi from '../services/sourcingApi';
-import type { MarketEntry, SourcingProperty } from '../services/sourcingApi';
+import type { MarketEntry, SourcingProperty, SourcingOperator, SourcingBroker } from '../services/sourcingApi';
 import { gpApi } from '../services/gpApi';
 import type { GP } from '../types/gp';
 import UploadDealModal from './UploadDealModal';
@@ -16,16 +16,22 @@ const GlobalUploadDealButton = ({ onBeforeOpen }: GlobalUploadDealButtonProps) =
   const [open, setOpen] = useState(false);
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
   const [gps, setGps] = useState<GP[]>([]);
+  const [operators, setOperators] = useState<SourcingOperator[]>([]);
+  const [brokers, setBrokers] = useState<SourcingBroker[]>([]);
 
   const handleOpen = async () => {
     onBeforeOpen?.();
     setOpen(true);
-    const [m, g] = await Promise.all([
+    const [m, g, o, b] = await Promise.all([
       sourcingApi.fetchMarkets().catch(() => []),
       gpApi.getAllGPs().catch(() => []),
+      sourcingApi.fetchOperators().catch(() => []),
+      sourcingApi.fetchBrokers().catch(() => []),
     ]);
     setMarkets(m);
     setGps(g);
+    setOperators(o);
+    setBrokers(b);
   };
 
   const handleSave = async (p: SourcingProperty) => {
@@ -52,6 +58,8 @@ const GlobalUploadDealButton = ({ onBeforeOpen }: GlobalUploadDealButtonProps) =
           market=""
           markets={markets}
           gps={gps}
+          operators={operators}
+          brokers={brokers}
           onSave={handleSave}
           onClose={() => setOpen(false)}
         />

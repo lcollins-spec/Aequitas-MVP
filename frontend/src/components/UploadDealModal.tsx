@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { X, AlertCircle } from 'lucide-react';
 import * as sourcingApi from '../services/sourcingApi';
-import type { MarketEntry, SourcingProperty, ParsedDealFields } from '../services/sourcingApi';
+import type { MarketEntry, SourcingProperty, SourcingOperator, SourcingBroker, ParsedDealFields } from '../services/sourcingApi';
 import { gpApi } from '../services/gpApi';
 import type { GP } from '../types/gp';
 
@@ -9,6 +9,8 @@ interface UploadDealModalProps {
   market: string;
   markets: MarketEntry[];
   gps: GP[];
+  operators: SourcingOperator[];
+  brokers: SourcingBroker[];
   onSave: (p: SourcingProperty) => void | Promise<void>;
   onClose: () => void;
   mode?: 'email' | 'om';
@@ -25,7 +27,7 @@ function findMatch<T>(items: T[], name: (item: T) => string, extracted: string):
   });
 }
 
-const UploadDealModal = ({ market, markets, gps, onSave, onClose, mode = 'email' }: UploadDealModalProps) => {
+const UploadDealModal = ({ market, markets, gps, operators, brokers, onSave, onClose, mode = 'email' }: UploadDealModalProps) => {
   const [text, setText] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
@@ -100,14 +102,52 @@ const UploadDealModal = ({ market, markets, gps, onSave, onClose, mode = 'email'
     try {
       const needsNewGp = pendingNewGp && newGpName.trim().length > 0;
       const needsNewMarket = !marketWasMatched && !targetMarket && !!fields.market_city;
-      const [gp, createdMarket] = await Promise.all([
+      const marketName = needsNewMarket ? fields.market_city.split(',')[0].trim() : targetMarket;
+
+      // Operator and GP are the same real-world thing here — same extracted name matched
+      // against both lists. Mirrors the market auto-create pattern: match by name, silently
+      // create a pipeline entry in the Operators tab if there's no existing one, so uploading
+      // a deal keeps that tab populated the same way it already keeps Markets populated.
+      const extractedOperatorName = fields.operator_name.trim();
+      const matchedOperator = findMatch(operators, o => o.name, extractedOperatorName);
+      const needsNewOperator = !matchedOperator && !!extractedOperatorName;
+
+      // Same treatment for the listing broker.
+      const extractedBrokerName = fields.seller_broker_name.trim();
+      const matchedBroker = findMatch(brokers, b => b.name, extractedBrokerName);
+      const needsNewBroker = !matchedBroker && !!extractedBrokerName;
+
+      const [gp] = await Promise.all([
         needsNewGp ? gpApi.createGP({ gpName: newGpName.trim() }) : Promise.resolve(null),
         needsNewMarket
-          ? sourcingApi.createMarket({ id: Date.now().toString(), name: fields.market_city.split(',')[0].trim() })
+          ? sourcingApi.createMarket({ id: Date.now().toString(), name: marketName })
+          : Promise.resolve(null),
+        needsNewOperator
+          ? sourcingApi.createOperator({
+              id: `${Date.now()}-op`,
+              market: marketName,
+              name: extractedOperatorName,
+              firm: '',
+              status: 'prospecting',
+              properties_managed: '',
+              last_contact_date: '',
+              notes: 'Auto-added from deal upload',
+            })
+          : Promise.resolve(null),
+        needsNewBroker
+          ? sourcingApi.createBroker({
+              id: `${Date.now()}-br`,
+              market: marketName,
+              name: extractedBrokerName,
+              firm: '',
+              status: 'cold',
+              last_contact_date: '',
+              last_deal_sent: '',
+              notes: 'Auto-added from deal upload',
+            })
           : Promise.resolve(null),
       ]);
       const gpId = gp ? (gp.id ?? null) : targetGpId;
-      const marketName = createdMarket ? createdMarket.name : targetMarket;
 
       const noteParts: string[] = [];
       if (fields.asking_price) noteParts.push(`Asking: ${fields.asking_price}`);
