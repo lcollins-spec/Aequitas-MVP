@@ -1129,10 +1129,11 @@ interface PropertiesTableProps {
   highlightPropId?: string | null;
   onStartUnderwriting: (p: SourcingProperty) => void;
   startingUwId?: string | null;
+  gps: GP[];
 }
 
 const PropertiesTable = ({
-  properties, onRowClick, onEdit, onDelete, highlightPropId, onStartUnderwriting, startingUwId,
+  properties, onRowClick, onEdit, onDelete, highlightPropId, onStartUnderwriting, startingUwId, gps,
 }: PropertiesTableProps) => {
   const [sort, setSort] = useState<{ col: keyof SourcingProperty; dir: SortDir }>({ col: 'address', dir: 'asc' });
   const highlightedRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -1146,9 +1147,16 @@ const PropertiesTable = ({
   const toggle = (col: keyof SourcingProperty) =>
     setSort(s => ({ col, dir: s.col === col && s.dir === 'asc' ? 'desc' : 'asc' }));
 
+  const gpNameById = useMemo(() => new Map(gps.map(g => [g.id, g.gpName])), [gps]);
+
+  const resolveSortValue = (p: SourcingProperty, col: keyof SourcingProperty) =>
+    col === 'gp_id'
+      ? (p.gp_id != null ? gpNameById.get(p.gp_id) : null) || p.operator_name || ''
+      : p[col];
+
   const sorted = [...properties].sort((a, b) => {
-    const av = String(a[sort.col] ?? '').toLowerCase();
-    const bv = String(b[sort.col] ?? '').toLowerCase();
+    const av = String(resolveSortValue(a, sort.col) ?? '').toLowerCase();
+    const bv = String(resolveSortValue(b, sort.col) ?? '').toLowerCase();
     return sort.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
   });
 
@@ -1177,6 +1185,7 @@ const PropertiesTable = ({
               <Th col="address" label="Address" />
               <Th col="units" label="Units" />
               <Th col="market" label="Market" />
+              <Th col="gp_id" label="Operator" />
               <Th col="transaction_type" label="Type" />
               <Th col="status" label="Status" />
               <Th col="priority" label="Priority" />
@@ -1202,6 +1211,9 @@ const PropertiesTable = ({
                   <td className="px-4 py-3 font-medium text-gray-800 max-w-[220px] truncate">{p.address}</td>
                   <td className="px-4 py-3 text-gray-600">{p.units || '—'}</td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{p.market || '—'}</td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                    {(p.gp_id != null ? gpNameById.get(p.gp_id) : null) || p.operator_name || '—'}
+                  </td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{p.transaction_type || 'Acquisition'}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${si.cls}`}>{si.label}</span>
@@ -1276,9 +1288,10 @@ interface PropertyDetailPanelProps {
   onStartUnderwriting: () => void;
   startingUw: boolean;
   onAddActivity: (note: string) => Promise<void>;
+  gps: GP[];
 }
 
-const PropertyDetailPanel = ({ prop, onClose, onEdit, onStartUnderwriting, startingUw, onAddActivity }: PropertyDetailPanelProps) => {
+const PropertyDetailPanel = ({ prop, onClose, onEdit, onStartUnderwriting, startingUw, onAddActivity, gps }: PropertyDetailPanelProps) => {
   const si = propStatus(prop.status);
   const pri = dealPriority(prop.priority);
   const canUw = prop.status === 'In Conversation' || prop.status === 'LOI';
@@ -1352,6 +1365,7 @@ const PropertyDetailPanel = ({ prop, onClose, onEdit, onStartUnderwriting, start
             <DetailField label="Type" value={prop.transaction_type || 'Acquisition'} />
           </div>
           <DetailField label="Owner Name" value={prop.owner_name} />
+          <DetailField label="GP / Operator" value={(prop.gp_id != null ? gps.find(g => g.id === prop.gp_id)?.gpName : null) || null} />
           <DetailField label="Operator Name" value={prop.operator_name} />
 
           {/* Contact */}
@@ -1996,6 +2010,7 @@ const Sourcing = () => {
               setData(prev => ({ ...prev, properties: prev.properties.map(x => x.id === updated.id ? updated : x) }));
               setSelectedProp(updated);
             }}
+            gps={gps}
           />
         )}
 
@@ -2169,6 +2184,7 @@ const Sourcing = () => {
                 highlightPropId={highlightPropId}
                 onStartUnderwriting={startUnderwriting}
                 startingUwId={startingUwId}
+                gps={gps}
               />
             </>
           )}
