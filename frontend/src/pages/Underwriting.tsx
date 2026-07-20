@@ -232,7 +232,7 @@ const pctInput = (
 // ── Main component ────────────────────────────────────────────────────────────
 
 const Underwriting = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // navigation / modals
   const [currentDealId, setCurrentDealId] = useState<number | null>(null);
@@ -433,7 +433,31 @@ const Underwriting = () => {
             execRecord?.totalUnits || 0,
           );
         }
-        tryLoadDealFromApi(dealId);
+        tryLoadDealFromApi(dealId).then(deal => {
+          if (deal && searchParams.get('reviewOm') === '1') {
+            let uwTotalUnits = 0;
+            try { uwTotalUnits = deal.underwritingJson ? (JSON.parse(deal.underwritingJson).totalUnits || 0) : 0; } catch { /* ignore */ }
+            const [uwCity, uwState] = (deal.location || '').split(',').map(s => s.trim());
+            setPendingOmData({
+              propertyName: deal.dealName || '',
+              askingPrice: deal.purchasePrice || undefined,
+              city: uwCity || '',
+              state: uwState || '',
+              numUnits: uwTotalUnits,
+              unitMix: uwTotalUnits > 0 ? [{ unitType: 'All Units', count: uwTotalUnits, askingRent: 0, avgSf: 0 }] : [],
+              seniorLoanAmount,
+              seniorInterestRate,
+              seniorIoPeriods,
+              seniorFinancingCostsPct,
+            });
+            setPendingOmFile(null);
+            setSearchParams(prev => {
+              const next = new URLSearchParams(prev);
+              next.delete('reviewOm');
+              return next;
+            }, { replace: true });
+          }
+        });
       }
     }
   }, [searchParams]);
@@ -592,11 +616,12 @@ const Underwriting = () => {
     } catch { /* ignore malformed JSON */ }
   };
 
-  const tryLoadDealFromApi = async (dealId: number) => {
+  const tryLoadDealFromApi = async (dealId: number): Promise<Deal | null> => {
     try {
       const deal = await dealApi.getDeal(dealId);
       applyDealToState(deal);
-    } catch { /* backend unavailable */ }
+      return deal;
+    } catch { return null; /* backend unavailable */ }
   };
 
   const handleSelectDeal = (deal: Deal) => {
@@ -646,7 +671,7 @@ const Underwriting = () => {
 
   // Applies (possibly user-edited) extracted OM data to the live underwriting form.
   // Only called after the user confirms the extraction review modal.
-  const applyOmDataToForm = async (data: any, file: File) => {
+  const applyOmDataToForm = async (data: any, file: File | null) => {
     if (data.propertyName) setDealName(data.propertyName);
     if (data.unitMix?.length > 0) {
       setTotalUnits(data.unitMix.reduce((s: number, u: any) => s + (u.count ?? 0), 0));
@@ -717,23 +742,32 @@ const Underwriting = () => {
 
     setOmUploaded(true);
 
-    // Create deal record
-    const dealLocation = data.city && data.state ? `${data.city}, ${data.state}` : data.address || 'Location TBD';
-    const created = await dealApi.createDeal({
-      dealName: data.propertyName || `Deal - ${data.address || dealLocation || 'OM Import'}`,
-      location: dealLocation,
-      status: 'potential',
-      propertyAddress: data.address || undefined,
-      purchasePrice: data.askingPrice || undefined,
-    });
-    if (created?.id) {
-      setCurrentDealId(created.id);
-      const url = new URL(window.location.href);
-      url.searchParams.set('dealId', String(created.id));
-      window.history.replaceState({}, '', url.toString());
+    // Create a deal record only if one doesn't exist yet (native direct-upload
+    // path). If we already have a dealId — e.g. handed off from Sourcing — the
+    // setters above already applied everything to form state; the user's own
+    // "Save Deal" click persists it for real, so there's nothing to do here.
+    let dealIdForUpload = currentDealId;
+    if (!dealIdForUpload) {
+      const dealLocation = data.city && data.state ? `${data.city}, ${data.state}` : data.address || 'Location TBD';
+      const created = await dealApi.createDeal({
+        dealName: data.propertyName || `Deal - ${data.address || dealLocation || 'OM Import'}`,
+        location: dealLocation,
+        status: 'potential',
+        propertyAddress: data.address || undefined,
+        purchasePrice: data.askingPrice || undefined,
+      });
+      if (created?.id) {
+        dealIdForUpload = created.id;
+        setCurrentDealId(created.id);
+        const url = new URL(window.location.href);
+        url.searchParams.set('dealId', String(created.id));
+        window.history.replaceState({}, '', url.toString());
+      }
+    }
+    if (file && dealIdForUpload) {
       const driveForm = new FormData();
       driveForm.append('file', file);
-      driveForm.append('deal_id', String(created.id));
+      driveForm.append('deal_id', String(dealIdForUpload));
       driveForm.append('document_type', 'OM');
       fetch('/api/v1/documents/upload', { method: 'POST', body: driveForm }).catch(() => {});
     }
@@ -1760,7 +1794,7 @@ const Underwriting = () => {
           const file = pendingOmFile;
           setPendingOmData(null);
           setPendingOmFile(null);
-          if (file) applyOmDataToForm(edited, file);
+          applyOmDataToForm(edited, file);
         }}
       />
       <ExtractionReviewModal

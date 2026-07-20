@@ -50,6 +50,16 @@ export interface SourcingOperator {
 
 const BASE = '/api/v1/sourcing';
 
+// Every mutating call below goes through this so a non-2xx response throws
+// with the backend's actual error message instead of silently resolving to
+// `undefined` (fetch only rejects on network failure, never on HTTP error
+// status) — a failed save used to look identical to a successful one.
+async function unwrap<T>(r: Response): Promise<T> {
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
+  return j;
+}
+
 // ── Markets ───────────────────────────────────────────────────────────────────
 
 export async function fetchMarkets(): Promise<MarketEntry[]> {
@@ -64,12 +74,13 @@ export async function createMarket(market: MarketEntry): Promise<MarketEntry> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(market),
   });
-  const j = await r.json();
+  const j = await unwrap<{ market: MarketEntry }>(r);
   return j.market;
 }
 
 export async function deleteMarket(id: string): Promise<void> {
-  await fetch(`${BASE}/markets/${id}`, { method: 'DELETE' });
+  const r = await fetch(`${BASE}/markets/${id}`, { method: 'DELETE' });
+  await unwrap(r);
 }
 
 // ── Properties ────────────────────────────────────────────────────────────────
@@ -86,16 +97,17 @@ export async function createProperty(prop: SourcingProperty): Promise<SourcingPr
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(prop),
   });
-  const j = await r.json();
+  const j = await unwrap<{ property: SourcingProperty }>(r);
   return j.property;
 }
 
 export async function bulkCreateProperties(props: SourcingProperty[]): Promise<void> {
-  await fetch(`${BASE}/properties/bulk`, {
+  const r = await fetch(`${BASE}/properties/bulk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(props),
   });
+  await unwrap(r);
 }
 
 export async function updateProperty(id: string, patch: Partial<SourcingProperty>): Promise<SourcingProperty> {
@@ -104,12 +116,13 @@ export async function updateProperty(id: string, patch: Partial<SourcingProperty
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
   });
-  const j = await r.json();
+  const j = await unwrap<{ property: SourcingProperty }>(r);
   return j.property;
 }
 
 export async function deleteProperty(id: string): Promise<void> {
-  await fetch(`${BASE}/properties/${id}`, { method: 'DELETE' });
+  const r = await fetch(`${BASE}/properties/${id}`, { method: 'DELETE' });
+  await unwrap(r);
 }
 
 export async function addPropertyActivity(id: string, note: string): Promise<SourcingProperty> {
@@ -118,7 +131,7 @@ export async function addPropertyActivity(id: string, note: string): Promise<Sou
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ note }),
   });
-  const j = await r.json();
+  const j = await unwrap<{ property: SourcingProperty }>(r);
   return j.property;
 }
 
@@ -136,16 +149,17 @@ export async function createBroker(broker: SourcingBroker): Promise<SourcingBrok
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(broker),
   });
-  const j = await r.json();
+  const j = await unwrap<{ broker: SourcingBroker }>(r);
   return j.broker;
 }
 
 export async function bulkCreateBrokers(brokers: SourcingBroker[]): Promise<void> {
-  await fetch(`${BASE}/brokers/bulk`, {
+  const r = await fetch(`${BASE}/brokers/bulk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(brokers),
   });
+  await unwrap(r);
 }
 
 export async function updateBroker(id: string, patch: Partial<SourcingBroker>): Promise<SourcingBroker> {
@@ -154,12 +168,13 @@ export async function updateBroker(id: string, patch: Partial<SourcingBroker>): 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
   });
-  const j = await r.json();
+  const j = await unwrap<{ broker: SourcingBroker }>(r);
   return j.broker;
 }
 
 export async function deleteBroker(id: string): Promise<void> {
-  await fetch(`${BASE}/brokers/${id}`, { method: 'DELETE' });
+  const r = await fetch(`${BASE}/brokers/${id}`, { method: 'DELETE' });
+  await unwrap(r);
 }
 
 // ── Operators ─────────────────────────────────────────────────────────────────
@@ -176,16 +191,17 @@ export async function createOperator(op: SourcingOperator): Promise<SourcingOper
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(op),
   });
-  const j = await r.json();
+  const j = await unwrap<{ operator: SourcingOperator }>(r);
   return j.operator;
 }
 
 export async function bulkCreateOperators(ops: SourcingOperator[]): Promise<void> {
-  await fetch(`${BASE}/operators/bulk`, {
+  const r = await fetch(`${BASE}/operators/bulk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(ops),
   });
+  await unwrap(r);
 }
 
 export async function updateOperator(id: string, patch: Partial<SourcingOperator>): Promise<SourcingOperator> {
@@ -194,12 +210,13 @@ export async function updateOperator(id: string, patch: Partial<SourcingOperator
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
   });
-  const j = await r.json();
+  const j = await unwrap<{ operator: SourcingOperator }>(r);
   return j.operator;
 }
 
 export async function deleteOperator(id: string): Promise<void> {
-  await fetch(`${BASE}/operators/${id}`, { method: 'DELETE' });
+  const r = await fetch(`${BASE}/operators/${id}`, { method: 'DELETE' });
+  await unwrap(r);
 }
 
 // ── Deal import parsing ────────────────────────────────────────────────────────

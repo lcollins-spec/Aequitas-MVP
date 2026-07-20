@@ -1480,6 +1480,7 @@ const Sourcing = () => {
   const uploadedPropertyId = searchParams.get('uploadedPropertyId');
   const uploadedMarket = searchParams.get('uploadedMarket');
   const [uploadBanner, setUploadBanner] = useState<string | null>(null);
+  const [uploadedProp, setUploadedProp] = useState<SourcingProperty | null>(null);
 
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
@@ -1603,11 +1604,15 @@ const Sourcing = () => {
           setSelectedMarket(landedMarket);
           setView('detail');
         }
-        setUploadBanner(`Deal uploaded to Sourcing → ${uploadedMarket}`);
-      } else {
-        setUploadBanner('Deal uploaded to Sourcing');
       }
-      setTimeout(() => setUploadBanner(null), 6000);
+
+      const foundProp = freshProps?.find(p => p.id === uploadedPropertyId);
+      if (foundProp) {
+        setUploadedProp(foundProp);
+      } else {
+        setUploadBanner(uploadedMarket ? `Deal uploaded to Sourcing → ${uploadedMarket}` : 'Deal uploaded to Sourcing');
+        setTimeout(() => setUploadBanner(null), 6000);
+      }
 
       setSearchParams(prev => {
         const next = new URLSearchParams(prev);
@@ -1731,7 +1736,7 @@ const Sourcing = () => {
       }));
       setSelectedProp(prev => prev?.id === p.id ? { ...prev, deal_id: deal.id ?? null } : prev);
 
-      navigate(`/underwriting?dealId=${deal.id}`);
+      navigate(`/underwriting?dealId=${deal.id}&reviewOm=1`);
     } catch {
       // Silently swallow — button re-enables
     } finally {
@@ -1811,10 +1816,42 @@ const Sourcing = () => {
     </div>
   );
 
+  const uwPromptEl = uploadedProp && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+        <div className="flex items-center gap-2 mb-3 text-primary-800">
+          <CheckCircle size={18} className="flex-shrink-0" />
+          <h2 className="text-base font-semibold text-gray-800">Deal Uploaded</h2>
+        </div>
+        <p className="text-sm text-gray-600 mb-6">
+          Deal uploaded to Sourcing → <span className="font-medium text-gray-800">{uploadedProp.market || 'Unassigned'}</span>.
+          {' '}Would you like to start underwriting this deal now?
+        </p>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => setUploadedProp(null)}
+            disabled={startingUwId === uploadedProp.id}
+            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            Not now
+          </button>
+          <button
+            onClick={() => startUnderwriting(uploadedProp)}
+            disabled={startingUwId === uploadedProp.id}
+            className="px-4 py-2 text-sm font-medium text-white bg-primary-800 rounded-lg hover:bg-primary-700 disabled:opacity-60 transition-colors"
+          >
+            {startingUwId === uploadedProp.id ? 'Starting…' : 'Start Underwriting'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   if (view === 'list') {
     return (
       <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
         {uploadBannerEl}
+        {uwPromptEl}
         <div className="mb-6">
           <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700">Sourcing</h1>
           <p className="text-sm text-gray-500 mt-1">Track properties, brokers, and operators by market</p>
@@ -1894,6 +1931,7 @@ const Sourcing = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {uploadBannerEl}
+      {uwPromptEl}
       {/* Left sidebar */}
       <div className="w-48 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
         <button
