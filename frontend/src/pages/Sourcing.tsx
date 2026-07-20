@@ -1789,7 +1789,7 @@ const Sourcing = () => {
     return (
       <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
         <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-semibold text-brandPurple-700">Sourcing</h1>
+          <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700">Sourcing</h1>
           <p className="text-sm text-gray-500 mt-1">Track properties, brokers, and operators by market</p>
         </div>
 
@@ -1964,7 +1964,7 @@ const Sourcing = () => {
         {/* Main Content */}
         <div className="p-4 md:p-6 lg:p-8 min-w-0">
           <div className="mb-6">
-            <h1 className="text-2xl md:text-3xl font-semibold text-brandPurple-700">{selectedMarket?.name ?? 'Sourcing'}</h1>
+            <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700">{selectedMarket?.name ?? 'Sourcing'}</h1>
             <p className="text-sm text-gray-500 mt-1">Track properties, brokers, and operators</p>
           </div>
 

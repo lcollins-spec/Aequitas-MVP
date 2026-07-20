@@ -90,7 +90,7 @@ const Dashboard = () => {
     <div className="p-4 md:p-6 lg:p-8 bg-gray-50 min-h-screen">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-semibold text-brandPurple-700">Dashboard</h1>
+          <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700">Dashboard</h1>
           <p className="text-sm text-gray-500 mt-1">Investment Overview</p>
         </div>
         <div className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 cursor-pointer">

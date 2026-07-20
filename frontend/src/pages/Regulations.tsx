@@ -641,7 +641,7 @@ const Regulations = () => {
     return (
       <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
         <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-semibold text-brandPurple-700">Legislation and Government Funding</h1>
+          <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700">Legislation and Government Funding</h1>
           <p className="text-sm text-gray-500 mt-1">Track local regulations affecting affordable housing development</p>
         </div>
 
@@ -769,7 +769,7 @@ const Regulations = () => {
         {/* Header */}
         <div className="flex items-start justify-between mb-6">
           <div>
-            <h1 className="text-2xl md:text-3xl font-semibold text-brandPurple-700">Legislation and Government Funding</h1>
+            <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700">Legislation and Government Funding</h1>
             <p className="text-sm text-gray-500 mt-1">Track local regulations affecting affordable housing development</p>
           </div>
           {/* Pinned button */}

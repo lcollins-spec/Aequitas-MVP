@@ -52,7 +52,7 @@ const DealExecutionIndex = () => {
     <div className="p-4 md:p-6 lg:p-8 bg-gray-50 min-h-screen">
       <div className="mb-8">
         <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Pipeline</p>
-        <h1 className="text-2xl font-semibold text-brandPurple-700">Deal Execution</h1>
+        <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700">Deal Execution</h1>
         <p className="text-sm text-gray-500 mt-1">
           {cards.length} deal{cards.length !== 1 ? 's' : ''} in execution
         </p>

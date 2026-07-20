@@ -1119,7 +1119,7 @@ const Underwriting = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-semibold text-brandPurple-700">Deal Underwriting</h1>
+          <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700">Deal Underwriting</h1>
           <p className="text-sm text-gray-500 mt-1">
             Analyze projected returns and export financial models
             {currentDealId && <span className="ml-2 text-primary-800 font-medium">• Deal #{currentDealId} loaded</span>}

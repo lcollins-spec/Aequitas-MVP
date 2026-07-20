@@ -143,7 +143,7 @@ const GPPortfolio = () => {
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-brandPurple-700 md:text-3xl">GP Portfolio</h1>
+          <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700">GP Portfolio</h1>
           <p className="mt-1 text-sm text-gray-500">General Partner relationships and performance analytics</p>
         </div>
 

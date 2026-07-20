@@ -106,7 +106,7 @@ export default function MarketAnalysis() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold text-brandPurple-700 mb-6">Market Analysis</h1>
+      <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700 mb-6">Market Analysis</h1>
 
       {/* Search Section */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">

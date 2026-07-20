@@ -263,7 +263,7 @@ const MapPage = () => {
     <div className="min-h-screen p-4 md:p-6 lg:p-8 bg-gray-50">
       <div className="flex flex-col items-start justify-between gap-4 mb-6 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-semibold text-brandPurple-700 md:text-3xl">Property Search Map</h1>
+          <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700">Property Search Map</h1>
           <p className="mt-1 text-sm text-gray-500">
             Search for rental properties by zipcode or address
           </p>

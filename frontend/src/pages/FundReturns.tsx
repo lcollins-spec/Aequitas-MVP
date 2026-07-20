@@ -220,7 +220,7 @@ const FundReturns = () => {
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-semibold text-brandPurple-700">{settings.fundName}</h1>
+          <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700">{settings.fundName}</h1>
           <p className="text-sm text-gray-500 mt-1">
             Vintage {settings.vintageYear} · Pref {fmtPct(settings.prefReturn * 100)} · Carry {fmtPct(settings.carry * 100)} · Acq Fee {fmtPct(settings.acqFee * 100)} · AM Fee {fmtPct(settings.amFee * 100)}
           </p>
