@@ -31,7 +31,8 @@ const GlobalUploadDealButton = ({ onBeforeOpen }: GlobalUploadDealButtonProps) =
   const handleSave = async (p: SourcingProperty) => {
     await sourcingApi.createProperty(p);
     setOpen(false);
-    navigate(`/sourcing?uploadedPropertyId=${p.id}`);
+    const marketParam = p.market ? `&uploadedMarket=${encodeURIComponent(p.market)}` : '';
+    navigate(`/sourcing?uploadedPropertyId=${p.id}${marketParam}`);
   };
 
   return (

@@ -1478,6 +1478,8 @@ const Sourcing = () => {
   const navigate = useNavigate();
   const addressParam = searchParams.get('address') ?? '';
   const uploadedPropertyId = searchParams.get('uploadedPropertyId');
+  const uploadedMarket = searchParams.get('uploadedMarket');
+  const [uploadBanner, setUploadBanner] = useState<string | null>(null);
 
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
@@ -1594,9 +1596,23 @@ const Sourcing = () => {
       ]);
       if (freshProps) setData(prev => ({ ...prev, properties: freshProps }));
       if (freshMarkets) setMarkets(freshMarkets);
+
+      if (uploadedMarket) {
+        const landedMarket = freshMarkets?.find(m => m.name === uploadedMarket);
+        if (landedMarket) {
+          setSelectedMarket(landedMarket);
+          setView('detail');
+        }
+        setUploadBanner(`Deal uploaded to Sourcing → ${uploadedMarket}`);
+      } else {
+        setUploadBanner('Deal uploaded to Sourcing');
+      }
+      setTimeout(() => setUploadBanner(null), 6000);
+
       setSearchParams(prev => {
         const next = new URLSearchParams(prev);
         next.delete('uploadedPropertyId');
+        next.delete('uploadedMarket');
         return next;
       }, { replace: true });
     })();
@@ -1785,9 +1801,20 @@ const Sourcing = () => {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  const uploadBannerEl = uploadBanner && (
+    <div className="fixed top-4 right-4 z-[60] flex items-center gap-2 px-4 py-3 bg-primary-800 text-white rounded-lg shadow-lg text-sm font-medium max-w-sm">
+      <CheckCircle size={16} className="flex-shrink-0" />
+      <span>{uploadBanner}</span>
+      <button onClick={() => setUploadBanner(null)} className="ml-2 text-white/70 hover:text-white flex-shrink-0">
+        <X size={14} />
+      </button>
+    </div>
+  );
+
   if (view === 'list') {
     return (
       <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
+        {uploadBannerEl}
         <div className="mb-6">
           <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700">Sourcing</h1>
           <p className="text-sm text-gray-500 mt-1">Track properties, brokers, and operators by market</p>
@@ -1866,6 +1893,7 @@ const Sourcing = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
+      {uploadBannerEl}
       {/* Left sidebar */}
       <div className="w-48 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
         <button
