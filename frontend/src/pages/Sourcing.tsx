@@ -1481,6 +1481,7 @@ const Sourcing = () => {
   const uploadedMarket = searchParams.get('uploadedMarket');
   const [uploadBanner, setUploadBanner] = useState<string | null>(null);
   const [uploadedProp, setUploadedProp] = useState<SourcingProperty | null>(null);
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
@@ -1644,17 +1645,21 @@ const Sourcing = () => {
 
   // ── Property CRUD ──────────────────────────────────────────────────────────
   const saveProp = async (p: SourcingProperty) => {
-    const exists = data.properties.some(x => x.id === p.id);
-    if (exists) {
-      setData(prev => ({ ...prev, properties: prev.properties.map(x => x.id === p.id ? p : x) }));
-      setSelectedProp(prev => prev?.id === p.id ? p : prev);
-      sourcingApi.updateProperty(p.id, p).catch(() => {});
-    } else {
-      setData(prev => ({ ...prev, properties: [...prev.properties, p] }));
-      sourcingApi.createProperty(p).catch(() => {});
+    try {
+      if (data.properties.some(x => x.id === p.id)) {
+        const updated = await sourcingApi.updateProperty(p.id, p);
+        setData(prev => ({ ...prev, properties: prev.properties.map(x => x.id === p.id ? updated : x) }));
+        setSelectedProp(prev => prev?.id === p.id ? updated : prev);
+      } else {
+        const created = await sourcingApi.createProperty(p);
+        setData(prev => ({ ...prev, properties: [...prev.properties, created] }));
+      }
+      setShowAddProp(false);
+      setEditProp(null);
+    } catch (e: any) {
+      setErrorBanner(e.message || 'Failed to save property');
+      throw e;
     }
-    setShowAddProp(false);
-    setEditProp(null);
   };
 
   const deleteProp = (id: string) => {
@@ -1665,16 +1670,20 @@ const Sourcing = () => {
 
   // ── Broker CRUD ────────────────────────────────────────────────────────────
   const saveBroker = async (b: SourcingBroker) => {
-    const exists = data.brokers.some(x => x.id === b.id);
-    if (exists) {
-      setData(prev => ({ ...prev, brokers: prev.brokers.map(x => x.id === b.id ? b : x) }));
-      sourcingApi.updateBroker(b.id, b).catch(() => {});
-    } else {
-      setData(prev => ({ ...prev, brokers: [...prev.brokers, b] }));
-      sourcingApi.createBroker(b).catch(() => {});
+    try {
+      if (data.brokers.some(x => x.id === b.id)) {
+        const updated = await sourcingApi.updateBroker(b.id, b);
+        setData(prev => ({ ...prev, brokers: prev.brokers.map(x => x.id === b.id ? updated : x) }));
+      } else {
+        const created = await sourcingApi.createBroker(b);
+        setData(prev => ({ ...prev, brokers: [...prev.brokers, created] }));
+      }
+      setShowAddBroker(false);
+      setEditBroker(null);
+    } catch (e: any) {
+      setErrorBanner(e.message || 'Failed to save broker');
+      throw e;
     }
-    setShowAddBroker(false);
-    setEditBroker(null);
   };
 
   const deleteBroker = (id: string) => {
@@ -1684,16 +1693,20 @@ const Sourcing = () => {
 
   // ── Operator CRUD ──────────────────────────────────────────────────────────
   const saveOperator = async (o: SourcingOperator) => {
-    const exists = data.operators.some(x => x.id === o.id);
-    if (exists) {
-      setData(prev => ({ ...prev, operators: prev.operators.map(x => x.id === o.id ? o : x) }));
-      sourcingApi.updateOperator(o.id, o).catch(() => {});
-    } else {
-      setData(prev => ({ ...prev, operators: [...prev.operators, o] }));
-      sourcingApi.createOperator(o).catch(() => {});
+    try {
+      if (data.operators.some(x => x.id === o.id)) {
+        const updated = await sourcingApi.updateOperator(o.id, o);
+        setData(prev => ({ ...prev, operators: prev.operators.map(x => x.id === o.id ? updated : x) }));
+      } else {
+        const created = await sourcingApi.createOperator(o);
+        setData(prev => ({ ...prev, operators: [...prev.operators, created] }));
+      }
+      setShowAddOperator(false);
+      setEditOperator(null);
+    } catch (e: any) {
+      setErrorBanner(e.message || 'Failed to save operator');
+      throw e;
     }
-    setShowAddOperator(false);
-    setEditOperator(null);
   };
 
   const deleteOperator = (id: string) => {
@@ -1847,11 +1860,22 @@ const Sourcing = () => {
     </div>
   );
 
+  const errorBannerEl = errorBanner && (
+    <div className="fixed top-4 right-4 z-[60] flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg shadow-lg text-sm font-medium max-w-sm">
+      <AlertCircle size={16} className="flex-shrink-0" />
+      <span>{errorBanner}</span>
+      <button onClick={() => setErrorBanner(null)} className="ml-2 text-white/70 hover:text-white flex-shrink-0">
+        <X size={14} />
+      </button>
+    </div>
+  );
+
   if (view === 'list') {
     return (
       <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
         {uploadBannerEl}
         {uwPromptEl}
+        {errorBannerEl}
         <div className="mb-6">
           <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700">Sourcing</h1>
           <p className="text-sm text-gray-500 mt-1">Track properties, brokers, and operators by market</p>
@@ -1932,6 +1956,7 @@ const Sourcing = () => {
     <div className="min-h-screen bg-gray-50 flex">
       {uploadBannerEl}
       {uwPromptEl}
+      {errorBannerEl}
       {/* Left sidebar */}
       <div className="w-48 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
         <button
@@ -2012,7 +2037,7 @@ const Sourcing = () => {
             market={selectedMarket?.name ?? ''}
             markets={markets}
             gps={gps}
-            onSave={(p) => { saveProp(p); setShowImportDeal(false); }}
+            onSave={async (p) => { await saveProp(p); setShowImportDeal(false); }}
             onClose={() => setShowImportDeal(false)}
           />
         )}
@@ -2022,7 +2047,7 @@ const Sourcing = () => {
             market={selectedMarket?.name ?? ''}
             markets={markets}
             gps={gps}
-            onSave={(p) => { saveProp(p); setShowImportOM(false); }}
+            onSave={async (p) => { await saveProp(p); setShowImportOM(false); }}
             onClose={() => setShowImportOM(false)}
           />
         )}
