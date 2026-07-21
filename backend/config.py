@@ -45,8 +45,8 @@ class Config:
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    # Maximum upload size: 20MB
-    MAX_CONTENT_LENGTH = 20 * 1024 * 1024
+    # Maximum upload size: 50MB
+    MAX_CONTENT_LENGTH = 50 * 1024 * 1024
     SQLALCHEMY_ECHO = DEBUG
 
     # Database-agnostic engine options
