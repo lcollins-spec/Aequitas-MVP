@@ -1612,10 +1612,12 @@ const Sourcing = () => {
         sourcingApi.fetchOperators().catch(() => null),
         sourcingApi.fetchBrokers().catch(() => null),
       ]);
-      if (freshProps) setData(prev => ({ ...prev, properties: freshProps }));
+      setData(prev => ({
+        properties: freshProps ?? prev.properties,
+        operators: freshOperators ?? prev.operators,
+        brokers: freshBrokers ?? prev.brokers,
+      }));
       if (freshMarkets) setMarkets(freshMarkets);
-      if (freshOperators) setData(prev => ({ ...prev, operators: freshOperators }));
-      if (freshBrokers) setData(prev => ({ ...prev, brokers: freshBrokers }));
 
       if (uploadedMarket) {
         const landedMarket = freshMarkets?.find(m => m.name === uploadedMarket);
@@ -2060,8 +2062,11 @@ const Sourcing = () => {
             brokers={data.brokers}
             onSave={async (p) => {
               await saveProp(p);
-              sourcingApi.fetchOperators().then(ops => setData(prev => ({ ...prev, operators: ops }))).catch(() => {});
-              sourcingApi.fetchBrokers().then(brs => setData(prev => ({ ...prev, brokers: brs }))).catch(() => {});
+              const [ops, brs] = await Promise.all([
+                sourcingApi.fetchOperators().catch(() => null),
+                sourcingApi.fetchBrokers().catch(() => null),
+              ]);
+              setData(prev => ({ ...prev, operators: ops ?? prev.operators, brokers: brs ?? prev.brokers }));
               setShowImportDeal(false);
             }}
             onClose={() => setShowImportDeal(false)}
@@ -2077,8 +2082,11 @@ const Sourcing = () => {
             brokers={data.brokers}
             onSave={async (p) => {
               await saveProp(p);
-              sourcingApi.fetchOperators().then(ops => setData(prev => ({ ...prev, operators: ops }))).catch(() => {});
-              sourcingApi.fetchBrokers().then(brs => setData(prev => ({ ...prev, brokers: brs }))).catch(() => {});
+              const [ops, brs] = await Promise.all([
+                sourcingApi.fetchOperators().catch(() => null),
+                sourcingApi.fetchBrokers().catch(() => null),
+              ]);
+              setData(prev => ({ ...prev, operators: ops ?? prev.operators, brokers: brs ?? prev.brokers }));
               setShowImportOM(false);
             }}
             onClose={() => setShowImportOM(false)}
