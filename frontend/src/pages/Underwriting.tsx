@@ -60,6 +60,10 @@ const OM_REVIEW_FIELDS: ReviewField[] = [
   { key: 'bridgePeriodMonths', label: 'Bridge Period (Months)', group: 'Property Tax & Deal Structure', type: 'number' },
   { key: 'lpEquityShare', label: 'LP Equity Share', group: 'Property Tax & Deal Structure', type: 'percent' },
 
+  { key: 'closingCostPct', label: 'Closing Costs (% of Acquisition Cost)', group: 'Deal Costs (enter manually)', type: 'percent' },
+  { key: 'acquisitionFeePct', label: 'Aequitas Acquisition Fee (% of Acquisition Cost)', group: 'Deal Costs (enter manually)', type: 'percent' },
+  { key: 'workingCapitalPerUnit', label: 'Working Capital ($/Unit)', group: 'Deal Costs (enter manually)', type: 'number' },
+
   { key: 'seniorLtvPct', label: 'LTV', group: 'Senior Loan (enter manually)', type: 'percent' },
   { key: 'seniorInterestRate', label: 'Interest Rate', group: 'Senior Loan (enter manually)', type: 'percent' },
   { key: 'seniorIoPeriods', label: 'IO Periods (Months)', group: 'Senior Loan (enter manually)', type: 'number' },
@@ -75,6 +79,10 @@ const RENT_ROLL_REVIEW_FIELDS: ReviewField[] = [
   { key: 'badDebtRate', label: 'Bad Debt Rate', group: 'Vacancy & Credit Loss', type: 'percent' },
 
   { key: 'annualRentGrowthCap', label: 'Annual Rent Growth Cap', group: 'Rent Stabilization', type: 'percent' },
+
+  { key: 'closingCostPct', label: 'Closing Costs (% of Acquisition Cost)', group: 'Deal Costs (enter manually)', type: 'percent' },
+  { key: 'acquisitionFeePct', label: 'Aequitas Acquisition Fee (% of Acquisition Cost)', group: 'Deal Costs (enter manually)', type: 'percent' },
+  { key: 'workingCapitalPerUnit', label: 'Working Capital ($/Unit)', group: 'Deal Costs (enter manually)', type: 'number' },
 
   { key: 'seniorLtvPct', label: 'LTV', group: 'Senior Loan (enter manually)', type: 'percent' },
   { key: 'seniorInterestRate', label: 'Interest Rate', group: 'Senior Loan (enter manually)', type: 'percent' },
@@ -455,6 +463,9 @@ const Underwriting = () => {
               state: uwState || '',
               numUnits: uwTotalUnits,
               unitMix: uwTotalUnits > 0 ? [{ unitType: 'All Units', count: uwTotalUnits, askingRent: 0, avgSf: 0 }] : [],
+              closingCostPct,
+              acquisitionFeePct,
+              workingCapitalPerUnit,
               seniorLtvPct,
               seniorInterestRate,
               seniorIoPeriods,
@@ -776,6 +787,11 @@ const Underwriting = () => {
     if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
     if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
 
+    // Deal costs (asked manually in the review modal, not extracted)
+    if (data.closingCostPct != null) setClosingCostPct(data.closingCostPct);
+    if (data.acquisitionFeePct != null) setAcquisitionFeePct(data.acquisitionFeePct);
+    if (data.workingCapitalPerUnit != null) setWorkingCapitalPerUnit(data.workingCapitalPerUnit);
+
     // Senior loan (asked manually in the review modal, not extracted)
     if (data.seniorLtvPct != null) setSeniorLtvPct(data.seniorLtvPct);
     if (data.seniorInterestRate != null) setSeniorInterestRate(data.seniorInterestRate);
@@ -828,6 +844,9 @@ const Underwriting = () => {
       // Seed senior-loan fields with current form state (not extracted) so the modal opens pre-filled.
       setPendingOmData({
         ...json.data,
+        closingCostPct,
+        acquisitionFeePct,
+        workingCapitalPerUnit,
         seniorLtvPct,
         seniorInterestRate,
         seniorIoPeriods,
@@ -863,6 +882,11 @@ const Underwriting = () => {
     if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
     if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
 
+    // Deal costs (asked manually in the review modal, not extracted)
+    if (data.closingCostPct != null) setClosingCostPct(data.closingCostPct);
+    if (data.acquisitionFeePct != null) setAcquisitionFeePct(data.acquisitionFeePct);
+    if (data.workingCapitalPerUnit != null) setWorkingCapitalPerUnit(data.workingCapitalPerUnit);
+
     // Senior loan (asked manually in the review modal, not extracted)
     if (data.seniorLtvPct != null) setSeniorLtvPct(data.seniorLtvPct);
     if (data.seniorInterestRate != null) setSeniorInterestRate(data.seniorInterestRate);
@@ -885,6 +909,9 @@ const Underwriting = () => {
       // Seed senior-loan fields with current form state (not extracted) so the modal opens pre-filled.
       setPendingRentRollData({
         ...json.data,
+        closingCostPct,
+        acquisitionFeePct,
+        workingCapitalPerUnit,
         seniorLtvPct,
         seniorInterestRate,
         seniorIoPeriods,
