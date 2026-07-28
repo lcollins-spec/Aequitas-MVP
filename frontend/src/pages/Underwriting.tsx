@@ -22,6 +22,7 @@ import ClimateCheckUpload, { ClimateScoreSummary } from '../components/ClimateCh
 import ExtractionReviewModal, { type ReviewField } from '../components/ExtractionReviewModal';
 
 type UnitMixRow = { unitType: string; count: number; askingRent: number; avgSf: number };
+type FeeItem = { id: string; description: string; amount: number };
 
 const OM_REVIEW_FIELDS: ReviewField[] = [
   { key: 'propertyName', label: 'Property Name', group: 'Property', type: 'text' },
@@ -59,7 +60,7 @@ const OM_REVIEW_FIELDS: ReviewField[] = [
   { key: 'bridgePeriodMonths', label: 'Bridge Period (Months)', group: 'Property Tax & Deal Structure', type: 'number' },
   { key: 'lpEquityShare', label: 'LP Equity Share', group: 'Property Tax & Deal Structure', type: 'percent' },
 
-  { key: 'seniorLoanAmount', label: 'Loan Amount', group: 'Senior Loan (enter manually)', type: 'number' },
+  { key: 'seniorLtvPct', label: 'LTV', group: 'Senior Loan (enter manually)', type: 'percent' },
   { key: 'seniorInterestRate', label: 'Interest Rate', group: 'Senior Loan (enter manually)', type: 'percent' },
   { key: 'seniorIoPeriods', label: 'IO Periods (Months)', group: 'Senior Loan (enter manually)', type: 'number' },
   { key: 'seniorFinancingCostsPct', label: 'Financing Costs', group: 'Senior Loan (enter manually)', type: 'percent' },
@@ -75,7 +76,7 @@ const RENT_ROLL_REVIEW_FIELDS: ReviewField[] = [
 
   { key: 'annualRentGrowthCap', label: 'Annual Rent Growth Cap', group: 'Rent Stabilization', type: 'percent' },
 
-  { key: 'seniorLoanAmount', label: 'Loan Amount', group: 'Senior Loan (enter manually)', type: 'number' },
+  { key: 'seniorLtvPct', label: 'LTV', group: 'Senior Loan (enter manually)', type: 'percent' },
   { key: 'seniorInterestRate', label: 'Interest Rate', group: 'Senior Loan (enter manually)', type: 'percent' },
   { key: 'seniorIoPeriods', label: 'IO Periods (Months)', group: 'Senior Loan (enter manually)', type: 'number' },
   { key: 'seniorFinancingCostsPct', label: 'Financing Costs', group: 'Senior Loan (enter manually)', type: 'percent' },
@@ -229,6 +230,9 @@ const pctInput = (
   />
 );
 
+const fmtCurrency = (n: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n || 0);
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 const Underwriting = () => {
@@ -271,6 +275,12 @@ const Underwriting = () => {
   const [bridgePeriodMonths, setBridgePeriodMonths] = useState(36);
   const [entryCapRateInput, setEntryCapRateInput] = useState(0.0675);
   const [salesCostPct, setSalesCostPct] = useState(0.02);
+
+  // total capitalization (Sources & Uses)
+  const [closingCostPct, setClosingCostPct] = useState(0);
+  const [acquisitionFeePct, setAcquisitionFeePct] = useState(0);
+  const [workingCapitalPerUnit, setWorkingCapitalPerUnit] = useState(0);
+  const [additionalFees, setAdditionalFees] = useState<FeeItem[]>([]);
   const [amiTarget, setAmiTarget] = useState('60% AMI - $48,000/year');
   const [gpPartner, setGpPartner] = useState('Aequitas Housing');
   const [gpPartners, setGpPartners] = useState<string[]>(GP_PARTNERS_FALLBACK);
@@ -324,7 +334,7 @@ const Underwriting = () => {
   const [specialAssessments, setSpecialAssessments] = useState(0);
 
   // senior loan
-  const [seniorLoanAmount, setSeniorLoanAmount] = useState(0);
+  const [seniorLtvPct, setSeniorLtvPct] = useState(0);
   const [seniorInterestRate, setSeniorInterestRate] = useState(0.065);
   const [seniorFinancingCostsPct, setSeniorFinancingCostsPct] = useState(0.01);
   const [seniorIoPeriods, setSeniorIoPeriods] = useState(0);
@@ -445,7 +455,7 @@ const Underwriting = () => {
               state: uwState || '',
               numUnits: uwTotalUnits,
               unitMix: uwTotalUnits > 0 ? [{ unitType: 'All Units', count: uwTotalUnits, askingRent: 0, avgSf: 0 }] : [],
-              seniorLoanAmount,
+              seniorLtvPct,
               seniorInterestRate,
               seniorIoPeriods,
               seniorFinancingCostsPct,
@@ -470,6 +480,19 @@ const Underwriting = () => {
     if (totalU === 0) return null;
     return Math.round(unitMix.reduce((s, u) => s + u.askingRent * u.count, 0) / totalU);
   }, [unitMix]);
+
+  const unitMixCount = useMemo(() => unitMix.reduce((s, u) => s + (u.count || 0), 0), [unitMix]);
+  const additionalFeesTotal = useMemo(() => additionalFees.reduce((s, f) => s + (f.amount || 0), 0), [additionalFees]);
+
+  const addAdditionalFee = () => {
+    setAdditionalFees(prev => [...prev, { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, description: '', amount: 0 }]);
+  };
+  const updateAdditionalFee = (id: string, patch: Partial<Pick<FeeItem, 'description' | 'amount'>>) => {
+    setAdditionalFees(prev => prev.map(f => (f.id === id ? { ...f, ...patch } : f)));
+  };
+  const removeAdditionalFee = (id: string) => {
+    setAdditionalFees(prev => prev.filter(f => f.id !== id));
+  };
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -539,6 +562,18 @@ const Underwriting = () => {
       }
       if (uw.salesCostPct != null) setSalesCostPct(uw.salesCostPct > 1 ? uw.salesCostPct / 100 : uw.salesCostPct);
 
+      // Total capitalization (old deals lack these — defaults from useState apply: 0%/$0/[])
+      if (uw.closingCostPct != null) setClosingCostPct(uw.closingCostPct > 1 ? uw.closingCostPct / 100 : uw.closingCostPct);
+      if (uw.acquisitionFeePct != null) setAcquisitionFeePct(uw.acquisitionFeePct > 1 ? uw.acquisitionFeePct / 100 : uw.acquisitionFeePct);
+      if (uw.workingCapitalPerUnit != null) setWorkingCapitalPerUnit(uw.workingCapitalPerUnit);
+      if (Array.isArray(uw.additionalFees)) {
+        setAdditionalFees(uw.additionalFees.map((f: any) => ({
+          id: f.id ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          description: f.description ?? '',
+          amount: f.amount ?? 0,
+        })));
+      }
+
       // Growth / exit rates (old format could be decimal or %)
       const toDecimal = (v: number) => v > 1 ? v / 100 : v;
       if (uw.rentGrowthRate != null) setRentGrowthRate(toDecimal(uw.rentGrowthRate));
@@ -588,8 +623,15 @@ const Underwriting = () => {
       if (uw.millageRate != null) setMillageRate(uw.millageRate);
       if (uw.specialAssessments != null) setSpecialAssessments(uw.specialAssessments);
 
-      // Senior loan
-      if (uw.seniorLoanAmount != null) setSeniorLoanAmount(uw.seniorLoanAmount);
+      // Senior loan — LTV replaces the old direct loan-amount input. Old deals only
+      // have seniorLoanAmount ($) saved; derive the equivalent LTV from it so
+      // re-exporting an old deal produces the same loan amount as before.
+      if (uw.seniorLtvPct != null) {
+        setSeniorLtvPct(uw.seniorLtvPct > 1 ? uw.seniorLtvPct / 100 : uw.seniorLtvPct);
+      } else if (uw.seniorLoanAmount != null) {
+        const pp = uw.purchasePrice ?? deal.purchasePrice ?? 0;
+        if (pp > 0) setSeniorLtvPct(Math.min(1, Math.max(0, uw.seniorLoanAmount / pp)));
+      }
       const sir = uw.seniorInterestRate ?? uw.interestRate;
       if (sir != null) setSeniorInterestRate(sir > 1 ? sir / 100 : sir);
       if (uw.seniorFinancingCostsPct != null) setSeniorFinancingCostsPct(uw.seniorFinancingCostsPct > 1 ? uw.seniorFinancingCostsPct / 100 : uw.seniorFinancingCostsPct);
@@ -735,7 +777,7 @@ const Underwriting = () => {
     if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
 
     // Senior loan (asked manually in the review modal, not extracted)
-    if (data.seniorLoanAmount != null) setSeniorLoanAmount(data.seniorLoanAmount);
+    if (data.seniorLtvPct != null) setSeniorLtvPct(data.seniorLtvPct);
     if (data.seniorInterestRate != null) setSeniorInterestRate(data.seniorInterestRate);
     if (data.seniorIoPeriods != null) setSeniorIoPeriods(data.seniorIoPeriods);
     if (data.seniorFinancingCostsPct != null) setSeniorFinancingCostsPct(data.seniorFinancingCostsPct);
@@ -786,7 +828,7 @@ const Underwriting = () => {
       // Seed senior-loan fields with current form state (not extracted) so the modal opens pre-filled.
       setPendingOmData({
         ...json.data,
-        seniorLoanAmount,
+        seniorLtvPct,
         seniorInterestRate,
         seniorIoPeriods,
         seniorFinancingCostsPct,
@@ -822,7 +864,7 @@ const Underwriting = () => {
     if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
 
     // Senior loan (asked manually in the review modal, not extracted)
-    if (data.seniorLoanAmount != null) setSeniorLoanAmount(data.seniorLoanAmount);
+    if (data.seniorLtvPct != null) setSeniorLtvPct(data.seniorLtvPct);
     if (data.seniorInterestRate != null) setSeniorInterestRate(data.seniorInterestRate);
     if (data.seniorIoPeriods != null) setSeniorIoPeriods(data.seniorIoPeriods);
     if (data.seniorFinancingCostsPct != null) setSeniorFinancingCostsPct(data.seniorFinancingCostsPct);
@@ -843,7 +885,7 @@ const Underwriting = () => {
       // Seed senior-loan fields with current form state (not extracted) so the modal opens pre-filled.
       setPendingRentRollData({
         ...json.data,
-        seniorLoanAmount,
+        seniorLtvPct,
         seniorInterestRate,
         seniorIoPeriods,
         seniorFinancingCostsPct,
@@ -896,6 +938,10 @@ const Underwriting = () => {
       purchasePrice,
       entryCapRate: entryCapRateInput,
       salesCostPct,
+      closingCostPct,
+      acquisitionFeePct,
+      workingCapitalPerUnit,
+      additionalFeesTotal,
       lpEquityShare,
       unitMix: normalizedMix,
       rubsPct,
@@ -918,7 +964,7 @@ const Underwriting = () => {
       opexInsurancePerUnit,
       opexUtilitiesPerUnit,
       opexPropertyTaxPerUnit,
-      seniorLoanAmount,
+      seniorLtvPct,
       seniorInterestRate,
       seniorFinancingCostsPct,
       seniorIoPeriods,
@@ -980,6 +1026,7 @@ const Underwriting = () => {
           totalUnits, county, zipCode, yearBuilt, buildingType, numberOfBuildings,
           amiTarget, gpPartner, acquisitionDate, ttmNoi, purchasePrice,
           holdPeriodYears, bridgePeriodMonths, entryCapRateInput, salesCostPct,
+          closingCostPct, acquisitionFeePct, workingCapitalPerUnit, additionalFees,
           unitMix, omLaundryIncome, omRentStabilized, omAnnualRentGrowthCap,
           vacancyRates, lossToLeaseRates, badDebtRates, concessionsRates, nonRevUnits,
           managementFeePct, capReservePerUnit,
@@ -988,7 +1035,7 @@ const Underwriting = () => {
           opexInsurancePerUnit, opexUtilitiesPerUnit, opexPropertyTaxPerUnit,
           rubsPct, parkingIncomePerUnit, otherIncomePerUnit,
           assessedValue, assessedValueNextBuyer, assessmentPct, millageRate, specialAssessments,
-          seniorLoanAmount, seniorInterestRate, seniorFinancingCostsPct, seniorIoPeriods,
+          seniorLtvPct, seniorInterestRate, seniorFinancingCostsPct, seniorIoPeriods,
           refiTermMonths, refiInterestRate, refiFinancingCostsPct, refiIoPeriods,
           refiTargetDscr, refiTargetDy, refiTargetLtv,
           rentGrowthRate, opexGrowthRate, exitCapRate,
@@ -1604,10 +1651,55 @@ const Underwriting = () => {
             <div className="bg-white rounded-xl p-5 shadow-sm space-y-4">
               <h3 className="text-sm font-semibold text-gray-700">Financing</h3>
 
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Senior / Bridge Loan</p>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Capitalization</p>
               <div className="space-y-3">
-                <div><label className={lbl}>Loan Amount ($)</label>
-                  <input type="number" step="50000" value={seniorLoanAmount} onChange={e => setSeniorLoanAmount(Number(e.target.value) || 0)} className={inp} />
+                <div><label className={lbl}>Closing Costs (% of Acquisition Cost)</label>
+                  {pctInput(closingCostPct, v => setClosingCostPct(Math.min(1, Math.max(0, v))), 0.1)}
+                  <p className="text-xs text-gray-400 mt-1">{fmtCurrency(closingCostPct * purchasePrice)}</p>
+                </div>
+                <div><label className={lbl}>Aequitas Acquisition Fee (% of Acquisition Cost)</label>
+                  {pctInput(acquisitionFeePct, v => setAcquisitionFeePct(Math.min(1, Math.max(0, v))), 0.1)}
+                  <p className="text-xs text-gray-400 mt-1">{fmtCurrency(acquisitionFeePct * purchasePrice)}</p>
+                </div>
+                <div><label className={lbl}>Working Capital / Reserve ($/unit)</label>
+                  <input type="number" step="100" value={workingCapitalPerUnit} onChange={e => setWorkingCapitalPerUnit(Number(e.target.value) || 0)} className={inp} />
+                  <p className="text-xs text-gray-400 mt-1">{fmtCurrency(workingCapitalPerUnit * unitMixCount)}</p>
+                </div>
+                <div>
+                  <label className={lbl}>Additional Fees / Costs</label>
+                  <div className="space-y-2">
+                    {additionalFees.map(f => (
+                      <div key={f.id} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          placeholder="Description"
+                          value={f.description}
+                          onChange={e => updateAdditionalFee(f.id, { description: e.target.value })}
+                          className={`${inp} flex-1`}
+                        />
+                        <input
+                          type="number"
+                          placeholder="$"
+                          value={f.amount}
+                          onChange={e => updateAdditionalFee(f.id, { amount: Number(e.target.value) || 0 })}
+                          className={`${inp} w-28`}
+                        />
+                        <button onClick={() => removeAdditionalFee(f.id)} className="text-xs text-red-500 hover:text-red-700">✕</button>
+                      </div>
+                    ))}
+                    <button onClick={addAdditionalFee} className="text-xs text-primary-800 hover:text-primary-700 underline">+ Add fee/cost</button>
+                  </div>
+                  {additionalFees.length > 0 && (
+                    <p className="text-xs text-gray-400 mt-1">Total: {fmtCurrency(additionalFeesTotal)}</p>
+                  )}
+                </div>
+              </div>
+
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide pt-2">Senior / Bridge Loan</p>
+              <div className="space-y-3">
+                <div><label className={lbl}>LTV (%)</label>
+                  {pctInput(seniorLtvPct, v => setSeniorLtvPct(Math.min(1, Math.max(0, v))), 1)}
+                  <p className="text-xs text-gray-400 mt-1">{fmtCurrency(seniorLtvPct * purchasePrice)} loan amount</p>
                   {currentMortgageRate && !loadingRates && (
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-xs text-green-600">FRED 30-yr: {currentMortgageRate.toFixed(2)}%</span>

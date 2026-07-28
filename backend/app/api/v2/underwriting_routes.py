@@ -32,7 +32,11 @@ ROWS = {
     'purchase_price': 84,
     'cap_rate_valuation': 9,         # feeds the equity-basis formula on Pro Forma
     'sales_cost_pct': 10,
-    'working_capital_reserve': 85,
+    'closing_cost_pct': 11,          # feeds Sources & Uses "Uses" total (Pro Forma!D38)
+    'working_capital_reserve': 85,   # $ total; derived from working_capital_per_unit x unit count
+    'working_capital_per_unit': 114, # informational raw input, mirrors what fed working_capital_reserve
+    'acquisition_fee_pct': 112,      # feeds Pro Forma!D42 (Acquisition Fee + Additional Costs)
+    'additional_fees_total': 113,    # feeds Pro Forma!D42
     # LP / GP split
     'lp_equity_share': 86,
     # Unit mix (16 rows, cols B/C/D/E = type/count/rent/avgSf)
@@ -62,10 +66,13 @@ ROWS = {
     'management_fee_pct': 62,
     'cap_reserve_per_unit': 58,
     # Senior / bridge loan
-    'senior_loan_amount': 67,
+    # Note: Senior Loan Proceeds (Inputs!C67) is now an Excel formula, '=C84*C115'
+    # (Purchase Price x LTV%) — Python no longer writes a literal there; see
+    # senior_ltv_pct below instead.
     'senior_interest_rate': 68,
     'senior_financing_costs_pct': 79,
     'senior_io_periods': 80,
+    'senior_ltv_pct': 115,
     # Refinance loan
     # Note: DSCR/DY/LTV sizing targets (F52/F53/F54 on Pro Forma) are fixed template
     # constants, not per-deal inputs — intentionally not mapped here.
@@ -105,6 +112,12 @@ def _to_decimal(val, fallback=0.0):
         return f / 100.0 if f > 1.0 else f
     except (TypeError, ValueError):
         return fallback
+
+
+def _clamp01(val):
+    """Bound a decimal rate to [0, 1] so malformed input can't produce a negative
+    or absurd loan amount, fee, or reserve."""
+    return max(0.0, min(1.0, val))
 
 
 def _as_list(val):
@@ -267,7 +280,23 @@ def export():
     if body.get('salesCostPct') is not None:
         set_row(ROWS['sales_cost_pct'], _to_decimal(body['salesCostPct']))
 
-    if body.get('workingCapitalReserveAmount') is not None:
+    if body.get('closingCostPct') is not None:
+        set_row(ROWS['closing_cost_pct'], _clamp01(_to_decimal(body['closingCostPct'])))
+
+    if body.get('acquisitionFeePct') is not None:
+        set_row(ROWS['acquisition_fee_pct'], _clamp01(_to_decimal(body['acquisitionFeePct'])))
+
+    if body.get('additionalFeesTotal') is not None:
+        set_row(ROWS['additional_fees_total'], max(0.0, float(body['additionalFeesTotal'])))
+
+    # Working Capital/Reserve — $/unit input x unit count, so it stays in sync with
+    # whatever unit mix was actually sent (not the separately-tracked totalUnits field).
+    if body.get('workingCapitalPerUnit') is not None:
+        wc_per_unit = float(body['workingCapitalPerUnit'])
+        set_row(ROWS['working_capital_per_unit'], wc_per_unit)
+        unit_count = sum(int(u.get('count') or 0) for u in (body.get('unitMix') or []))
+        set_row(ROWS['working_capital_reserve'], wc_per_unit * unit_count)
+    elif body.get('workingCapitalReserveAmount') is not None:
         set_row(ROWS['working_capital_reserve'], float(body['workingCapitalReserveAmount']))
 
     # ── LP / GP split ───────────────────────────────────────────────
@@ -339,8 +368,10 @@ def export():
         set_row(ROWS['cap_reserve_per_unit'], float(body['capReservePerUnit']))
 
     # ── Senior / bridge loan ─────────────────────────────────────────
-    if body.get('seniorLoanAmount') is not None:
-        set_row(ROWS['senior_loan_amount'], float(body['seniorLoanAmount']))
+    # Loan Proceeds (Inputs!C67) is an Excel formula (Purchase Price x LTV%) — we
+    # only ever write the LTV% input here and let Excel compute the loan amount.
+    if body.get('seniorLtvPct') is not None:
+        set_row(ROWS['senior_ltv_pct'], _clamp01(_to_decimal(body['seniorLtvPct'])))
     if body.get('seniorInterestRate') is not None:
         set_row(ROWS['senior_interest_rate'], _to_decimal(body['seniorInterestRate']))
     if body.get('seniorFinancingCostsPct') is not None:
