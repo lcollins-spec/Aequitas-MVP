@@ -19,83 +19,13 @@ import type { DealDocument, LoiExtractedData } from '../types/dealExecution';
 import { scrapingApi } from '../services/scrapingApi';
 import * as sourcingApi from '../services/sourcingApi';
 import ClimateCheckUpload, { ClimateScoreSummary } from '../components/ClimateCheckUpload';
-import ExtractionReviewModal, { type ReviewField } from '../components/ExtractionReviewModal';
+import ExtractionReviewModal from '../components/ExtractionReviewModal';
+import { mergeExtractions, MERGED_REVIEW_FIELDS } from '../utils/extractionMerge';
 
 type UnitMixRow = { unitType: string; count: number; askingRent: number; avgSf: number };
 type FeeItem = { id: string; description: string; amount: number };
 
-const OM_REVIEW_FIELDS: ReviewField[] = [
-  { key: 'propertyName', label: 'Property Name', group: 'Property', type: 'text' },
-  { key: 'askingPrice', label: 'Asking Price', group: 'Property', type: 'number' },
-  { key: 'city', label: 'City', group: 'Property', type: 'text' },
-  { key: 'state', label: 'State', group: 'Property', type: 'text' },
-  { key: 'zipcode', label: 'Zip Code', group: 'Property', type: 'text' },
-  { key: 'ttmNoi', label: 'TTM NOI', group: 'Property', type: 'number' },
-
-  { key: 'vacancyRate', label: 'Vacancy Rate', group: 'Vacancy & Credit Loss', type: 'percent' },
-  { key: 'badDebtRate', label: 'Bad Debt Rate', group: 'Vacancy & Credit Loss', type: 'percent' },
-  { key: 'lossToLeaseRate', label: 'Loss to Lease Rate', group: 'Vacancy & Credit Loss', type: 'percent' },
-  { key: 'concessionsRate', label: 'Concessions Rate', group: 'Vacancy & Credit Loss', type: 'percent' },
-
-  { key: 'rubsPct', label: 'RUBS %', group: 'Other Income', type: 'number' },
-  { key: 'parkingIncomePerUnit', label: 'Parking $/Unit/Mo', group: 'Other Income', type: 'number' },
-  { key: 'otherIncomePerUnit', label: 'Other Income $/Unit/Mo', group: 'Other Income', type: 'number' },
-  { key: 'laundryIncome', label: 'Laundry Income (Annual)', group: 'Other Income', type: 'number' },
-
-  { key: 'operatingExpenses.insuranceAnnual', label: 'Insurance (Annual)', group: 'Operating Expenses', type: 'number' },
-  { key: 'operatingExpenses.utilitiesAnnual', label: 'Utilities (Annual)', group: 'Operating Expenses', type: 'number' },
-  { key: 'operatingExpenses.propertyTaxAnnual', label: 'Property Tax (Annual)', group: 'Operating Expenses', type: 'number' },
-  { key: 'operatingExpenses.managementFeePct', label: 'Management Fee', group: 'Operating Expenses', type: 'percent' },
-  { key: 'opexPayrollPerUnit', label: 'Payroll $/Unit', group: 'Operating Expenses', type: 'number' },
-  { key: 'opexAdminPerUnit', label: 'Admin $/Unit', group: 'Operating Expenses', type: 'number' },
-  { key: 'opexMarketingPerUnit', label: 'Marketing $/Unit', group: 'Operating Expenses', type: 'number' },
-  { key: 'opexRmPerUnit', label: 'R&M $/Unit', group: 'Operating Expenses', type: 'number' },
-  { key: 'opexContractServicePerUnit', label: 'Contract Service $/Unit', group: 'Operating Expenses', type: 'number' },
-  { key: 'opexTurnoverPerUnit', label: 'Turnover $/Unit', group: 'Operating Expenses', type: 'number' },
-  { key: 'capexPerUnit', label: 'Capex Reserve $/Unit', group: 'Operating Expenses', type: 'number' },
-  { key: 'opexGrowthRate', label: 'Opex Growth Rate', group: 'Operating Expenses', type: 'percent' },
-  { key: 'insuranceGrowthRate', label: 'Insurance Growth Rate', group: 'Operating Expenses', type: 'percent' },
-
-  { key: 'assessedValue', label: 'Assessed Value', group: 'Property Tax & Deal Structure', type: 'number' },
-  { key: 'assessmentPct', label: 'Assessment %', group: 'Property Tax & Deal Structure', type: 'percent' },
-  { key: 'bridgePeriodMonths', label: 'Bridge Period (Months)', group: 'Property Tax & Deal Structure', type: 'number' },
-  { key: 'lpEquityShare', label: 'LP Equity Share', group: 'Property Tax & Deal Structure', type: 'percent' },
-
-  { key: 'closingCostPct', label: 'Closing Costs (% of Acquisition Cost)', group: 'Deal Costs (enter manually)', type: 'percent' },
-  { key: 'acquisitionFeePct', label: 'Aequitas Acquisition Fee (% of Acquisition Cost)', group: 'Deal Costs (enter manually)', type: 'percent' },
-  { key: 'workingCapitalPerUnit', label: 'Working Capital ($/Unit)', group: 'Deal Costs (enter manually)', type: 'number' },
-
-  { key: 'seniorLtvPct', label: 'LTV', group: 'Senior Loan (enter manually)', type: 'percent' },
-  { key: 'seniorInterestRate', label: 'Interest Rate', group: 'Senior Loan (enter manually)', type: 'percent' },
-  { key: 'seniorIoPeriods', label: 'IO Periods (Months)', group: 'Senior Loan (enter manually)', type: 'number' },
-  { key: 'seniorFinancingCostsPct', label: 'Financing Costs', group: 'Senior Loan (enter manually)', type: 'percent' },
-
-  { key: 'abatementYear1', label: 'Abatement % Year 1', group: 'Property Tax Abatement (enter manually)', type: 'percent' },
-  { key: 'abatementYear2', label: 'Abatement % Year 2', group: 'Property Tax Abatement (enter manually)', type: 'percent' },
-  { key: 'abatementYear3', label: 'Abatement % Year 3', group: 'Property Tax Abatement (enter manually)', type: 'percent' },
-  { key: 'abatementYear4', label: 'Abatement % Year 4', group: 'Property Tax Abatement (enter manually)', type: 'percent' },
-  { key: 'abatementYear5', label: 'Abatement % Year 5', group: 'Property Tax Abatement (enter manually)', type: 'percent' },
-];
-
-const RENT_ROLL_REVIEW_FIELDS: ReviewField[] = [
-  { key: 'city', label: 'City', group: 'Property', type: 'text' },
-  { key: 'state', label: 'State', group: 'Property', type: 'text' },
-  { key: 'zipcode', label: 'Zip Code', group: 'Property', type: 'text' },
-
-  { key: 'vacancyRate', label: 'Vacancy Rate', group: 'Vacancy & Credit Loss', type: 'percent' },
-  { key: 'badDebtRate', label: 'Bad Debt Rate', group: 'Vacancy & Credit Loss', type: 'percent' },
-
-  { key: 'annualRentGrowthCap', label: 'Annual Rent Growth Cap', group: 'Rent Stabilization', type: 'percent' },
-
-  { key: 'closingCostPct', label: 'Closing Costs (% of Acquisition Cost)', group: 'Deal Costs (enter manually)', type: 'percent' },
-  { key: 'acquisitionFeePct', label: 'Aequitas Acquisition Fee (% of Acquisition Cost)', group: 'Deal Costs (enter manually)', type: 'percent' },
-  { key: 'workingCapitalPerUnit', label: 'Working Capital ($/Unit)', group: 'Deal Costs (enter manually)', type: 'number' },
-
-  { key: 'seniorLtvPct', label: 'LTV', group: 'Senior Loan (enter manually)', type: 'percent' },
-  { key: 'seniorInterestRate', label: 'Interest Rate', group: 'Senior Loan (enter manually)', type: 'percent' },
-  { key: 'seniorIoPeriods', label: 'IO Periods (Months)', group: 'Senior Loan (enter manually)', type: 'number' },
-  { key: 'seniorFinancingCostsPct', label: 'Financing Costs', group: 'Senior Loan (enter manually)', type: 'percent' },
-];
+// OM_REVIEW_FIELDS / RENT_ROLL_REVIEW_FIELDS / MERGED_REVIEW_FIELDS live in ../utils/extractionMerge
 
 const GP_PARTNERS_FALLBACK = ['Aequitas Housing'];
 
@@ -263,9 +193,14 @@ const Underwriting = () => {
   const [pipelineStatus, setPipelineStatusState] = useState<PipelineStatus>('Analyzing');
   const [showDataRoomModal, setShowDataRoomModal] = useState(false);
   const [showLoiModal, setShowLoiModal] = useState(false);
-  const [pendingOmData, setPendingOmData] = useState<any>(null);
+  // Raw extractions from the most recent OM / Rent Roll upload for this deal. Kept around
+  // (not nulled on confirm) so a later upload of the other document type can still be
+  // merged and diffed against it — this is what lets the review card stay accurate and
+  // "the same card" no matter which document arrives first.
+  const [omData, setOmData] = useState<any>(null);
   const [pendingOmFile, setPendingOmFile] = useState<File | null>(null);
-  const [pendingRentRollData, setPendingRentRollData] = useState<any>(null);
+  const [rentRollData, setRentRollData] = useState<any>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   const isUnderwritingLocked =
     pipelineStatus === 'LOI Executed' ||
@@ -447,6 +382,12 @@ const Underwriting = () => {
     if (dealIdParam) {
       const dealId = parseInt(dealIdParam, 10);
       if (!isNaN(dealId)) {
+        if (dealId !== currentDealId) {
+          setOmData(null);
+          setRentRollData(null);
+          setPendingOmFile(null);
+          setReviewOpen(false);
+        }
         setCurrentDealId(dealId);
         const status = getPipelineStatus(dealId);
         setPipelineStatusState(status);
@@ -471,7 +412,7 @@ const Underwriting = () => {
             let uwTotalUnits = 0;
             try { uwTotalUnits = deal.underwritingJson ? (JSON.parse(deal.underwritingJson).totalUnits || 0) : 0; } catch { /* ignore */ }
             const [uwCity, uwState] = (deal.location || '').split(',').map(s => s.trim());
-            setPendingOmData({
+            setOmData({
               propertyName: deal.dealName || '',
               askingPrice: deal.purchasePrice || undefined,
               city: uwCity || '',
@@ -487,6 +428,7 @@ const Underwriting = () => {
               seniorFinancingCostsPct,
             });
             setPendingOmFile(null);
+            setReviewOpen(true);
             setSearchParams(prev => {
               const next = new URLSearchParams(prev);
               next.delete('reviewOm');
@@ -697,6 +639,16 @@ const Underwriting = () => {
 
   const handleSelectDeal = (deal: Deal) => {
     if (!deal.id) return;
+    // omData/rentRollData deliberately survive a Confirm & Apply so a later upload of the
+    // complementary document type can still merge/diff against it (see applyMergedDataToForm).
+    // Switching to a different deal must clear that cache — otherwise uploading an OM here
+    // could silently merge against a stale Rent Roll left over from whatever deal was open before.
+    if (deal.id !== currentDealId) {
+      setOmData(null);
+      setRentRollData(null);
+      setPendingOmFile(null);
+      setReviewOpen(false);
+    }
     setCurrentDealId(deal.id);
     const status = getPipelineStatus(deal.id);
     setPipelineStatusState(status);
@@ -742,7 +694,10 @@ const Underwriting = () => {
 
   // Applies (possibly user-edited) extracted OM data to the live underwriting form.
   // Only called after the user confirms the extraction review modal.
-  const applyOmDataToForm = async (data: any, file: File | null) => {
+  // Applies the (possibly user-edited) merged OM + Rent Roll data to the live
+  // underwriting form. Precedence between the two sources was already resolved
+  // by mergeExtractions before this runs — this just writes whatever `data` says.
+  const applyMergedDataToForm = async (data: any, sources: { hasOm: boolean; hasRentRoll: boolean }, file: File | null) => {
     if (data.propertyName) setDealName(data.propertyName);
     if (data.unitMix?.length > 0) {
       setTotalUnits(data.unitMix.reduce((s: number, u: any) => s + (u.count ?? 0), 0));
@@ -834,7 +789,10 @@ const Underwriting = () => {
     if (data.seniorIoPeriods != null) setSeniorIoPeriods(data.seniorIoPeriods);
     if (data.seniorFinancingCostsPct != null) setSeniorFinancingCostsPct(data.seniorFinancingCostsPct);
 
-    setOmUploaded(true);
+    if (sources.hasOm) setOmUploaded(true);
+    if (sources.hasRentRoll) setRrUploaded(true);
+
+    if (!sources.hasOm) return;
 
     // Create a deal record only if one doesn't exist yet (native direct-upload
     // path). If we already have a dealId — e.g. handed off from Sourcing — the
@@ -876,11 +834,11 @@ const Underwriting = () => {
       const res = await fetch('/api/v2/underwriting/extract-om', { method: 'POST', body: formData });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || 'Extraction failed');
-      // Hand off to the review modal instead of applying directly — user confirms/edits first.
+      // Hand off to the review card instead of applying directly — user confirms/edits first.
       // Seed senior-loan and abatement-schedule fields with current form state (not
-      // extracted) so the modal opens pre-filled. insuranceGrowthRate is likewise
+      // extracted) so the card opens pre-filled. insuranceGrowthRate is likewise
       // seeded rather than extracted — the AI extraction prompt doesn't ask for it.
-      setPendingOmData({
+      setOmData({
         ...json.data,
         closingCostPct,
         acquisitionFeePct,
@@ -897,47 +855,12 @@ const Underwriting = () => {
         abatementYear5: abatementPctSchedule[4],
       });
       setPendingOmFile(file);
+      setReviewOpen(true);
     } catch (err) {
       setOmError(err instanceof Error ? err.message : 'Failed to extract OM data');
     } finally {
       setOmUploading(false);
     }
-  };
-
-  // Applies (possibly user-edited) extracted rent-roll data to the live underwriting form.
-  const applyRentRollDataToForm = (data: any) => {
-    if (data.unitMix?.length > 0) {
-      setUnitMix(data.unitMix.map((u: any) => ({
-        unitType: u.unitType ?? '',
-        count: u.count ?? 0,
-        askingRent: u.askingRent ?? 0,
-        avgSf: u.avgSf ?? 0,
-      })));
-    }
-    if (data.unitMix?.length > 0) {
-      setTotalUnits(data.unitMix.reduce((s: number, u: any) => s + (u.count ?? 0), 0));
-    } else if (data.numUnits) {
-      setTotalUnits(data.numUnits);
-    }
-    if (data.vacancyRate != null) { const v = data.vacancyRate; setVacancyRates([v, v, v, v, v]); }
-    if (data.badDebtRate != null) { const v = data.badDebtRate; setBadDebtRates([v, v, v, v, v]); }
-    if (data.city && data.state) setLocation(`${data.city}, ${data.state}`);
-    if (data.zipcode) setZipCode(data.zipcode);
-    if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
-    if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
-
-    // Deal costs (asked manually in the review modal, not extracted)
-    if (data.closingCostPct != null) setClosingCostPct(data.closingCostPct);
-    if (data.acquisitionFeePct != null) setAcquisitionFeePct(data.acquisitionFeePct);
-    if (data.workingCapitalPerUnit != null) setWorkingCapitalPerUnit(data.workingCapitalPerUnit);
-
-    // Senior loan (asked manually in the review modal, not extracted)
-    if (data.seniorLtvPct != null) setSeniorLtvPct(data.seniorLtvPct);
-    if (data.seniorInterestRate != null) setSeniorInterestRate(data.seniorInterestRate);
-    if (data.seniorIoPeriods != null) setSeniorIoPeriods(data.seniorIoPeriods);
-    if (data.seniorFinancingCostsPct != null) setSeniorFinancingCostsPct(data.seniorFinancingCostsPct);
-
-    setRrUploaded(true);
   };
 
   const handleRentRollUpload = async (file: File) => {
@@ -950,8 +873,9 @@ const Underwriting = () => {
       const res = await fetch('/api/v2/underwriting/extract-rent-roll', { method: 'POST', body: formData });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || 'Extraction failed');
-      // Seed senior-loan fields with current form state (not extracted) so the modal opens pre-filled.
-      setPendingRentRollData({
+      // Same review card as OM uploads — hand off instead of applying directly.
+      // Seed senior-loan fields with current form state (not extracted) so the card opens pre-filled.
+      setRentRollData({
         ...json.data,
         closingCostPct,
         acquisitionFeePct,
@@ -961,11 +885,34 @@ const Underwriting = () => {
         seniorIoPeriods,
         seniorFinancingCostsPct,
       });
+      setReviewOpen(true);
     } catch (err) {
       setRrError(err instanceof Error ? err.message : 'Failed to extract Rent Roll data');
     } finally {
       setRrUploading(false);
     }
+  };
+
+  // Merged view of the two raw extractions, recomputed whenever either changes —
+  // this is what drives the single shared review card and its discrepancy banner.
+  const { merged: mergedReviewData, discrepancies: reviewDiscrepancies } = useMemo(
+    () => mergeExtractions(omData, rentRollData),
+    [omData, rentRollData]
+  );
+
+  const handleGenerateClarificationEmail = async (discrepancies: ReturnType<typeof mergeExtractions>['discrepancies']) => {
+    const res = await fetch('/api/v2/underwriting/draft-clarification-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        propertyName: mergedReviewData?.propertyName || dealName,
+        dealName,
+        discrepancies: discrepancies.map((d) => ({ label: d.label, omValue: d.omValue, rentRollValue: d.rentRollValue })),
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) throw new Error(json.error || 'Failed to draft email');
+    return json.email as string;
   };
 
   const handleT12Upload = async (file: File) => {
@@ -2019,31 +1966,27 @@ const Underwriting = () => {
         <LoiModal dealName={dealName} onConfirm={handleLoiConfirm} onSkip={handleLoiSkip} onClose={() => setShowLoiModal(false)} />
       )}
       <ExtractionReviewModal
-        isOpen={pendingOmData != null}
-        title="Review Extracted OM Data"
-        subtitle="Double-check the values pulled from the Offering Memorandum before they're added to this deal."
-        data={pendingOmData}
-        fields={OM_REVIEW_FIELDS}
+        isOpen={reviewOpen && (omData != null || rentRollData != null)}
+        title={omData && rentRollData ? 'Review Extracted Deal Data' : omData ? 'Review Extracted OM Data' : 'Review Extracted Rent Roll Data'}
+        subtitle={
+          omData && rentRollData
+            ? "Rent Roll is the source of truth for rents; the OM fills in everything else. Double-check before they're added to this deal."
+            : omData
+            ? "Double-check the values pulled from the Offering Memorandum before they're added to this deal."
+            : "Double-check the values pulled from the rent roll before they're added to this deal."
+        }
+        data={mergedReviewData}
+        fields={MERGED_REVIEW_FIELDS}
         includeUnitMix
-        onCancel={() => { setPendingOmData(null); setPendingOmFile(null); }}
+        discrepancies={reviewDiscrepancies}
+        onGenerateClarificationEmail={reviewDiscrepancies.length > 0 ? handleGenerateClarificationEmail : undefined}
+        onCancel={() => setReviewOpen(false)}
         onConfirm={(edited) => {
           const file = pendingOmFile;
-          setPendingOmData(null);
+          const sources = { hasOm: omData != null, hasRentRoll: rentRollData != null };
+          setReviewOpen(false);
           setPendingOmFile(null);
-          applyOmDataToForm(edited, file);
-        }}
-      />
-      <ExtractionReviewModal
-        isOpen={pendingRentRollData != null}
-        title="Review Extracted Rent Roll Data"
-        subtitle="Double-check the values pulled from the rent roll before they're added to this deal."
-        data={pendingRentRollData}
-        fields={RENT_ROLL_REVIEW_FIELDS}
-        includeUnitMix
-        onCancel={() => setPendingRentRollData(null)}
-        onConfirm={(edited) => {
-          setPendingRentRollData(null);
-          applyRentRollDataToForm(edited);
+          applyMergedDataToForm(edited, sources, file);
         }}
       />
       {isImportModalOpen && (

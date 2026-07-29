@@ -6,7 +6,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, AlertTriangle } from 'lucide-react';
+import type { Discrepancy } from '../utils/extractionMerge';
 
 export type ReviewFieldType = 'text' | 'number' | 'percent';
 
@@ -33,6 +34,8 @@ interface ExtractionReviewModalProps {
   includeUnitMix?: boolean;
   onConfirm: (editedData: any) => void;
   onCancel: () => void;
+  discrepancies?: Discrepancy[];
+  onGenerateClarificationEmail?: (discrepancies: Discrepancy[]) => Promise<string>;
 }
 
 function getPath(obj: any, path: string): any {
@@ -63,9 +66,15 @@ const ExtractionReviewModal: React.FC<ExtractionReviewModalProps> = ({
   includeUnitMix,
   onConfirm,
   onCancel,
+  discrepancies,
+  onGenerateClarificationEmail,
 }) => {
   const [edited, setEdited] = useState<any>(data ?? {});
   const [unitMix, setUnitMix] = useState<ReviewUnitMixRow[]>([]);
+  const [emailDrafting, setEmailDrafting] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [draftedEmail, setDraftedEmail] = useState<string | null>(null);
+  const [emailCopied, setEmailCopied] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -79,10 +88,35 @@ const ExtractionReviewModal: React.FC<ExtractionReviewModalProps> = ({
           avgSf: u.avgSf ?? u.sqft ?? 0,
         }))
       );
+      setDraftedEmail(null);
+      setEmailError(null);
+      setEmailCopied(false);
     }
   }, [isOpen, data]);
 
   if (!isOpen) return null;
+
+  const handleGenerateEmail = async () => {
+    if (!onGenerateClarificationEmail || !discrepancies?.length) return;
+    setEmailDrafting(true);
+    setEmailError(null);
+    try {
+      const text = await onGenerateClarificationEmail(discrepancies);
+      setDraftedEmail(text);
+    } catch (e: any) {
+      setEmailError(e?.message || 'Failed to draft email');
+    } finally {
+      setEmailDrafting(false);
+    }
+  };
+
+  const handleCopyEmail = () => {
+    if (!draftedEmail) return;
+    navigator.clipboard.writeText(draftedEmail).then(() => {
+      setEmailCopied(true);
+      setTimeout(() => setEmailCopied(false), 2000);
+    });
+  };
 
   const groups = fields.reduce<Record<string, ReviewField[]>>((acc, f) => {
     (acc[f.group] ||= []).push(f);
@@ -135,6 +169,66 @@ const ExtractionReviewModal: React.FC<ExtractionReviewModalProps> = ({
               flows into the exported model.
             </p>
           </div>
+
+          {discrepancies && discrepancies.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm font-semibold text-amber-800">
+                  {discrepancies.length} discrepanc{discrepancies.length === 1 ? 'y' : 'ies'} between the OM and the Rent Roll
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                {discrepancies.map((d) => (
+                  <div key={d.field} className="text-xs text-amber-800 bg-white/60 border border-amber-100 rounded px-2.5 py-1.5">
+                    <span className="font-medium">{d.label}</span> — OM: <span className="font-mono">{String(d.omValue)}</span>
+                    {' · '}Rent Roll: <span className="font-mono">{String(d.rentRollValue)}</span>
+                    <span className="text-amber-600"> (using {d.appliedSource === 'rentRoll' ? 'Rent Roll' : 'OM'} value below)</span>
+                  </div>
+                ))}
+              </div>
+              {onGenerateClarificationEmail && (
+                <div className="pt-1">
+                  {!draftedEmail ? (
+                    <button
+                      type="button"
+                      onClick={handleGenerateEmail}
+                      disabled={emailDrafting}
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                    >
+                      {emailDrafting ? 'Drafting…' : 'Draft Clarification Email to Broker'}
+                    </button>
+                  ) : (
+                    <div className="space-y-2">
+                      <textarea
+                        readOnly
+                        rows={8}
+                        value={draftedEmail}
+                        className="w-full px-3 py-2 text-xs font-mono bg-white border border-amber-200 rounded-lg text-gray-800"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCopyEmail}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+                        >
+                          {emailCopied ? 'Copied!' : 'Copy'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDraftedEmail(null)}
+                          className="text-xs px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-100 transition-colors"
+                        >
+                          Regenerate
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {emailError && <p className="text-xs text-red-600 mt-1.5">{emailError}</p>}
+                </div>
+              )}
+            </div>
+          )}
 
           {Object.entries(groups).map(([group, groupFields]) => (
             <div key={group}>

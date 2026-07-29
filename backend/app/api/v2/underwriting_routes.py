@@ -633,3 +633,50 @@ def extract_rent_roll():
         return jsonify({'success': True, 'data': data}), 200
     except Exception as e:
         return _handle_extraction_error(e, 'extract-rent-roll-v2')
+
+
+# ─── /draft-clarification-email ─────────────────────────────────────────────
+
+@underwriting_v2_bp.route('/draft-clarification-email', methods=['POST'])
+def draft_clarification_email():
+    """Draft a short email to the listing broker asking them to clarify
+    discrepancies found between an OM and a Rent Roll for the same deal."""
+    api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+    if not api_key:
+        return jsonify({'success': False, 'error': 'ANTHROPIC_API_KEY not configured', 'code': 'AUTH_ERROR'}), 503
+
+    body = request.get_json() or {}
+    discrepancies = body.get('discrepancies') or []
+    if not discrepancies:
+        return jsonify({'success': False, 'error': 'No discrepancies provided'}), 400
+
+    property_name = body.get('propertyName') or body.get('dealName') or 'the property'
+
+    discrepancy_lines = '\n'.join(
+        f"- {d.get('label')}: Offering Memorandum shows {d.get('omValue')}, "
+        f"Rent Roll shows {d.get('rentRollValue')}"
+        for d in discrepancies
+    )
+
+    prompt = (
+        'Draft a short, professional email from a real estate acquisitions analyst to a listing '
+        f'broker for "{property_name}". The Offering Memorandum and the Rent Roll for this deal '
+        'disagree on the figures below. Politely ask the broker to confirm which figures are '
+        'correct, or explain the discrepancy. Keep it concise (under 150 words), specific about '
+        'each figure, and professional in tone. Return only the email body text — no subject line, '
+        'no markdown, no placeholders like [Your Name].\n\n'
+        f'Discrepancies:\n{discrepancy_lines}'
+    )
+
+    try:
+        from anthropic import Anthropic
+        client = Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model='claude-sonnet-4-6',
+            max_tokens=512,
+            messages=[{'role': 'user', 'content': prompt}],
+        )
+        email_text = message.content[0].text.strip()
+        return jsonify({'success': True, 'email': email_text}), 200
+    except Exception as e:
+        return _handle_extraction_error(e, 'draft-clarification-email')
