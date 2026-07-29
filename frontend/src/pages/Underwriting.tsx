@@ -54,6 +54,7 @@ const OM_REVIEW_FIELDS: ReviewField[] = [
   { key: 'opexTurnoverPerUnit', label: 'Turnover $/Unit', group: 'Operating Expenses', type: 'number' },
   { key: 'capexPerUnit', label: 'Capex Reserve $/Unit', group: 'Operating Expenses', type: 'number' },
   { key: 'opexGrowthRate', label: 'Opex Growth Rate', group: 'Operating Expenses', type: 'percent' },
+  { key: 'insuranceGrowthRate', label: 'Insurance Growth Rate', group: 'Operating Expenses', type: 'percent' },
 
   { key: 'assessedValue', label: 'Assessed Value', group: 'Property Tax & Deal Structure', type: 'number' },
   { key: 'assessmentPct', label: 'Assessment %', group: 'Property Tax & Deal Structure', type: 'percent' },
@@ -68,6 +69,12 @@ const OM_REVIEW_FIELDS: ReviewField[] = [
   { key: 'seniorInterestRate', label: 'Interest Rate', group: 'Senior Loan (enter manually)', type: 'percent' },
   { key: 'seniorIoPeriods', label: 'IO Periods (Months)', group: 'Senior Loan (enter manually)', type: 'number' },
   { key: 'seniorFinancingCostsPct', label: 'Financing Costs', group: 'Senior Loan (enter manually)', type: 'percent' },
+
+  { key: 'abatementYear1', label: 'Abatement % Year 1', group: 'Property Tax Abatement (enter manually)', type: 'percent' },
+  { key: 'abatementYear2', label: 'Abatement % Year 2', group: 'Property Tax Abatement (enter manually)', type: 'percent' },
+  { key: 'abatementYear3', label: 'Abatement % Year 3', group: 'Property Tax Abatement (enter manually)', type: 'percent' },
+  { key: 'abatementYear4', label: 'Abatement % Year 4', group: 'Property Tax Abatement (enter manually)', type: 'percent' },
+  { key: 'abatementYear5', label: 'Abatement % Year 5', group: 'Property Tax Abatement (enter manually)', type: 'percent' },
 ];
 
 const RENT_ROLL_REVIEW_FIELDS: ReviewField[] = [
@@ -771,7 +778,12 @@ const Underwriting = () => {
     const unitCount = data.numUnits ?? (data.unitMix?.reduce((s: number, u: any) => s + (u.count ?? 0), 0) ?? 0);
     if (data.operatingExpenses && unitCount > 0) {
       const oe = data.operatingExpenses;
-      if (oe.insuranceAnnual != null) setOpexInsurancePerUnit(Math.round(oe.insuranceAnnual / unitCount));
+      if (oe.insuranceAnnual != null) {
+        setOpexInsurancePerUnit(Math.round(oe.insuranceAnnual / unitCount));
+        // Reviewing and confirming this modal IS the explicit confirmation step —
+        // never applied silently before this point.
+        setOpexInsurancePerUnitConfirmed(true);
+      }
       if (oe.utilitiesAnnual != null) setOpexUtilitiesPerUnit(Math.round(oe.utilitiesAnnual / unitCount));
       if (oe.propertyTaxAnnual != null) setOpexPropertyTaxPerUnit(Math.round(oe.propertyTaxAnnual / unitCount));
       if (oe.repairsMaintenanceAnnual != null && data.opexRmPerUnit == null)
@@ -786,12 +798,25 @@ const Underwriting = () => {
     if (data.opexTurnoverPerUnit != null) setOpexTurnoverPerUnit(data.opexTurnoverPerUnit);
     if (data.capexPerUnit != null) setCapReservePerUnit(data.capexPerUnit);
     if (data.opexGrowthRate != null) setOpexGrowthRate(data.opexGrowthRate > 1 ? data.opexGrowthRate / 100 : data.opexGrowthRate);
+    if (data.insuranceGrowthRate != null) setInsuranceGrowthRate(data.insuranceGrowthRate > 1 ? data.insuranceGrowthRate / 100 : data.insuranceGrowthRate);
 
     // Property tax / deal structure
     if (data.assessedValue != null) setAssessedValue(data.assessedValue);
     if (data.assessmentPct != null) setAssessmentPct(data.assessmentPct);
     if (data.bridgePeriodMonths != null) setBridgePeriodMonths(data.bridgePeriodMonths);
     if (data.lpEquityShare != null) setLpEquityShare(data.lpEquityShare > 1 ? data.lpEquityShare / 100 : data.lpEquityShare);
+
+    // Property tax abatement schedule (asked manually in the review modal, not extracted)
+    if ([data.abatementYear1, data.abatementYear2, data.abatementYear3, data.abatementYear4, data.abatementYear5]
+      .some((v) => v != null)) {
+      setAbatementPctSchedule([
+        data.abatementYear1 ?? 0,
+        data.abatementYear2 ?? 0,
+        data.abatementYear3 ?? 0,
+        data.abatementYear4 ?? 0,
+        data.abatementYear5 ?? 0,
+      ]);
+    }
 
     // OM extras
     if (data.laundryIncome != null) setOmLaundryIncome(data.laundryIncome);
@@ -852,7 +877,9 @@ const Underwriting = () => {
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || 'Extraction failed');
       // Hand off to the review modal instead of applying directly — user confirms/edits first.
-      // Seed senior-loan fields with current form state (not extracted) so the modal opens pre-filled.
+      // Seed senior-loan and abatement-schedule fields with current form state (not
+      // extracted) so the modal opens pre-filled. insuranceGrowthRate is likewise
+      // seeded rather than extracted — the AI extraction prompt doesn't ask for it.
       setPendingOmData({
         ...json.data,
         closingCostPct,
@@ -862,6 +889,12 @@ const Underwriting = () => {
         seniorInterestRate,
         seniorIoPeriods,
         seniorFinancingCostsPct,
+        insuranceGrowthRate,
+        abatementYear1: abatementPctSchedule[0],
+        abatementYear2: abatementPctSchedule[1],
+        abatementYear3: abatementPctSchedule[2],
+        abatementYear4: abatementPctSchedule[3],
+        abatementYear5: abatementPctSchedule[4],
       });
       setPendingOmFile(file);
     } catch (err) {
