@@ -331,6 +331,10 @@ const Underwriting = () => {
   const [opexTurnoverPerUnit, setOpexTurnoverPerUnit] = useState(0);
   const [opexOtherPerUnit, setOpexOtherPerUnit] = useState(0);
   const [opexInsurancePerUnit, setOpexInsurancePerUnit] = useState(0);
+  const [opexInsurancePerUnitConfirmed, setOpexInsurancePerUnitConfirmed] = useState(false);
+  // Defaults to 0, not the suggested 5% — every deal (old and new) starts at "no growth"
+  // until the user explicitly applies the suggestion in the UI (see the Insurance field below).
+  const [insuranceGrowthRate, setInsuranceGrowthRate] = useState(0);
   const [opexUtilitiesPerUnit, setOpexUtilitiesPerUnit] = useState(0);
   const [opexPropertyTaxPerUnit, setOpexPropertyTaxPerUnit] = useState(0);
 
@@ -340,6 +344,10 @@ const Underwriting = () => {
   const [assessmentPct, setAssessmentPct] = useState(1.0);
   const [millageRate, setMillageRate] = useState(0.01184);
   const [specialAssessments, setSpecialAssessments] = useState(0);
+  // Property tax abatement (5-year array, decimals 0-1) — mirrors vacancyRates/etc. shape.
+  // Defaults to all-zero (no abatement) for every deal; a "use typical schedule" suggestion
+  // in the UI lets the user opt into 0%/1.5%/70%/90%/90% explicitly.
+  const [abatementPctSchedule, setAbatementPctSchedule] = useState([0, 0, 0, 0, 0]);
 
   // senior loan
   const [seniorLtvPct, setSeniorLtvPct] = useState(0);
@@ -619,6 +627,8 @@ const Underwriting = () => {
       if (uw.opexTurnoverPerUnit != null) setOpexTurnoverPerUnit(uw.opexTurnoverPerUnit);
       if (uw.opexOtherPerUnit != null) setOpexOtherPerUnit(uw.opexOtherPerUnit);
       if (uw.opexInsurancePerUnit != null) setOpexInsurancePerUnit(uw.opexInsurancePerUnit);
+      if (uw.opexInsurancePerUnitConfirmed != null) setOpexInsurancePerUnitConfirmed(!!uw.opexInsurancePerUnitConfirmed);
+      if (uw.insuranceGrowthRate != null) setInsuranceGrowthRate(toDecimal(uw.insuranceGrowthRate));
       if (uw.opexUtilitiesPerUnit != null) setOpexUtilitiesPerUnit(uw.opexUtilitiesPerUnit);
       if (uw.opexPropertyTaxPerUnit != null) setOpexPropertyTaxPerUnit(uw.opexPropertyTaxPerUnit);
 
@@ -633,6 +643,7 @@ const Underwriting = () => {
       if (uw.assessmentPct != null) setAssessmentPct(uw.assessmentPct);
       if (uw.millageRate != null) setMillageRate(uw.millageRate);
       if (uw.specialAssessments != null) setSpecialAssessments(uw.specialAssessments);
+      if (Array.isArray(uw.abatementPctSchedule)) setAbatementPctSchedule(uw.abatementPctSchedule);
 
       // Senior loan — LTV replaces the old direct loan-amount input. Old deals only
       // have seniorLoanAmount ($) saved; derive the equivalent LTV from it so
@@ -989,6 +1000,8 @@ const Underwriting = () => {
       opexTurnoverPerUnit,
       opexOtherPerUnit,
       opexInsurancePerUnit,
+      opexInsurancePerUnitConfirmed,
+      insuranceGrowthRate,
       opexUtilitiesPerUnit,
       opexPropertyTaxPerUnit,
       seniorLtvPct,
@@ -1013,6 +1026,7 @@ const Underwriting = () => {
       assessmentPct,
       millageRate,
       specialAssessments,
+      abatementPctSchedule,
     };
   };
 
@@ -1059,9 +1073,11 @@ const Underwriting = () => {
           managementFeePct, capReservePerUnit,
           opexPayrollPerUnit, opexAdminPerUnit, opexMarketingPerUnit, opexRmPerUnit,
           opexContractServicePerUnit, opexTurnoverPerUnit, opexOtherPerUnit,
-          opexInsurancePerUnit, opexUtilitiesPerUnit, opexPropertyTaxPerUnit,
+          opexInsurancePerUnit, opexInsurancePerUnitConfirmed, insuranceGrowthRate,
+          opexUtilitiesPerUnit, opexPropertyTaxPerUnit,
           rubsPct, parkingIncomePerUnit, otherIncomePerUnit,
           assessedValue, assessedValueNextBuyer, assessmentPct, millageRate, specialAssessments,
+          abatementPctSchedule,
           seniorLtvPct, seniorInterestRate, seniorFinancingCostsPct, seniorIoPeriods,
           refiTermMonths, refiInterestRate, refiFinancingCostsPct, refiIoPeriods,
           refiTargetDscr, refiTargetDy, refiTargetLtv,
@@ -1647,7 +1663,6 @@ const Underwriting = () => {
                 ['Contract Services', opexContractServicePerUnit, setOpexContractServicePerUnit],
                 ['Turnover', opexTurnoverPerUnit, setOpexTurnoverPerUnit],
                 ['Other', opexOtherPerUnit, setOpexOtherPerUnit],
-                ['Insurance', opexInsurancePerUnit, setOpexInsurancePerUnit],
                 ['Utilities', opexUtilitiesPerUnit, setOpexUtilitiesPerUnit],
                 ['Property Tax', opexPropertyTaxPerUnit, setOpexPropertyTaxPerUnit],
               ] as [string, number, (v: number) => void][]).map(([label, val, setter]) => (
@@ -1656,6 +1671,42 @@ const Underwriting = () => {
                   <input type="number" value={val} onChange={e => setter(Number(e.target.value) || 0)} className={inp} />
                 </div>
               ))}
+
+              <div>
+                <label className={lbl}>Insurance</label>
+                <input
+                  type="number"
+                  value={opexInsurancePerUnit}
+                  onChange={e => {
+                    setOpexInsurancePerUnit(Number(e.target.value) || 0);
+                    // A user-entered value is inherently confirmed — never silently applied.
+                    setOpexInsurancePerUnitConfirmed(true);
+                  }}
+                  className={inp}
+                />
+                {!opexInsurancePerUnitConfirmed && opexInsurancePerUnit === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setOpexInsurancePerUnit(896.84); setOpexInsurancePerUnitConfirmed(true); }}
+                    className="text-xs text-primary-800 hover:text-primary-700 underline mt-1"
+                  >
+                    Use suggested default ($896.84/unit/yr)
+                  </button>
+                )}
+              </div>
+              <div>
+                <label className={lbl}>Insurance Growth Rate (%/yr)</label>
+                {pctInput(insuranceGrowthRate, setInsuranceGrowthRate, 0.1)}
+                {insuranceGrowthRate === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setInsuranceGrowthRate(0.05)}
+                    className="text-xs text-primary-800 hover:text-primary-700 underline mt-1"
+                  >
+                    Use suggested default (5.0%/yr)
+                  </button>
+                )}
+              </div>
 
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide pt-2">Property Tax Model</p>
               <div className="grid grid-cols-2 gap-3">
@@ -1672,6 +1723,39 @@ const Underwriting = () => {
               </div>
               <div><label className={lbl}>Special Assessments (Annual $)</label>
                 <input type="number" step="1000" value={specialAssessments} onChange={e => setSpecialAssessments(Number(e.target.value) || 0)} className={inp} /></div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className={lbl}>Abatement Schedule (% of gross tax, by year)</label>
+                  {abatementPctSchedule.every(v => v === 0) && (
+                    <button
+                      type="button"
+                      onClick={() => setAbatementPctSchedule([0, 0.015, 0.70, 0.90, 0.90])}
+                      className="text-xs text-primary-800 hover:text-primary-700 underline"
+                    >
+                      Use typical schedule (0/1.5/70/90/90%)
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-5 gap-2 mt-1">
+                  {abatementPctSchedule.map((v, i) => (
+                    <div key={i}>
+                      <label className="text-[10px] text-gray-400">Yr {i + 1}</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={parseFloat((v * 100).toFixed(3))}
+                        onChange={(e) => {
+                          const updated = [...abatementPctSchedule];
+                          updated[i] = (Number(e.target.value) || 0) / 100;
+                          setAbatementPctSchedule(updated);
+                        }}
+                        className={`${inp} text-right`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Financing */}

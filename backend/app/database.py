@@ -179,6 +179,9 @@ class DealModel(db.Model):
     opex_growth_rate              = Column(Float)
     property_tax_growth_rate      = Column(Float)
     gp_equity_split_pct           = Column(Float)
+    insurance_growth_rate         = Column(Float)
+    abatement_pct_schedule        = Column(Text)  # JSON-encoded 5-year array, e.g. "[0,0.015,0.7,0.9,0.9]"
+    opex_insurance_per_unit_confirmed = Column(Integer, default=0)
 
     def __repr__(self):
         return f'<Deal {self.id}: {self.deal_name} ({self.status})>'
@@ -1834,6 +1837,7 @@ class SourcingPropertyModel(db.Model):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     property_legislation = Column(Text, nullable=True)  # JSON — legislation fetched from Sourcing page
     activity_log = Column(Text, nullable=True, default='[]')  # JSON array of {timestamp, note}
+    om_drive_url = Column(String(1000), nullable=True)  # Original OM file, uploaded to Drive after save
 
     def to_dict(self):
         return {
@@ -1857,6 +1861,7 @@ class SourcingPropertyModel(db.Model):
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'property_legislation': self.property_legislation,
             'activity_log': self.activity_log or '[]',
+            'om_drive_url': self.om_drive_url,
         }
 
 

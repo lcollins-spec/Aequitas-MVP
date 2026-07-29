@@ -84,6 +84,7 @@ ROWS = {
     'rent_growth_rate': 56,
     'opex_growth_rate': 57,
     'exit_cap_rate': 59,
+    'insurance_growth_rate': 116,
     # Waterfall
     'am_fee_pct': 64,
     'pari_passu': 90,
@@ -95,6 +96,9 @@ ROWS = {
     'assessment_pct': 51,
     'millage_rate': 91,
     'special_assessments': 92,
+    # Property tax abatement (5-year, one Inputs row per year)
+    'abatement_pct_rows': [117, 118, 119, 120, 121],
+    'insurance_base_cost_confirmed': 122,
 }
 
 
@@ -398,6 +402,8 @@ def export():
         set_row(ROWS['opex_growth_rate'], _to_decimal(body['opexGrowthRate']))
     if body.get('exitCapRate') is not None:
         set_row(ROWS['exit_cap_rate'], _to_decimal(body['exitCapRate']))
+    if body.get('insuranceGrowthRate') is not None:
+        set_row(ROWS['insurance_growth_rate'], _to_decimal(body['insuranceGrowthRate']))
 
     # ── Waterfall ────────────────────────────────────────────────────
     if body.get('amFeePct') is not None:
@@ -421,6 +427,15 @@ def export():
         set_row(ROWS['millage_rate'], _to_decimal(body['millageRate']))
     if body.get('specialAssessments') is not None:
         set_row(ROWS['special_assessments'], float(body['specialAssessments']))
+
+    # Property tax abatement schedule (5-year, one Inputs row per year)
+    if body.get('abatementPctSchedule') is not None:
+        write_5yr_decimal(ROWS['abatement_pct_rows'], body['abatementPctSchedule'])
+
+    # Insurance base-cost confirmation flag — audit only, never gates export.
+    # Written unconditionally so every export explicitly records 0/1 rather
+    # than leaving a stale value from a previously-exported copy.
+    set_row(ROWS['insurance_base_cost_confirmed'], 1 if body.get('opexInsurancePerUnitConfirmed') else 0)
 
     # ── Return file ──────────────────────────────────────────────────
     output = io.BytesIO()

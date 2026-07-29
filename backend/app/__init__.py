@@ -138,6 +138,21 @@ def create_app(test_config=None):
     except Exception as e:
         logger.warning(f"next_followup_date column cleanup note: {e}")
 
+    # Inline migration: add 'om_drive_url' column to sourcing_properties if not present.
+    try:
+        with app.app_context():
+            from sqlalchemy import text, inspect as sa_inspect
+            inspector = sa_inspect(db.engine)
+            if 'sourcing_properties' in inspector.get_table_names():
+                cols = [c['name'] for c in inspector.get_columns('sourcing_properties')]
+                if 'om_drive_url' not in cols:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE sourcing_properties ADD COLUMN om_drive_url VARCHAR(1000)"))
+                        conn.commit()
+                    logger.info("Added 'om_drive_url' column to sourcing_properties")
+    except Exception as e:
+        logger.warning(f"om_drive_url column migration note: {e}")
+
     # Enable CORS for frontend communication (only in development)
     # In production (Docker), CORS not needed as same-origin
     if not in_docker:
@@ -381,6 +396,27 @@ def create_app(test_config=None):
                     logger.info("Added 'memo_drive_url' column to deals")
     except Exception as e:
         logger.warning(f"memo_drive_url migration note: {e}")
+
+    # Inline migration: add insurance growth rate / abatement schedule columns to deals table.
+    try:
+        with app.app_context():
+            from sqlalchemy import text, inspect as sa_inspect
+            inspector = sa_inspect(db.engine)
+            if 'deals' in inspector.get_table_names():
+                existing_cols = {c['name'] for c in inspector.get_columns('deals')}
+                abatement_cols = {
+                    'insurance_growth_rate':             'NUMERIC',
+                    'abatement_pct_schedule':             'TEXT',
+                    'opex_insurance_per_unit_confirmed':  'INTEGER',
+                }
+                with db.engine.connect() as conn:
+                    for col, col_type in abatement_cols.items():
+                        if col not in existing_cols:
+                            conn.execute(text(f"ALTER TABLE deals ADD COLUMN {col} {col_type}"))
+                            conn.commit()
+                            logger.info("Added '%s' column to deals", col)
+    except Exception as e:
+        logger.warning(f"insurance growth/abatement column migration note: {e}")
 
     # Inline migration: add Drive attachment columns to dd_items if not present.
     try:
