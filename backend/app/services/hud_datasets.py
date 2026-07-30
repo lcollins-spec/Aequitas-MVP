@@ -13,14 +13,21 @@ inspecting each file (not guessed from documentation):
     row ("FHA_BF90_RM_A", count), the real header is row 1. Has PROPERTY
     NAME/CITY/STATE/ZIP and UNITS/MATURITY DATE — no street address column,
     so 'address' for this signal is a name+city+state string, not a street
-    address. Must be loaded WITHOUT read_only=True: openpyxl's read-only
-    streaming reader silently truncates this file to a single row for
-    reasons not fully understood — full in-memory load works correctly and
-    is fine at this file's size (~15k rows).
+    address.
   - Section 8 assistance: HUD publishes property info and contract info as
     TWO separate files joined by `property_id` — the property file has no
     expiration date, and the contract file has no address. Both are joined
     here to produce one hit with both address and expiration date.
+
+Memory note: these files are loaded with read_only=True and a column
+allowlist, not a full in-memory load. A full load of the largest file (23.6k
+rows x 74 cols) measured at ~750MB peak RSS during a Render free-tier (512MB)
+deploy that OOM'd — read_only mode plus column projection measured at ~90MB
+for that same file. The FHA file's own worksheet metadata falsely declares a
+1x1 dimension (a stale <dimension> tag), which read_only mode trusts to
+decide when to stop streaming — iter_rows() is called with an explicit
+oversized max_row/max_col below specifically to bypass that and read the
+real ~15k rows regardless.
 
 The LIHTC database is a real, free, address-level public dataset too, but
 HUD serves it through an interactive query tool (https://lihtc.huduser.gov/)
@@ -48,6 +55,23 @@ HUD_LIHTC_URL = None  # unset — see module docstring
 UNIT_MIN = 20
 UNIT_MAX = 80
 
+# Column allowlists — only these survive parsing, the rest are dropped
+# immediately per-row rather than loaded and discarded later.
+FHA_COLUMNS = [
+    'PROPERTY NAME', 'PROPERTY CITY', 'PROPERTY STATE', 'PROPERTY ZIP',
+    'UNITS', 'MATURITY DATE', 'ORIGINAL MORTGAGE AMOUNT', 'HOLDER NAME',
+]
+SECTION8_PROPERTY_COLUMNS = [
+    'property_id', 'property_name_text', 'address_line1_text', 'city_name_text',
+    'state_code', 'zip_code', 'property_total_unit_count',
+    'owner_organization_name', 'owner_individual_full_name',
+    'owner_address_line1', 'owner_city_name', 'owner_state_code', 'owner_zip_code',
+]
+SECTION8_CONTRACT_COLUMNS = [
+    'property_id', 'contract_number', 'tracs_current_expiration_date',
+    'tracs_overall_expiration_date', 'assisted_units_count', 'program_type_name',
+]
+
 # In-memory cache: {dataset_key: {'rows': [...], 'fetched_at': datetime}}
 _cache = {}
 
@@ -56,18 +80,31 @@ def _clean(value):
     return value.strip() if isinstance(value, str) else value
 
 
-def _download_excel_rows(url, header_row_index=0):
+def _download_excel_rows(url, header_row_index=0, keep_columns=None):
     resp = requests.get(url, timeout=REQUEST_TIMEOUT)
     resp.raise_for_status()
-    # Deliberately not read_only=True: openpyxl's streaming reader silently
-    # truncated the FHA file to one row during testing against the live file.
-    wb = openpyxl.load_workbook(io.BytesIO(resp.content), data_only=True)
+    wb = openpyxl.load_workbook(io.BytesIO(resp.content), data_only=True, read_only=True)
     ws = wb.active
-    rows_iter = ws.iter_rows(values_only=True)
+    # max_row/max_col explicitly oversized: some HUD files declare a wrong
+    # worksheet dimension that read_only mode otherwise trusts (see module
+    # docstring) — this forces it to keep streaming to the real end of data.
+    rows_iter = ws.iter_rows(min_row=1, max_row=10_000_000, max_col=500, values_only=True)
     for _ in range(header_row_index):
         next(rows_iter)
     headers = [str(h).strip() if h is not None else '' for h in next(rows_iter)]
-    rows = [dict(zip(headers, (_clean(v) for v in row))) for row in rows_iter]
+
+    keep_idx = None
+    if keep_columns is not None:
+        keep_set = set(keep_columns)
+        keep_idx = [i for i, h in enumerate(headers) if h in keep_set]
+
+    rows = []
+    for row in rows_iter:
+        if keep_idx is not None:
+            rows.append({headers[i]: _clean(row[i]) for i in keep_idx if i < len(row)})
+        else:
+            rows.append(dict(zip(headers, (_clean(v) for v in row))))
+    wb.close()
     return rows
 
 
@@ -75,7 +112,7 @@ def refresh_hud_datasets(force=False):
     """Download and cache the national HUD files. Cheap no-op if already cached unless force=True."""
     if 'fha' not in _cache or force:
         try:
-            rows = _download_excel_rows(HUD_FHA_MORTGAGES_URL, header_row_index=1)
+            rows = _download_excel_rows(HUD_FHA_MORTGAGES_URL, header_row_index=1, keep_columns=FHA_COLUMNS)
             _cache['fha'] = {'rows': rows, 'fetched_at': datetime.utcnow()}
             logger.info(f"Cached {len(rows)} rows from HUD FHA multifamily mortgages file")
         except Exception as e:
@@ -83,7 +120,7 @@ def refresh_hud_datasets(force=False):
 
     if 'section8_properties' not in _cache or force:
         try:
-            rows = _download_excel_rows(HUD_SECTION8_PROPERTIES_URL)
+            rows = _download_excel_rows(HUD_SECTION8_PROPERTIES_URL, keep_columns=SECTION8_PROPERTY_COLUMNS)
             _cache['section8_properties'] = {'rows': rows, 'fetched_at': datetime.utcnow()}
             logger.info(f"Cached {len(rows)} rows from HUD Section 8 properties file")
         except Exception as e:
@@ -91,7 +128,7 @@ def refresh_hud_datasets(force=False):
 
     if 'section8_contracts' not in _cache or force:
         try:
-            rows = _download_excel_rows(HUD_SECTION8_CONTRACTS_URL)
+            rows = _download_excel_rows(HUD_SECTION8_CONTRACTS_URL, keep_columns=SECTION8_CONTRACT_COLUMNS)
             _cache['section8_contracts'] = {'rows': rows, 'fetched_at': datetime.utcnow()}
             logger.info(f"Cached {len(rows)} rows from HUD Section 8 contracts file")
         except Exception as e:
