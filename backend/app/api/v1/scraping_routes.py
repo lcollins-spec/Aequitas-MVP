@@ -39,13 +39,14 @@ def _save_document_to_drive(file_bytes: bytes, filename: str, deal_id_str: str, 
         drive_file_id, drive_url = None, None
         try:
             result = google_drive.upload_file(
-                file_bytes, filename, _get_mime_type(filename), deal.dealName, document_type
+                file_bytes, filename, _get_mime_type(filename), deal.deal_name, document_type
             )
             drive_file_id = result['file_id']
             drive_url = result['web_view_link']
             print(f'[{document_type}] Drive upload OK: {drive_url}', flush=True)
         except Exception as e:
             print(f'[{document_type}] Drive upload skipped: {e}', flush=True)
+            return  # nothing to persist — drive_file_id/drive_url are NOT NULL on the model
         doc = DealDocumentModel(
             id=str(uuid.uuid4()),
             deal_id=int(deal_id_str),
