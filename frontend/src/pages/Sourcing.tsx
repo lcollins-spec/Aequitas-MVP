@@ -1,1470 +1,112 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import DocumentsPanel from '../components/DocumentsPanel';
-import { useSearchParams, Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Plus,
+  Pin,
+  PinOff,
   X,
-  Upload,
-  Users,
-  Briefcase,
-  Building2,
-  ChevronUp,
+  RefreshCw,
+  Plus,
   ChevronDown,
-  AlertCircle,
-  MapPin,
-  ArrowLeft,
-  Loader2,
-  CheckCircle,
-  FileText,
-  Pencil,
-  Mail,
+  ChevronUp,
+  Layers,
+  Settings,
+  Upload,
+  Trash2,
+  Sliders,
 } from 'lucide-react';
-import * as sourcingApi from '../services/sourcingApi';
-import type { MarketEntry, SourcingProperty, SourcingBroker, SourcingOperator } from '../services/sourcingApi';
-import { dealApi } from '../services/dealApi';
-import { gpApi } from '../services/gpApi';
-import type { GP } from '../types/gp';
-import UploadDealModal from '../components/UploadDealModal';
+import * as signalsApi from '../services/signalsApi';
+import type { SignalMarket, SignalDefinition, SignalHit, MarketFeedPayload } from '../services/signalsApi';
 
-// ── Types ───────────────────────────────────────────────────────────────────
-
-type PropertyStatus = 'Identified' | 'Contacted' | 'In Conversation' | 'LOI' | 'Dead';
-type BrokerStatus = 'cold' | 'introduced' | 'active' | 'strong';
-type OperatorStatus = 'prospecting' | 'intro_made' | 'meeting_held' | 'partnership_discussion' | 'active_partner';
-type Tab = 'properties' | 'brokers' | 'operators';
-type SortDir = 'asc' | 'desc';
-
-interface SourcingData {
-  properties: SourcingProperty[];
-  brokers: SourcingBroker[];
-  operators: SourcingOperator[];
+function formatTimestamp(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
 }
 
-const DEFAULT_MARKETS: MarketEntry[] = [
-  { id: '1', name: 'Austin, TX' },
-  { id: '2', name: 'Phoenix, AZ' },
-];
-
-// ── localStorage migration keys (read-once, then cleared) ────────────────────
-const LS_DATA = 'sourcing_data';
-const LS_MARKETS = 'sourcing_markets';
-
-// ── Status constants ─────────────────────────────────────────────────────────
-
-const PROP_STATUSES: { value: PropertyStatus; label: string; cls: string; pin: string }[] = [
-  { value: 'Identified',      label: 'Identified',      cls: 'bg-gray-100 text-gray-700 border-gray-200',       pin: '#9CA3AF' },
-  { value: 'Contacted',       label: 'Contacted',       cls: 'bg-yellow-50 text-yellow-700 border-yellow-200',  pin: '#F59E0B' },
-  { value: 'In Conversation', label: 'In Conversation', cls: 'bg-gray-50 text-gray-700 border-gray-200',         pin: '#3B82F6' },
-  { value: 'LOI',             label: 'LOI',             cls: 'bg-purple-50 text-purple-700 border-purple-200',   pin: '#8B5CF6' },
-  { value: 'Dead',            label: 'Dead',            cls: 'bg-red-50 text-red-700 border-red-200',            pin: '#EF4444' },
-];
-
-const TRANSACTION_TYPES = ['Acquisition', 'Recap', 'JV'] as const;
-
-const BROKER_STATUSES: { value: BrokerStatus; label: string; cls: string }[] = [
-  { value: 'cold',       label: 'Cold',       cls: 'bg-gray-100 text-gray-700 border-gray-200'     },
-  { value: 'introduced', label: 'Introduced', cls: 'bg-gray-50 text-gray-700 border-gray-200'       },
-  { value: 'active',     label: 'Active',     cls: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
-  { value: 'strong',     label: 'Strong',     cls: 'bg-green-50 text-green-700 border-green-200'    },
-];
-
-const OPERATOR_STATUSES: { value: OperatorStatus; label: string; cls: string }[] = [
-  { value: 'prospecting',            label: 'Prospecting',            cls: 'bg-gray-100 text-gray-700 border-gray-200'      },
-  { value: 'intro_made',             label: 'Intro Made',             cls: 'bg-gray-50 text-gray-700 border-gray-200'        },
-  { value: 'meeting_held',           label: 'Meeting Held',           cls: 'bg-purple-50 text-purple-700 border-purple-200'  },
-  { value: 'partnership_discussion', label: 'Partnership Discussion', cls: 'bg-yellow-50 text-yellow-700 border-yellow-200'  },
-  { value: 'active_partner',         label: 'Active Partner',         cls: 'bg-green-50 text-green-700 border-green-200'     },
-];
-
-function propStatus(s: string) { return PROP_STATUSES.find(x => x.value === s) || PROP_STATUSES[0]; }
-function brokerStatus(s: string) { return BROKER_STATUSES.find(x => x.value === s) || BROKER_STATUSES[0]; }
-function operatorStatus(s: string) { return OPERATOR_STATUSES.find(x => x.value === s) || OPERATOR_STATUSES[0]; }
-
-const PRIORITY_OPTIONS: { value: string; label: string; dot: string; badge: string }[] = [
-  { value: 'high',   label: 'High',   dot: 'bg-red-500',    badge: 'bg-red-50 text-red-700 border-red-200'          },
-  { value: 'medium', label: 'Medium', dot: 'bg-yellow-400', badge: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
-  { value: 'low',    label: 'Low',    dot: 'bg-green-500',  badge: 'bg-green-50 text-green-700 border-green-200'    },
-];
-function dealPriority(val: string) { return PRIORITY_OPTIONS.find(x => x.value === val) || PRIORITY_OPTIONS[1]; }
-
-function isOverdue(date?: string): boolean {
-  if (!date) return false;
-  return new Date(date) < new Date(new Date().toDateString());
+function formatCurrency(n?: number | null): string {
+  if (n === null || n === undefined) return '—';
+  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
-function timeAgo(dateStr?: string): string {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '—';
-  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
-  if (mins < 1)   return 'just now';
-  if (mins < 60)  return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24)   return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30)  return `${days} day${days === 1 ? '' : 's'} ago`;
-  const months = Math.floor(days / 30);
-  return `${months}mo ago`;
+function sourceLabel(source: string, defs: SignalDefinition[]): string {
+  return defs.find((d) => d.key === source)?.label ?? source;
 }
 
-// ── Google Maps declarations ──────────────────────────────────────────────────
+// ── Pinned Drawer ──────────────────────────────────────────────────────────
 
-declare global {
-  interface Window {
-    google: any;
-    _sourcingMapReady?: () => void;
-  }
-}
-
-// ── SourcingMap ───────────────────────────────────────────────────────────────
-
-interface SourcingMapProps {
-  properties: SourcingProperty[];
-  selectedMarket: MarketEntry | null;
-  onGeocode: (id: string, lat: number, lng: number) => void;
-  focusPropId?: string | null;
-}
-
-const SourcingMap = ({ properties, selectedMarket, onGeocode, focusPropId }: SourcingMapProps) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
-  const infoWindowRef = useRef<any>(null);
-  const [mapsReady, setMapsReady] = useState(false);
-
-  const apiKey = (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
-
-  useEffect(() => {
-    if (!apiKey) return;
-    if ((window as any).google?.maps) { setMapsReady(true); return; }
-
-    const scriptId = 'google-maps-api';
-    if (document.getElementById(scriptId)) {
-      window._sourcingMapReady = () => setMapsReady(true);
-      return;
-    }
-
-    window._sourcingMapReady = () => setMapsReady(true);
-    const s = document.createElement('script');
-    s.id = scriptId;
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=_sourcingMapReady`;
-    s.async = true;
-    s.defer = true;
-    document.head.appendChild(s);
-  }, [apiKey]);
-
-  useEffect(() => {
-    if (!mapsReady || !containerRef.current || mapRef.current) return;
-    mapRef.current = new window.google.maps.Map(containerRef.current, {
-      center: { lat: 39.8283, lng: -98.5795 },
-      zoom: 4,
-      mapTypeControl: false,
-      streetViewControl: false,
-    });
-    infoWindowRef.current = new window.google.maps.InfoWindow();
-  }, [mapsReady]);
-
-  useEffect(() => {
-    if (!mapsReady || !mapRef.current || !focusPropId) return;
-    const prop = properties.find(p => p.id === focusPropId);
-    if (prop?.lat && prop?.lng) {
-      mapRef.current.panTo({ lat: prop.lat, lng: prop.lng });
-      mapRef.current.setZoom(14);
-    }
-  }, [mapsReady, focusPropId, properties]);
-
-  const plotMarker = useCallback((prop: SourcingProperty, lat: number, lng: number) => {
-    if (!mapRef.current) return;
-    const si = propStatus(prop.status);
-    const marker = new window.google.maps.Marker({
-      position: { lat, lng },
-      map: mapRef.current,
-      title: prop.address,
-      icon: {
-        path: window.google.maps.SymbolPath.CIRCLE,
-        fillColor: si.pin,
-        fillOpacity: 1,
-        strokeColor: '#ffffff',
-        strokeWeight: 2,
-        scale: 10,
-      },
-    });
-    marker.addListener('click', () => {
-      infoWindowRef.current.setContent(`
-        <div style="font-family:system-ui,sans-serif;font-size:13px;line-height:1.6;max-width:260px">
-          <div style="font-weight:600;font-size:14px;margin-bottom:6px">${prop.address || 'Address unknown'}</div>
-          <div style="color:#6B7280;margin-bottom:3px"><b>Owner:</b> ${prop.owner_name || '—'}</div>
-          <div style="color:#6B7280;margin-bottom:3px"><b>Units:</b> ${prop.units || '—'}</div>
-          <div style="color:#6B7280;margin-bottom:3px"><b>Type:</b> ${prop.transaction_type || 'Acquisition'}</div>
-          <div style="color:#6B7280;margin-bottom:3px"><b>Status:</b> ${si.label}</div>
-          ${prop.notes ? `<div style="color:#6B7280;margin-bottom:6px"><b>Notes:</b> ${prop.notes}</div>` : ''}
-          ${prop.deal_id ? `<div><a href="/deal-execution/${prop.deal_id}" style="color:#3B82F6;font-weight:500;text-decoration:none">View Deal →</a></div>` : ''}
-        </div>
-      `);
-      infoWindowRef.current.open(mapRef.current, marker);
-    });
-    markersRef.current.push(marker);
-  }, []);
-
-  useEffect(() => {
-    if (!mapsReady || !mapRef.current) return;
-
-    markersRef.current.forEach(m => m.setMap(null));
-    markersRef.current = [];
-
-    const visible = selectedMarket
-      ? properties.filter(p => p.market === selectedMarket.name)
-      : properties;
-
-    const toGeocode: SourcingProperty[] = [];
-    visible.forEach(p => {
-      if (p.lat && p.lng) { plotMarker(p, p.lat, p.lng); }
-      else if (p.address) { toGeocode.push(p); }
-    });
-
-    if (toGeocode.length > 0 && window.google?.maps?.Geocoder) {
-      const geocoder = new window.google.maps.Geocoder();
-      const next = (i: number) => {
-        if (i >= toGeocode.length) return;
-        const prop = toGeocode[i];
-        geocoder.geocode({ address: prop.address }, (results: any, status: string) => {
-          if (status === 'OK' && results?.[0]) {
-            const lat: number = results[0].geometry.location.lat();
-            const lng: number = results[0].geometry.location.lng();
-            onGeocode(prop.id, lat, lng);
-            plotMarker({ ...prop, lat, lng }, lat, lng);
-          }
-          setTimeout(() => next(i + 1), 250);
-        });
-      };
-      next(0);
-    }
-
-    fetch('/api/v1/deals')
-      .then(r => r.json())
-      .then((resp: any) => {
-        const deals: any[] = resp.deals || resp || [];
-        deals.forEach((deal: any) => {
-          if (!deal.latitude || !deal.longitude) return;
-          const marker = new window.google.maps.Marker({
-            position: { lat: Number(deal.latitude), lng: Number(deal.longitude) },
-            map: mapRef.current,
-            title: deal.deal_name || deal.property_address || 'Platform Deal',
-            icon: {
-              path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-              fillColor: '#10B981',
-              fillOpacity: 0.85,
-              strokeColor: '#fff',
-              strokeWeight: 1.5,
-              scale: 7,
-            },
-          });
-          marker.addListener('click', () => {
-            infoWindowRef.current.setContent(`
-              <div style="font-family:system-ui,sans-serif;font-size:13px;line-height:1.6;max-width:240px">
-                <div style="font-weight:600;font-size:14px;margin-bottom:6px">${deal.deal_name || 'Platform Deal'}</div>
-                <div style="color:#6B7280;margin-bottom:3px"><b>Address:</b> ${deal.property_address || '—'}</div>
-                <div style="color:#6B7280;margin-bottom:6px"><b>Status:</b> ${deal.status || '—'}</div>
-                <a href="/deal-execution/${deal.id}" style="color:#3B82F6;font-weight:500;text-decoration:none">View Deal →</a>
-              </div>
-            `);
-            infoWindowRef.current.open(mapRef.current, marker);
-          });
-          markersRef.current.push(marker);
-        });
-      })
-      .catch(() => {});
-
-    const geocoded = visible.filter(p => p.lat && p.lng);
-    if (geocoded.length > 1 && mapRef.current) {
-      const bounds = new window.google.maps.LatLngBounds();
-      geocoded.forEach(p => bounds.extend({ lat: p.lat!, lng: p.lng! }));
-      mapRef.current.fitBounds(bounds);
-    }
-  }, [mapsReady, properties, selectedMarket, plotMarker, onGeocode]);
-
-  if (!apiKey) {
-    return (
-      <div className="bg-white rounded-xl shadow-sm p-16 text-center">
-        <MapPin size={44} className="text-gray-200 mx-auto mb-4" />
-        <p className="text-gray-600 text-sm font-medium mb-2">Google Maps API key not configured</p>
-        <p className="text-gray-400 text-xs">
-          Add <code className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">VITE_GOOGLE_MAPS_API_KEY</code> to your{' '}
-          <code className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">frontend/.env</code> file to enable the map.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-      <div className="relative">
-        <div ref={containerRef} style={{ height: 560, width: '100%' }} />
-        {!mapsReady && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white">
-            <p className="text-gray-400 text-sm">Loading map…</p>
-          </div>
-        )}
-      </div>
-      <div className="px-6 py-3 border-t border-gray-100 flex flex-wrap items-center gap-5">
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Legend</span>
-        {PROP_STATUSES.map(({ label, pin }) => (
-          <div key={label} className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: pin }} />
-            <span className="text-xs text-gray-600">{label}</span>
-          </div>
-        ))}
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 flex-shrink-0" style={{ backgroundColor: '#10B981', clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }} />
-          <span className="text-xs text-gray-600">Platform Deal</span>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ── PropertyModal ─────────────────────────────────────────────────────────────
-
-interface PropertyModalProps {
-  initial: Partial<SourcingProperty> | null;
-  market: string;
-  onSave: (p: SourcingProperty) => void;
+interface PinnedDrawerProps {
+  open: boolean;
   onClose: () => void;
+  pinnedHits: SignalHit[];
+  markets: SignalMarket[];
+  defs: SignalDefinition[];
+  onUnpin: (hit: SignalHit) => void;
+  onNoteChange: (hit: SignalHit, note: string) => void;
 }
 
-const PropertyModal = ({ initial, market, onSave, onClose }: PropertyModalProps) => {
-  const [form, setForm] = useState<Partial<SourcingProperty>>({
-    address: '', units: 0, market, transaction_type: 'Acquisition',
-    owner_name: '', operator_name: '', contact_name: '', contact_phone: '',
-    contact_email: '', status: 'Identified', priority: 'medium', notes: '',
-    deal_id: null,
-    ...initial,
-  });
-
-  const f = (k: keyof SourcingProperty, v: any) => setForm(p => ({ ...p, [k]: v }));
-
-  // Legislation state (preserved)
-  const [legFetching, setLegFetching] = useState(false);
-  const [legStatus, setLegStatus] = useState<'idle' | 'saved' | 'failed'>('idle');
-  const [legislation, setLegislation] = useState<any[] | null>(() => {
-    try { return initial?.property_legislation ? JSON.parse(initial.property_legislation) : null; } catch { return null; }
-  });
-
-  const handleFetchLocalRegs = async () => {
-    const mkt = form.market || market;
-    if (!mkt) return;
-    setLegFetching(true);
-    setLegStatus('idle');
-    try {
-      const resp = await fetch('/api/v1/regulations/fetch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ market: mkt }),
-      });
-      const json = await resp.json();
-      if (!resp.ok || !json.success) throw new Error(json.error || 'Failed');
-      const data = json.data;
-      setLegislation(data);
-      if (form.id) {
-        await fetch(`/api/v1/sourcing/properties/${form.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ property_legislation: JSON.stringify(data) }),
-        });
-        setForm(p => ({ ...p, property_legislation: JSON.stringify(data) }));
-      }
-      setLegStatus('saved');
-    } catch {
-      setLegStatus('failed');
-    } finally {
-      setLegFetching(false);
-    }
-  };
-
-  const save = () => {
-    if (!form.address?.trim()) return;
-    onSave({
-      id: form.id || Date.now().toString(),
-      market: form.market || market,
-      address: form.address || '',
-      units: Number(form.units) || 0,
-      transaction_type: form.transaction_type || 'Acquisition',
-      owner_name: form.owner_name || '',
-      operator_name: form.operator_name || '',
-      contact_name: form.contact_name || '',
-      contact_phone: form.contact_phone || '',
-      contact_email: form.contact_email || '',
-      status: (form.status as PropertyStatus) || 'Identified',
-      priority: form.priority || 'medium',
-      notes: form.notes || '',
-      deal_id: form.deal_id ?? null,
-      lat: form.lat,
-      lng: form.lng,
-      property_legislation: form.property_legislation,
-    });
-  };
-
-  const inputCls = 'w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500';
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-base font-semibold text-gray-800">{initial?.id ? 'Edit Property' : 'Add Property'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={18} /></button>
-        </div>
-        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-          {/* Address */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Address *</label>
-            <input
-              type="text" value={form.address || ''}
-              onChange={e => f('address', e.target.value)}
-              placeholder="123 Main St, Austin, TX 78701"
-              className={inputCls}
-            />
-          </div>
-          {/* Units */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Units</label>
-            <input
-              type="number" value={form.units || ''}
-              onChange={e => f('units', e.target.value)}
-              className={inputCls}
-            />
-          </div>
-          {/* Market */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Market</label>
-            <input
-              type="text" value={form.market || ''}
-              onChange={e => f('market', e.target.value)}
-              placeholder="e.g. Austin, TX"
-              className={inputCls}
-            />
-          </div>
-          {/* Transaction Type */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Transaction Type</label>
-            <select
-              value={form.transaction_type || 'Acquisition'}
-              onChange={e => f('transaction_type', e.target.value)}
-              className={inputCls}
-            >
-              {TRANSACTION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          {/* Owner Name */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Owner Name</label>
-            <input
-              type="text" value={form.owner_name || ''}
-              onChange={e => f('owner_name', e.target.value)}
-              className={inputCls}
-            />
-          </div>
-          {/* Operator Name */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Operator Name</label>
-            <input
-              type="text" value={form.operator_name || ''}
-              onChange={e => f('operator_name', e.target.value)}
-              className={inputCls}
-            />
-          </div>
-          {/* Contact group */}
-          <div className="space-y-3">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Contact</p>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Contact Name</label>
-              <input
-                type="text" value={form.contact_name || ''}
-                onChange={e => f('contact_name', e.target.value)}
-                className={inputCls}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Contact Phone</label>
-                <input
-                  type="tel" value={form.contact_phone || ''}
-                  onChange={e => f('contact_phone', e.target.value)}
-                  placeholder="(512) 555-0100"
-                  className={inputCls}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Contact Email</label>
-                <input
-                  type="email" value={form.contact_email || ''}
-                  onChange={e => f('contact_email', e.target.value)}
-                  placeholder="name@firm.com"
-                  className={inputCls}
-                />
-              </div>
-            </div>
-          </div>
-          {/* Status + Priority */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-              <select
-                value={form.status || 'Identified'}
-                onChange={e => f('status', e.target.value)}
-                className={inputCls}
-              >
-                {PROP_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Priority</label>
-              <select
-                value={form.priority || 'medium'}
-                onChange={e => f('priority', e.target.value)}
-                className={inputCls}
-              >
-                {PRIORITY_OPTIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-              </select>
-            </div>
-          </div>
-          {/* Notes */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
-            <textarea
-              rows={3} value={form.notes || ''}
-              onChange={e => f('notes', e.target.value)}
-              className={`${inputCls} resize-none`}
-            />
-          </div>
-          {/* Local Regulations */}
-          <div className="border-t border-gray-100 pt-4">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-gray-600">Local Regulations</label>
-              <button
-                type="button"
-                onClick={handleFetchLocalRegs}
-                disabled={legFetching}
-                className="flex items-center gap-1 text-xs px-2.5 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 transition-colors font-medium"
-              >
-                {legFetching ? (
-                  <><Loader2 size={10} className="animate-spin" /> Fetching…</>
-                ) : legStatus === 'saved' ? (
-                  <><CheckCircle size={10} className="text-green-600" /> <span className="text-green-700">Saved</span></>
-                ) : legStatus === 'failed' ? (
-                  'Failed — Retry'
-                ) : (
-                  'Fetch Local Regs'
-                )}
-              </button>
-            </div>
-            {legislation && legislation.length > 0 && (
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {legislation.map((item: any, i: number) => (
-                  <div key={i} className="p-2 rounded-lg bg-gray-50 border border-gray-100">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-xs font-medium text-gray-800 leading-tight">{item.title}</p>
-                      <span className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${
-                        item.status === 'funding' ? 'bg-green-100 text-green-700' :
-                        item.status === 'enabling' ? 'bg-gray-100 text-gray-700' :
-                        'bg-red-100 text-red-700'
-                      }`}>{item.jurisdiction} · {item.status}</span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{item.summary}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="flex gap-3 px-6 py-4 border-t border-gray-200">
-          <button onClick={save} className="flex-1 py-2 text-sm font-medium bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors">
-            {initial?.id ? 'Save Changes' : 'Add Property'}
-          </button>
-          <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ── BrokerModal ───────────────────────────────────────────────────────────────
-
-interface BrokerModalProps {
-  initial: Partial<SourcingBroker> | null;
-  market: string;
-  onSave: (b: SourcingBroker) => void;
-  onClose: () => void;
-}
-
-const BrokerModal = ({ initial, market, onSave, onClose }: BrokerModalProps) => {
-  const [form, setForm] = useState<Partial<SourcingBroker>>({
-    name: '', firm: '', status: 'cold', last_contact_date: '', last_deal_sent: '', notes: '',
-    ...initial,
-  });
-
-  const f = (k: keyof SourcingBroker, v: any) => setForm(p => ({ ...p, [k]: v }));
-
-  const save = () => {
-    if (!form.name?.trim()) return;
-    onSave({
-      id: form.id || Date.now().toString(),
-      market,
-      name: form.name || '',
-      firm: form.firm || '',
-      status: (form.status as BrokerStatus) || 'cold',
-      last_contact_date: form.last_contact_date || '',
-      last_deal_sent: form.last_deal_sent || '',
-      notes: form.notes || '',
-    });
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-base font-semibold text-gray-800">{initial?.id ? 'Edit Broker' : 'Add Broker'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={18} /></button>
-        </div>
-        <div className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
-              <input
-                type="text" value={form.name || ''}
-                onChange={e => f('name', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Firm</label>
-              <input
-                type="text" value={form.firm || ''}
-                onChange={e => f('firm', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-            <select
-              value={form.status || 'cold'}
-              onChange={e => f('status', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
-            >
-              {BROKER_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Last Contact Date</label>
-              <input
-                type="date" value={form.last_contact_date || ''}
-                onChange={e => f('last_contact_date', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Last Deal Sent</label>
-              <input
-                type="text" value={form.last_deal_sent || ''}
-                onChange={e => f('last_deal_sent', e.target.value)}
-                placeholder="Deal name or date"
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
-            <textarea
-              rows={3} value={form.notes || ''}
-              onChange={e => f('notes', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500 resize-none"
-            />
-          </div>
-        </div>
-        <div className="flex gap-3 px-6 py-4 border-t border-gray-200">
-          <button onClick={save} className="flex-1 py-2 text-sm font-medium bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors">
-            {initial?.id ? 'Save Changes' : 'Add Broker'}
-          </button>
-          <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ── OperatorModal ─────────────────────────────────────────────────────────────
-
-interface OperatorModalProps {
-  initial: Partial<SourcingOperator> | null;
-  market: string;
-  onSave: (o: SourcingOperator) => void;
-  onClose: () => void;
-}
-
-const OperatorModal = ({ initial, market, onSave, onClose }: OperatorModalProps) => {
-  const [form, setForm] = useState<Partial<SourcingOperator>>({
-    name: '', firm: '', status: 'prospecting', properties_managed: '', last_contact_date: '', notes: '',
-    ...initial,
-  });
-
-  const f = (k: keyof SourcingOperator, v: any) => setForm(p => ({ ...p, [k]: v }));
-
-  const save = () => {
-    if (!form.name?.trim()) return;
-    onSave({
-      id: form.id || Date.now().toString(),
-      market,
-      name: form.name || '',
-      firm: form.firm || '',
-      status: (form.status as OperatorStatus) || 'prospecting',
-      properties_managed: form.properties_managed || '',
-      last_contact_date: form.last_contact_date || '',
-      notes: form.notes || '',
-    });
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-base font-semibold text-gray-800">{initial?.id ? 'Edit Operator' : 'Add Operator'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={18} /></button>
-        </div>
-        <div className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
-              <input
-                type="text" value={form.name || ''}
-                onChange={e => f('name', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Firm</label>
-              <input
-                type="text" value={form.firm || ''}
-                onChange={e => f('firm', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-              <select
-                value={form.status || 'prospecting'}
-                onChange={e => f('status', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
-              >
-                {OPERATOR_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Properties Managed</label>
-              <input
-                type="text" value={form.properties_managed || ''}
-                onChange={e => f('properties_managed', e.target.value)}
-                placeholder="e.g. 500 units"
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Last Contact Date</label>
-            <input
-              type="date" value={form.last_contact_date || ''}
-              onChange={e => f('last_contact_date', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
-            <textarea
-              rows={3} value={form.notes || ''}
-              onChange={e => f('notes', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500 resize-none"
-            />
-          </div>
-        </div>
-        <div className="flex gap-3 px-6 py-4 border-t border-gray-200">
-          <button onClick={save} className="flex-1 py-2 text-sm font-medium bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors">
-            {initial?.id ? 'Save Changes' : 'Add Operator'}
-          </button>
-          <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ── ImportModal ───────────────────────────────────────────────────────────────
-
-interface ImportModalProps {
-  tab: Tab;
-  market: string;
-  onImport: (items: any[]) => void;
-  onClose: () => void;
-}
-
-const ImportModal = ({ tab, market, onImport, onClose }: ImportModalProps) => {
-  const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<any[] | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const typeLabel = tab === 'properties' ? 'Properties' : tab === 'brokers' ? 'Brokers' : 'Operators';
-
-  const previewCols: Record<Tab, string[]> = {
-    properties: ['address', 'units', 'market', 'transaction_type', 'owner_name', 'status'],
-    brokers: ['name', 'firm', 'status', 'last_contact_date', 'last_deal_sent'],
-    operators: ['name', 'firm', 'status', 'properties_managed', 'last_contact_date'],
-  };
-
-  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0] ?? null;
-    setFile(f);
-    setPreview(null);
-    setError(null);
-  };
-
-  const parse = async () => {
-    if (!file) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('type', tab);
-      const r = await fetch('/api/v1/sourcing/parse-import', { method: 'POST', body: fd });
-      const data = await r.json();
-      if (!data.success) throw new Error(data.error || 'Parse failed');
-      setPreview(data.data);
-    } catch (e: any) {
-      setError(e.message || 'Failed to parse file');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const confirmImport = () => {
-    if (!preview) return;
-    const ts = Date.now();
-    const items = preview.map((row, i) => ({ ...row, id: `${ts}_${i}`, market }));
-    onImport(items);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
-          <h2 className="text-base font-semibold text-gray-800">Import {typeLabel} from Excel / CSV</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={18} /></button>
-        </div>
-        <div className="p-6 flex-1 overflow-y-auto space-y-5">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-2">Select file (.xlsx or .csv)</label>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors"
-              >
-                Choose File
-              </button>
-              <span className="text-sm text-gray-500">{file ? file.name : 'No file selected'}</span>
-              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={onFileChange} className="hidden" />
-            </div>
-            <p className="text-xs text-gray-400 mt-2">
-              Column names can vary — Claude will intelligently map them to the {typeLabel.toLowerCase()} data model.
-            </p>
-          </div>
-          {error && (
-            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <AlertCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
-              <span className="text-sm text-red-700">{error}</span>
-            </div>
-          )}
-          {preview && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-sm font-semibold text-gray-800">Preview</span>
-                <span className="text-xs text-gray-400">({preview.length} rows mapped)</span>
-              </div>
-              <div className="overflow-x-auto border border-gray-200 rounded-lg">
-                <table className="text-xs w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      {previewCols[tab].map(col => (
-                        <th key={col} className="px-3 py-2.5 text-left font-semibold text-gray-600 capitalize whitespace-nowrap">
-                          {col.replace(/_/g, ' ')}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {preview.slice(0, 12).map((row, i) => (
-                      <tr key={i} className="hover:bg-gray-50">
-                        {previewCols[tab].map(col => (
-                          <td key={col} className="px-3 py-2 text-gray-700 max-w-[180px] truncate">{row[col] || '—'}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {preview.length > 12 && (
-                <p className="text-xs text-gray-400 mt-2">Showing first 12 of {preview.length} rows</p>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="flex gap-3 px-6 py-4 border-t border-gray-200 flex-shrink-0">
-          {!preview ? (
-            <button
-              onClick={parse}
-              disabled={!file || loading}
-              className="flex-1 py-2 text-sm font-medium bg-primary-800 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Parsing with Claude…</>
-              ) : 'Parse File'}
-            </button>
-          ) : (
-            <button onClick={confirmImport} className="flex-1 py-2 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-              Import {preview.length} {typeLabel}
-            </button>
-          )}
-          <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ── BrokersTable ──────────────────────────────────────────────────────────────
-
-interface BrokersTableProps {
-  brokers: SourcingBroker[];
-  onEdit: (b: SourcingBroker) => void;
-  onDelete: (id: string) => void;
-}
-
-const BrokersTable = ({ brokers, onEdit, onDelete }: BrokersTableProps) => {
-  const [sort, setSort] = useState<{ col: keyof SourcingBroker; dir: SortDir }>({ col: 'name', dir: 'asc' });
-
-  const toggle = (col: keyof SourcingBroker) =>
-    setSort(s => ({ col, dir: s.col === col && s.dir === 'asc' ? 'desc' : 'asc' }));
-
-  const sorted = [...brokers].sort((a, b) => {
-    const av = String(a[sort.col] ?? '').toLowerCase();
-    const bv = String(b[sort.col] ?? '').toLowerCase();
-    return sort.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
-  });
-
-  const SortIcon = ({ col }: { col: keyof SourcingBroker }) =>
-    sort.col !== col ? <ChevronDown size={12} className="text-gray-300" />
-      : sort.dir === 'asc' ? <ChevronUp size={12} className="text-primary-800" />
-      : <ChevronDown size={12} className="text-primary-800" />;
-
-  const Th = ({ col, label }: { col: keyof SourcingBroker; label: string }) => (
-    <th onClick={() => toggle(col)} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700 select-none whitespace-nowrap">
-      <div className="flex items-center gap-1">{label} <SortIcon col={col} /></div>
-    </th>
-  );
-
-  if (sorted.length === 0) {
-    return (
-      <div className="bg-white rounded-xl shadow-sm p-12 text-center">
-        <Users size={44} className="text-gray-200 mx-auto mb-3" />
-        <p className="text-gray-500 text-sm">No brokers yet. Click "Add Broker" to get started.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <Th col="name" label="Name" />
-              <Th col="firm" label="Firm" />
-              <Th col="status" label="Status" />
-              <Th col="last_contact_date" label="Last Contact" />
-              <Th col="last_deal_sent" label="Last Deal Sent" />
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</th>
-              <th className="px-4 py-3 w-10" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {sorted.map(b => {
-              const si = brokerStatus(b.status);
-              return (
-                <tr key={b.id} onClick={() => onEdit(b)} className="cursor-pointer hover:bg-primary-50 transition-colors">
-                  <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{b.name}</td>
-                  <td className="px-4 py-3 text-gray-600">{b.firm || '—'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${si.cls}`}>{si.label}</span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{b.last_contact_date || '—'}</td>
-                  <td className="px-4 py-3 text-gray-600">{b.last_deal_sent || '—'}</td>
-                  <td className="px-4 py-3 text-gray-400 text-xs max-w-[200px] truncate">{b.notes || '—'}</td>
-                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => onDelete(b.id)} className="text-gray-300 hover:text-red-400 transition-colors">
-                      <X size={14} />
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-// ── OperatorsTable ────────────────────────────────────────────────────────────
-
-interface OperatorsTableProps {
-  operators: SourcingOperator[];
-  onEdit: (o: SourcingOperator) => void;
-  onDelete: (id: string) => void;
-}
-
-const OperatorsTable = ({ operators, onEdit, onDelete }: OperatorsTableProps) => {
-  const [sort, setSort] = useState<{ col: keyof SourcingOperator; dir: SortDir }>({ col: 'name', dir: 'asc' });
-
-  const toggle = (col: keyof SourcingOperator) =>
-    setSort(s => ({ col, dir: s.col === col && s.dir === 'asc' ? 'desc' : 'asc' }));
-
-  const sorted = [...operators].sort((a, b) => {
-    const av = String(a[sort.col] ?? '').toLowerCase();
-    const bv = String(b[sort.col] ?? '').toLowerCase();
-    return sort.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
-  });
-
-  const SortIcon = ({ col }: { col: keyof SourcingOperator }) =>
-    sort.col !== col ? <ChevronDown size={12} className="text-gray-300" />
-      : sort.dir === 'asc' ? <ChevronUp size={12} className="text-primary-800" />
-      : <ChevronDown size={12} className="text-primary-800" />;
-
-  const Th = ({ col, label }: { col: keyof SourcingOperator; label: string }) => (
-    <th onClick={() => toggle(col)} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700 select-none whitespace-nowrap">
-      <div className="flex items-center gap-1">{label} <SortIcon col={col} /></div>
-    </th>
-  );
-
-  if (sorted.length === 0) {
-    return (
-      <div className="bg-white rounded-xl shadow-sm p-12 text-center">
-        <Briefcase size={44} className="text-gray-200 mx-auto mb-3" />
-        <p className="text-gray-500 text-sm">No operators yet. Click "Add Operator" to get started.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <Th col="name" label="Name" />
-              <Th col="firm" label="Firm" />
-              <Th col="status" label="Status" />
-              <Th col="properties_managed" label="Properties Managed" />
-              <Th col="last_contact_date" label="Last Contact" />
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</th>
-              <th className="px-4 py-3 w-10" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {sorted.map(op => {
-              const si = operatorStatus(op.status);
-              return (
-                <tr key={op.id} onClick={() => onEdit(op)} className="cursor-pointer hover:bg-primary-50 transition-colors">
-                  <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{op.name}</td>
-                  <td className="px-4 py-3 text-gray-600">{op.firm || '—'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${si.cls}`}>{si.label}</span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">{op.properties_managed || '—'}</td>
-                  <td className={`px-4 py-3 whitespace-nowrap ${isOverdue(op.last_contact_date) ? 'bg-yellow-50 text-yellow-800' : 'text-gray-600'}`}>
-                    {op.last_contact_date || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-gray-400 text-xs max-w-[200px] truncate">{op.notes || '—'}</td>
-                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => onDelete(op.id)} className="text-gray-300 hover:text-red-400 transition-colors">
-                      <X size={14} />
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-// ── PropertiesTable ───────────────────────────────────────────────────────────
-
-interface PropertiesTableProps {
-  properties: SourcingProperty[];
-  onRowClick: (p: SourcingProperty) => void;
-  onEdit: (p: SourcingProperty) => void;
-  onDelete: (id: string) => void;
-  highlightPropId?: string | null;
-  onStartUnderwriting: (p: SourcingProperty) => void;
-  startingUwId?: string | null;
-  gps: GP[];
-}
-
-const PropertiesTable = ({
-  properties, onRowClick, onEdit, onDelete, highlightPropId, onStartUnderwriting, startingUwId, gps,
-}: PropertiesTableProps) => {
-  const [sort, setSort] = useState<{ col: keyof SourcingProperty; dir: SortDir }>({ col: 'address', dir: 'asc' });
-  const highlightedRowRef = useRef<HTMLTableRowElement | null>(null);
-
-  useEffect(() => {
-    if (highlightedRowRef.current) {
-      highlightedRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  }, [highlightPropId]);
-
-  const toggle = (col: keyof SourcingProperty) =>
-    setSort(s => ({ col, dir: s.col === col && s.dir === 'asc' ? 'desc' : 'asc' }));
-
-  const gpNameById = useMemo(() => new Map(gps.map(g => [g.id, g.gpName])), [gps]);
-
-  const resolveSortValue = (p: SourcingProperty, col: keyof SourcingProperty) =>
-    col === 'gp_id'
-      ? (p.gp_id != null ? gpNameById.get(p.gp_id) : null) || p.operator_name || ''
-      : p[col];
-
-  const sorted = [...properties].sort((a, b) => {
-    const av = String(resolveSortValue(a, sort.col) ?? '').toLowerCase();
-    const bv = String(resolveSortValue(b, sort.col) ?? '').toLowerCase();
-    return sort.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
-  });
-
-  const SortIcon = ({ col }: { col: keyof SourcingProperty }) =>
-    sort.col !== col ? <ChevronDown size={12} className="text-gray-300" />
-      : sort.dir === 'asc' ? <ChevronUp size={12} className="text-primary-800" />
-      : <ChevronDown size={12} className="text-primary-800" />;
-
-  const Th = ({ col, label }: { col: keyof SourcingProperty; label: string }) => (
-    <th onClick={() => toggle(col)} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700 select-none whitespace-nowrap">
-      <div className="flex items-center gap-1">{label} <SortIcon col={col} /></div>
-    </th>
-  );
-
-  if (sorted.length === 0) return null;
-
-  return (
-    <div className="bg-white rounded-xl shadow-sm overflow-hidden mt-4">
-      <div className="px-5 py-3 border-b border-gray-100">
-        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Property List</span>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <Th col="address" label="Address" />
-              <Th col="units" label="Units" />
-              <Th col="market" label="Market" />
-              <Th col="gp_id" label="Operator" />
-              <Th col="transaction_type" label="Type" />
-              <Th col="status" label="Status" />
-              <Th col="priority" label="Priority" />
-              <Th col="updated_at" label="Last Activity" />
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {sorted.map(p => {
-              const si = propStatus(p.status);
-              const pri = dealPriority(p.priority);
-              const isHighlighted = p.id === highlightPropId;
-              const canUw = p.status === 'In Conversation' || p.status === 'LOI';
-              const isStale = p.status !== 'Dead' && !!p.updated_at &&
-                (Date.now() - new Date(p.updated_at).getTime()) > 60 * 24 * 60 * 60 * 1000;
-              return (
-                <tr
-                  key={p.id}
-                  ref={isHighlighted ? highlightedRowRef : null}
-                  onClick={() => onRowClick(p)}
-                  className={`cursor-pointer hover:bg-primary-50 transition-colors ${isHighlighted ? 'ring-2 ring-inset ring-primary-400 bg-gray-50' : ''}`}
-                >
-                  <td className="px-4 py-3 font-medium text-gray-800 max-w-[220px] truncate">{p.address}</td>
-                  <td className="px-4 py-3 text-gray-600">{p.units || '—'}</td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{p.market || '—'}</td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                    {(p.gp_id != null ? gpNameById.get(p.gp_id) : null) || p.operator_name || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{p.transaction_type || 'Acquisition'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${si.cls}`}>{si.label}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border w-fit ${pri.badge}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${pri.dot}`} />
-                      {pri.label}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
-                    <span className="flex items-center gap-1.5">
-                      {isStale && (
-                        <span
-                          className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0"
-                          title="No activity in 60+ days."
-                        />
-                      )}
-                      {timeAgo(p.updated_at)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => onEdit(p)}
-                        className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 font-medium px-2 py-1 rounded hover:bg-gray-100 transition-colors"
-                      >
-                        <Pencil size={11} /> Edit
-                      </button>
-                      {canUw && (
-                        <button
-                          onClick={() => onStartUnderwriting(p)}
-                          disabled={startingUwId === p.id}
-                          className="text-xs text-indigo-500 hover:text-indigo-700 font-medium whitespace-nowrap transition-colors disabled:opacity-50"
-                        >
-                          {startingUwId === p.id ? '…' : p.deal_id ? 'Underwriting →' : 'Start UW'}
-                        </button>
-                      )}
-                      <button onClick={() => onDelete(p.id)} className="text-gray-300 hover:text-red-400 transition-colors">
-                        <X size={14} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-// ── PropertyDetailPanel ───────────────────────────────────────────────────────
-
-const DetailField = ({ label, value }: { label: string; value?: string | number | null }) => {
-  if (!value && value !== 0) return null;
-  return (
-    <div>
-      <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-      <p className="text-sm text-gray-800">{String(value)}</p>
-    </div>
-  );
-};
-
-interface ActivityEntry { timestamp: string; note: string; }
-
-interface PropertyDetailPanelProps {
-  prop: SourcingProperty;
-  onClose: () => void;
-  onEdit: () => void;
-  onStartUnderwriting: () => void;
-  startingUw: boolean;
-  onAddActivity: (note: string) => Promise<void>;
-  gps: GP[];
-}
-
-const PropertyDetailPanel = ({ prop, onClose, onEdit, onStartUnderwriting, startingUw, onAddActivity, gps }: PropertyDetailPanelProps) => {
-  const si = propStatus(prop.status);
-  const pri = dealPriority(prop.priority);
-  const canUw = prop.status === 'In Conversation' || prop.status === 'LOI';
-  const [activityNote, setActivityNote] = useState('');
-  const [addingActivity, setAddingActivity] = useState(false);
-
-  const activities: ActivityEntry[] = (() => {
-    try { return JSON.parse(prop.activity_log || '[]'); } catch { return []; }
-  })();
-
-  const formatActivityTs = (iso: string) => {
-    try {
-      return new Date(iso).toLocaleString('en-US', {
-        month: 'short', day: 'numeric', year: 'numeric',
-        hour: 'numeric', minute: '2-digit',
-      });
-    } catch { return iso; }
-  };
-
-  const submitActivity = async () => {
-    const note = activityNote.trim();
-    if (!note || addingActivity) return;
-    setAddingActivity(true);
-    try {
-      await onAddActivity(note);
-      setActivityNote('');
-    } finally {
-      setAddingActivity(false);
-    }
-  };
-
+const PinnedDrawer = ({ open, onClose, pinnedHits, markets, defs, onUnpin, onNoteChange }: PinnedDrawerProps) => {
+  const pinned = pinnedHits;
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
-      <div className="fixed right-0 top-0 bottom-0 z-50 w-96 bg-white shadow-2xl border-l border-gray-200 flex flex-col">
-        {/* Header */}
-        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200 gap-3">
-          <div className="flex-1 min-w-0">
-            <h2 className="text-sm font-semibold text-gray-800 leading-snug line-clamp-2">
-              {prop.address || 'Property Detail'}
-            </h2>
-            <p className="text-xs text-gray-400 mt-0.5">{prop.market || '—'}</p>
+      {open && <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />}
+      <div
+        className={`fixed top-0 right-0 h-full w-[420px] bg-white shadow-2xl z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${
+          open ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <Pin size={16} className="text-primary-800" />
+            <h2 className="text-base font-semibold text-gray-800">Pinned Leads</h2>
+            <span className="text-xs text-gray-400">({pinned.length})</span>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={onEdit}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-            >
-              <Pencil size={11} /> Edit
-            </button>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
-              <X size={18} />
-            </button>
-          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 transition-colors">
+            <X size={18} />
+          </button>
         </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {/* Status + Priority */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${si.cls}`}>{si.label}</span>
-            <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border w-fit ${pri.badge}`}>
-              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${pri.dot}`} />
-              {pri.label}
-            </span>
-          </div>
-
-          {/* Core fields */}
-          <div className="grid grid-cols-2 gap-4">
-            <DetailField label="Units" value={prop.units || null} />
-            <DetailField label="Type" value={prop.transaction_type || 'Acquisition'} />
-          </div>
-          <DetailField label="Owner Name" value={prop.owner_name} />
-          <DetailField label="GP / Operator" value={(prop.gp_id != null ? gps.find(g => g.id === prop.gp_id)?.gpName : null) || null} />
-          <DetailField label="Operator Name" value={prop.operator_name} />
-
-          {/* Contact */}
-          {(prop.contact_name || prop.contact_phone || prop.contact_email) && (
-            <div className="space-y-3">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Contact</p>
-              <DetailField label="Name" value={prop.contact_name} />
-              <DetailField label="Phone" value={prop.contact_phone} />
-              <DetailField label="Email" value={prop.contact_email} />
-            </div>
-          )}
-
-          {/* Notes */}
-          {prop.notes && (
-            <div>
-              <p className="text-xs text-gray-400 mb-1">Notes</p>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{prop.notes}</p>
-            </div>
-          )}
-
-          <p className="text-xs text-gray-400">Last updated {timeAgo(prop.updated_at)}</p>
-
-          {/* Activity log */}
-          <div className="space-y-3 pt-1">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Activity</p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={activityNote}
-                onChange={e => setActivityNote(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') submitActivity(); }}
-                placeholder="Add a note…"
-                className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500"
-              />
-              <button
-                onClick={submitActivity}
-                disabled={!activityNote.trim() || addingActivity}
-                className="px-3 py-1.5 text-sm font-medium bg-primary-800 text-white rounded-lg hover:bg-primary-700 disabled:opacity-40 transition-colors"
-              >
-                {addingActivity ? '…' : 'Add'}
-              </button>
-            </div>
-            {activities.length === 0 ? (
-              <p className="text-xs text-gray-400 italic">No activity yet</p>
-            ) : (
-              <ul className="space-y-2">
-                {[...activities].reverse().map((a, i) => (
-                  <li key={i} className="text-sm">
-                    <span className="block text-xs text-gray-400 mb-0.5">{formatActivityTs(a.timestamp)}</span>
-                    <span className="text-gray-700">{a.note}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-
-        {/* Documents */}
-        <div className="px-6 pb-5">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Documents</h3>
-          {prop.deal_id ? (
-            <DocumentsPanel dealId={prop.deal_id} />
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {pinned.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center mt-8">
+              No pinned leads yet.<br />Click the pin icon on any hit.
+            </p>
           ) : (
-            <div className="flex items-center justify-center py-6 border border-dashed border-gray-200 rounded-xl bg-gray-50">
-              <p className="text-xs text-gray-400 text-center px-4">
-                Start Underwriting to enable<br />document storage
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 space-y-2">
-          {prop.deal_id ? (
-            <Link
-              to={`/underwriting?dealId=${prop.deal_id}`}
-              onClick={onClose}
-              className="block w-full py-2 text-sm font-medium text-center bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
-            >
-              View Underwriting →
-            </Link>
-          ) : (
-            <>
-              <button
-                onClick={onStartUnderwriting}
-                disabled={!canUw || startingUw}
-                className="w-full py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-              >
-                {startingUw
-                  ? <><Loader2 size={14} className="animate-spin" /> Starting…</>
-                  : 'Start Underwriting'
-                }
-              </button>
-              {!canUw && (
-                <p className="text-xs text-center text-gray-400">
-                  Status must be "In Conversation" or "LOI"
-                </p>
-              )}
-            </>
+            pinned.map((h) => {
+              const market = markets.find((m) => m.id === h.market_id);
+              return (
+                <div key={h.id} className="border border-gray-200 rounded-lg p-4 relative">
+                  <button
+                    onClick={() => onUnpin(h)}
+                    className="absolute top-3 right-3 text-gray-300 hover:text-red-400 transition-colors"
+                    aria-label="Unpin"
+                  >
+                    <X size={14} />
+                  </button>
+                  <div className="pr-5 mb-2">
+                    <p className="text-sm font-medium text-gray-800 leading-snug">{h.address}</p>
+                    <p className="text-xs text-gray-400">{market?.name}</p>
+                  </div>
+                  <div className="flex items-center gap-2 mb-3 flex-wrap">
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary-50 text-primary-800 border border-primary-200">
+                      {sourceLabel(h.source, defs)}
+                    </span>
+                    {h.stacked_count >= 2 && (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                        {h.stacked_count} signals matched
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Notes</label>
+                    <textarea
+                      rows={3}
+                      defaultValue={h.note}
+                      placeholder="Add notes…"
+                      onBlur={(e) => onNoteChange(h, e.target.value)}
+                      className="w-full text-sm px-2.5 py-2 border border-gray-200 rounded-md resize-none focus:outline-none focus:border-primary-500 text-gray-700 placeholder-gray-300"
+                    />
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       </div>
@@ -1472,756 +114,661 @@ const PropertyDetailPanel = ({ prop, onClose, onEdit, onStartUnderwriting, start
   );
 };
 
-// ── Main Sourcing component ───────────────────────────────────────────────────
+// ── Hit card ─────────────────────────────────────────────────────────────────
 
-function addressMatch(a: string, b: string): boolean {
-  const norm = (s: string) =>
-    s.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-  const na = norm(a);
-  const nb = norm(b);
-  if (!na || !nb) return false;
-  if (na.includes(nb) || nb.includes(na)) return true;
-  const ta = new Set(na.split(' '));
-  const tb = nb.split(' ');
-  const shared = tb.filter(t => t.length > 2 && ta.has(t)).length;
-  return shared >= 2;
+interface HitCardProps {
+  hit: SignalHit;
+  market?: SignalMarket;
+  defs: SignalDefinition[];
+  expanded: boolean;
+  onToggle: () => void;
+  onPin: () => void;
+  onNoteChange: (note: string) => void;
 }
 
-const Sourcing = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const addressParam = searchParams.get('address') ?? '';
-  const uploadedPropertyId = searchParams.get('uploadedPropertyId');
-  const uploadedMarket = searchParams.get('uploadedMarket');
-  const [uploadBanner, setUploadBanner] = useState<string | null>(null);
-  const [uploadedProp, setUploadedProp] = useState<SourcingProperty | null>(null);
-  const [errorBanner, setErrorBanner] = useState<string | null>(null);
-
-  const [view, setView] = useState<'list' | 'detail'>('list');
-  const [markets, setMarkets] = useState<MarketEntry[]>([]);
-  const [gps, setGps] = useState<GP[]>([]);
-  const [selectedMarket, setSelectedMarket] = useState<MarketEntry | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>('properties');
-  const [data, setData] = useState<SourcingData>({ properties: [], brokers: [], operators: [] });
-  const [loading, setLoading] = useState(true);
-
-  // Modal state
-  const [showAddProp, setShowAddProp] = useState(false);
-  const [editProp, setEditProp] = useState<SourcingProperty | null>(null);
-  const [showAddBroker, setShowAddBroker] = useState(false);
-  const [editBroker, setEditBroker] = useState<SourcingBroker | null>(null);
-  const [showAddOperator, setShowAddOperator] = useState(false);
-  const [editOperator, setEditOperator] = useState<SourcingOperator | null>(null);
-  const [showImport, setShowImport] = useState(false);
-  const [showImportDeal, setShowImportDeal] = useState(false);
-  const [showImportOM, setShowImportOM] = useState(false);
-  const [showAddMenu, setShowAddMenu] = useState(false);
-  const addMenuRef = useRef<HTMLDivElement>(null);
-  const [startingUwId, setStartingUwId] = useState<string | null>(null);
-
-  // Detail panel
-  const [selectedProp, setSelectedProp] = useState<SourcingProperty | null>(null);
-
-  // Market sidebar state
-  const [showAddMarket, setShowAddMarket] = useState(false);
-  const [newMarketInput, setNewMarketInput] = useState('');
-
-  const highlightPropId = useMemo(() => {
-    if (!addressParam) return null;
-    const match = data.properties.find(p => addressMatch(addressParam, p.address));
-    return match?.id ?? null;
-  }, [addressParam, data.properties]);
-
-  // ── On mount ───────────────────────────────────────────────────────────────
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const [dbMarkets, dbProps, dbBrokers, dbOps] = await Promise.all([
-          sourcingApi.fetchMarkets(),
-          sourcingApi.fetchProperties(),
-          sourcingApi.fetchBrokers(),
-          sourcingApi.fetchOperators(),
-        ]);
-
-        const dbIsEmpty = dbMarkets.length === 0 && dbProps.length === 0 &&
-          dbBrokers.length === 0 && dbOps.length === 0;
-
-        if (dbIsEmpty) {
-          const lsMarketsRaw = localStorage.getItem(LS_MARKETS);
-          const lsDataRaw = localStorage.getItem(LS_DATA);
-
-          let migratedMarkets = dbMarkets;
-          let migratedProps = dbProps;
-          let migratedBrokers = dbBrokers;
-          let migratedOps = dbOps;
-
-          if (lsMarketsRaw) {
-            try {
-              const lsMarkets: MarketEntry[] = JSON.parse(lsMarketsRaw);
-              if (lsMarkets.length > 0) {
-                await Promise.all(lsMarkets.map(m => sourcingApi.createMarket(m)));
-                migratedMarkets = lsMarkets;
-              }
-            } catch { /* ignore */ }
-            localStorage.removeItem(LS_MARKETS);
-          }
-
-          if (lsDataRaw) {
-            try {
-              const lsData = JSON.parse(lsDataRaw);
-              const props: SourcingProperty[] = lsData.properties || [];
-              const brokers: SourcingBroker[] = lsData.brokers || [];
-              const ops: SourcingOperator[] = lsData.operators || [];
-              if (props.length > 0)   { await sourcingApi.bulkCreateProperties(props);  migratedProps   = props; }
-              if (brokers.length > 0) { await sourcingApi.bulkCreateBrokers(brokers);   migratedBrokers = brokers; }
-              if (ops.length > 0)     { await sourcingApi.bulkCreateOperators(ops);     migratedOps     = ops; }
-            } catch { /* ignore */ }
-            localStorage.removeItem(LS_DATA);
-          }
-
-          if (migratedMarkets.length === 0) {
-            await Promise.all(DEFAULT_MARKETS.map(m => sourcingApi.createMarket(m)));
-            migratedMarkets = DEFAULT_MARKETS;
-          }
-
-          setMarkets(migratedMarkets);
-          setData({ properties: migratedProps, brokers: migratedBrokers, operators: migratedOps });
-          setSelectedMarket(migratedMarkets[0] ?? null);
-        } else {
-          localStorage.removeItem(LS_MARKETS);
-          localStorage.removeItem(LS_DATA);
-          setMarkets(dbMarkets);
-          setData({ properties: dbProps, brokers: dbBrokers, operators: dbOps });
-          setSelectedMarket(dbMarkets[0] ?? null);
-        }
-      } catch { /* network error */ }
-      setLoading(false);
-    };
-    init();
-    gpApi.getAllGPs().then(setGps).catch(() => {});
-  }, []);
-
-  // Pick up a property saved via the global "Upload Deal" button while this page
-  // was already mounted (its own in-memory state wouldn't otherwise learn about it).
-  useEffect(() => {
-    if (!uploadedPropertyId) return;
-    (async () => {
-      const [freshProps, freshMarkets, freshOperators, freshBrokers] = await Promise.all([
-        sourcingApi.fetchProperties().catch(() => null),
-        sourcingApi.fetchMarkets().catch(() => null),
-        sourcingApi.fetchOperators().catch(() => null),
-        sourcingApi.fetchBrokers().catch(() => null),
-      ]);
-      setData(prev => ({
-        properties: freshProps ?? prev.properties,
-        operators: freshOperators ?? prev.operators,
-        brokers: freshBrokers ?? prev.brokers,
-      }));
-      if (freshMarkets) setMarkets(freshMarkets);
-
-      if (uploadedMarket) {
-        const landedMarket = freshMarkets?.find(m => m.name === uploadedMarket);
-        if (landedMarket) {
-          setSelectedMarket(landedMarket);
-          setView('detail');
-        }
-      }
-
-      const foundProp = freshProps?.find(p => p.id === uploadedPropertyId);
-      if (foundProp) {
-        setUploadedProp(foundProp);
-      } else {
-        setUploadBanner(uploadedMarket ? `Deal uploaded to Sourcing → ${uploadedMarket}` : 'Deal uploaded to Sourcing');
-        setTimeout(() => setUploadBanner(null), 6000);
-      }
-
-      setSearchParams(prev => {
-        const next = new URLSearchParams(prev);
-        next.delete('uploadedPropertyId');
-        next.delete('uploadedMarket');
-        return next;
-      }, { replace: true });
-    })();
-  }, [uploadedPropertyId]);
-
-  // ── Geocode ────────────────────────────────────────────────────────────────
-  const handleGeocode = useCallback((id: string, lat: number, lng: number) => {
-    setData(prev => ({
-      ...prev,
-      properties: prev.properties.map(p => p.id === id ? { ...p, lat, lng } : p),
-    }));
-    sourcingApi.updateProperty(id, { lat, lng }).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
-        setShowAddMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  // ── Property CRUD ──────────────────────────────────────────────────────────
-  const saveProp = async (p: SourcingProperty) => {
-    try {
-      if (data.properties.some(x => x.id === p.id)) {
-        const updated = await sourcingApi.updateProperty(p.id, p);
-        setData(prev => ({ ...prev, properties: prev.properties.map(x => x.id === p.id ? updated : x) }));
-        setSelectedProp(prev => prev?.id === p.id ? updated : prev);
-      } else {
-        const created = await sourcingApi.createProperty(p);
-        setData(prev => ({ ...prev, properties: [...prev.properties, created] }));
-      }
-      setShowAddProp(false);
-      setEditProp(null);
-    } catch (e: any) {
-      setErrorBanner(e.message || 'Failed to save property');
-      throw e;
-    }
-  };
-
-  const deleteProp = (id: string) => {
-    setData(prev => ({ ...prev, properties: prev.properties.filter(p => p.id !== id) }));
-    setSelectedProp(prev => prev?.id === id ? null : prev);
-    sourcingApi.deleteProperty(id).catch(() => {});
-  };
-
-  // ── Broker CRUD ────────────────────────────────────────────────────────────
-  const saveBroker = async (b: SourcingBroker) => {
-    try {
-      if (data.brokers.some(x => x.id === b.id)) {
-        const updated = await sourcingApi.updateBroker(b.id, b);
-        setData(prev => ({ ...prev, brokers: prev.brokers.map(x => x.id === b.id ? updated : x) }));
-      } else {
-        const created = await sourcingApi.createBroker(b);
-        setData(prev => ({ ...prev, brokers: [...prev.brokers, created] }));
-      }
-      setShowAddBroker(false);
-      setEditBroker(null);
-    } catch (e: any) {
-      setErrorBanner(e.message || 'Failed to save broker');
-      throw e;
-    }
-  };
-
-  const deleteBroker = (id: string) => {
-    setData(prev => ({ ...prev, brokers: prev.brokers.filter(b => b.id !== id) }));
-    sourcingApi.deleteBroker(id).catch(() => {});
-  };
-
-  // ── Operator CRUD ──────────────────────────────────────────────────────────
-  const saveOperator = async (o: SourcingOperator) => {
-    try {
-      if (data.operators.some(x => x.id === o.id)) {
-        const updated = await sourcingApi.updateOperator(o.id, o);
-        setData(prev => ({ ...prev, operators: prev.operators.map(x => x.id === o.id ? updated : x) }));
-      } else {
-        const created = await sourcingApi.createOperator(o);
-        setData(prev => ({ ...prev, operators: [...prev.operators, created] }));
-      }
-      setShowAddOperator(false);
-      setEditOperator(null);
-    } catch (e: any) {
-      setErrorBanner(e.message || 'Failed to save operator');
-      throw e;
-    }
-  };
-
-  const deleteOperator = (id: string) => {
-    setData(prev => ({ ...prev, operators: prev.operators.filter(o => o.id !== id) }));
-    sourcingApi.deleteOperator(id).catch(() => {});
-  };
-
-  // ── Start Underwriting ─────────────────────────────────────────────────────
-  const startUnderwriting = async (p: SourcingProperty) => {
-    if (p.deal_id) {
-      navigate(`/underwriting?dealId=${p.deal_id}`);
-      return;
-    }
-
-    setStartingUwId(p.id);
-    try {
-      let purchasePrice: number | undefined;
-      const askingMatch = (p.notes || '').match(/Asking:\s*\$?([\d,]+)/i);
-      if (askingMatch) {
-        const parsed = parseInt(askingMatch[1].replace(/,/g, ''), 10);
-        if (parsed > 0) purchasePrice = parsed;
-      }
-
-      const deal = await dealApi.createDeal({
-        dealName: p.address || 'Untitled Deal',
-        location: p.market || '',
-        propertyAddress: p.address || '',
-        status: 'potential',
-        purchasePrice,
-        gpId: p.gp_id ?? null,
-        underwritingJson: JSON.stringify({ totalUnits: p.units || 0 }),
-      });
-
-      if (!deal.id) throw new Error('No deal ID returned');
-
-      await sourcingApi.updateProperty(p.id, { deal_id: deal.id });
-      setData(prev => ({
-        ...prev,
-        properties: prev.properties.map(x => x.id === p.id ? { ...x, deal_id: deal.id ?? null } : x),
-      }));
-      setSelectedProp(prev => prev?.id === p.id ? { ...prev, deal_id: deal.id ?? null } : prev);
-
-      navigate(`/underwriting?dealId=${deal.id}&reviewOm=1`);
-    } catch {
-      // Silently swallow — button re-enables
-    } finally {
-      setStartingUwId(null);
-    }
-  };
-
-  // ── Import ─────────────────────────────────────────────────────────────────
-  const handleImport = (items: any[]) => {
-    if (activeTab === 'properties') {
-      const typed = items as SourcingProperty[];
-      setData(prev => ({ ...prev, properties: [...prev.properties, ...typed] }));
-      sourcingApi.bulkCreateProperties(typed).catch(() => {});
-    } else if (activeTab === 'brokers') {
-      const typed = items as SourcingBroker[];
-      setData(prev => ({ ...prev, brokers: [...prev.brokers, ...typed] }));
-      sourcingApi.bulkCreateBrokers(typed).catch(() => {});
-    } else {
-      const typed = items as SourcingOperator[];
-      setData(prev => ({ ...prev, operators: [...prev.operators, ...typed] }));
-      sourcingApi.bulkCreateOperators(typed).catch(() => {});
-    }
-    setShowImport(false);
-  };
-
-  // ── Market CRUD ────────────────────────────────────────────────────────────
-  const addMarket = async () => {
-    const name = newMarketInput.trim();
-    if (!name) return;
-    const entry: MarketEntry = { id: Date.now().toString(), name };
-    setMarkets(prev => [...prev, entry]);
-    setNewMarketInput('');
-    setShowAddMarket(false);
-    setSelectedMarket(entry);
-    setView('detail');
-    sourcingApi.createMarket(entry).catch(() => {});
-  };
-
-  const removeMarket = (id: string) => {
-    const updated = markets.filter(m => m.id !== id);
-    setMarkets(updated);
-    if (selectedMarket?.id === id) setSelectedMarket(updated[0] ?? null);
-    sourcingApi.deleteMarket(id).catch(() => {});
-  };
-
-  // ── Derived ────────────────────────────────────────────────────────────────
-  const filterByMarket = <T extends { market: string }>(items: T[]) =>
-    selectedMarket ? items.filter(i => i.market === selectedMarket.name) : items;
-
-  const filteredProps    = filterByMarket(data.properties);
-  const filteredBrokers  = filterByMarket(data.brokers);
-  const filteredOps      = filterByMarket(data.operators);
-  const currentMarket    = selectedMarket?.name ?? 'all markets';
-
-  const tabConfig: Record<Tab, { label: string; icon: React.ReactNode; count: number }> = {
-    properties: { label: 'Properties', icon: <Building2 size={15} />, count: filteredProps.length },
-    brokers:    { label: 'Brokers',    icon: <Users size={15} />,     count: filteredBrokers.length },
-    operators:  { label: 'Operators',  icon: <Briefcase size={15} />, count: filteredOps.length },
-  };
-
-  const addLabel = activeTab === 'properties' ? 'Add Property' : activeTab === 'brokers' ? 'Add Broker' : 'Add Operator';
-  const handleAdd = () => {
-    if (activeTab === 'properties') setShowAddProp(true);
-    else if (activeTab === 'brokers') setShowAddBroker(true);
-    else setShowAddOperator(true);
-  };
-
-  // ── Render ─────────────────────────────────────────────────────────────────
-
-  const uploadBannerEl = uploadBanner && (
-    <div className="fixed top-4 right-4 z-[60] flex items-center gap-2 px-4 py-3 bg-primary-800 text-white rounded-lg shadow-lg text-sm font-medium max-w-sm">
-      <CheckCircle size={16} className="flex-shrink-0" />
-      <span>{uploadBanner}</span>
-      <button onClick={() => setUploadBanner(null)} className="ml-2 text-white/70 hover:text-white flex-shrink-0">
-        <X size={14} />
-      </button>
-    </div>
-  );
-
-  const uwPromptEl = uploadedProp && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-        <div className="flex items-center gap-2 mb-3 text-primary-800">
-          <CheckCircle size={18} className="flex-shrink-0" />
-          <h2 className="text-base font-semibold text-gray-800">Deal Uploaded</h2>
+const HitCard = ({ hit, market, defs, expanded, onToggle, onPin, onNoteChange }: HitCardProps) => {
+  return (
+    <div className={`p-5 hover:bg-gray-50 transition-colors border-b border-gray-100 ${hit.stacked_count >= 2 ? 'border-l-2 border-amber-400' : ''}`}>
+      <div className="flex items-start justify-between cursor-pointer" onClick={onToggle}>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <h3 className="font-medium text-gray-800">{hit.address || 'Unknown address'}</h3>
+            {hit.stacked_count >= 2 && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
+                <Layers size={11} /> {hit.stacked_count} signals matched
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary-50 text-primary-800 border border-primary-200">
+              {sourceLabel(hit.source, defs)}
+            </span>
+            <span className="text-xs text-gray-400">{market?.name ?? hit.market_id}</span>
+            <span className="text-xs text-gray-400">Seen {formatTimestamp(hit.last_seen_at)}</span>
+          </div>
+          {expanded && (
+            <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm text-gray-600">
+              <div><span className="text-gray-400">Owner:</span> {hit.owner_name || '—'}</div>
+              <div><span className="text-gray-400">Mailing address:</span> {hit.owner_mailing_address || '—'}</div>
+              <div><span className="text-gray-400">Units:</span> {hit.unit_count ?? '—'}</div>
+              <div><span className="text-gray-400">Assessed value:</span> {formatCurrency(hit.assessed_value)}</div>
+              {hit.listing_price != null && (
+                <div><span className="text-gray-400">Listing price:</span> {formatCurrency(hit.listing_price)}</div>
+              )}
+              {hit.listing_broker && (
+                <div><span className="text-gray-400">Broker:</span> {hit.listing_broker}</div>
+              )}
+              {hit.listing_url && (
+                <div className="col-span-2">
+                  <a href={hit.listing_url} target="_blank" rel="noreferrer" className="text-primary-800 hover:text-primary-700">
+                    View listing →
+                  </a>
+                </div>
+              )}
+              <div className="col-span-2 mt-2">
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Notes</label>
+                <textarea
+                  rows={2}
+                  defaultValue={hit.note}
+                  placeholder="Add notes…"
+                  onClick={(e) => e.stopPropagation()}
+                  onBlur={(e) => onNoteChange(e.target.value)}
+                  className="w-full text-sm px-2.5 py-2 border border-gray-200 rounded-md resize-none focus:outline-none focus:border-primary-500 text-gray-700 placeholder-gray-300"
+                />
+              </div>
+            </div>
+          )}
         </div>
-        <p className="text-sm text-gray-600 mb-6">
-          Deal uploaded to Sourcing → <span className="font-medium text-gray-800">{uploadedProp.market || 'Unassigned'}</span>.
-          {' '}Would you like to start underwriting this deal now?
-        </p>
-        <div className="flex justify-end gap-2">
+        <div className="flex items-center gap-2 ml-4" onClick={(e) => e.stopPropagation()}>
           <button
-            onClick={() => setUploadedProp(null)}
-            disabled={startingUwId === uploadedProp.id}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            onClick={onPin}
+            className={`p-1 rounded transition-colors ${hit.pinned ? 'text-primary-800 hover:text-primary-700' : 'text-gray-300 hover:text-primary-800'}`}
+            aria-label={hit.pinned ? 'Unpin' : 'Pin'}
           >
-            Not now
+            {hit.pinned ? <Pin size={15} /> : <PinOff size={15} />}
           </button>
-          <button
-            onClick={() => startUnderwriting(uploadedProp)}
-            disabled={startingUwId === uploadedProp.id}
-            className="px-4 py-2 text-sm font-medium text-white bg-primary-800 rounded-lg hover:bg-primary-700 disabled:opacity-60 transition-colors"
-          >
-            {startingUwId === uploadedProp.id ? 'Starting…' : 'Start Underwriting'}
-          </button>
+          {expanded ? <ChevronUp size={18} className="text-gray-400" /> : <ChevronDown size={18} className="text-gray-400" />}
         </div>
       </div>
     </div>
   );
+};
 
-  const errorBannerEl = errorBanner && (
-    <div className="fixed top-4 right-4 z-[60] flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg shadow-lg text-sm font-medium max-w-sm">
-      <AlertCircle size={16} className="flex-shrink-0" />
-      <span>{errorBanner}</span>
-      <button onClick={() => setErrorBanner(null)} className="ml-2 text-white/70 hover:text-white flex-shrink-0">
-        <X size={14} />
+// ── Market feed config ──────────────────────────────────────────────────────
+// Configures the ArcGIS/Socrata feed URL + field mapping that lets the
+// absentee_owner / code_violations connectors run against a real county/city
+// open-data source. See signal_connectors.py for how these are consumed.
+
+function parseMapping(json?: string | null): Record<string, string> {
+  try { return json ? JSON.parse(json) : {}; } catch { return {}; }
+}
+
+interface MarketFeedConfigProps {
+  market: SignalMarket;
+  onSave: (patch: MarketFeedPayload) => Promise<void>;
+}
+
+const MarketFeedConfig = ({ market, onSave }: MarketFeedConfigProps) => {
+  const initialAssessor = parseMapping(market.assessor_field_mapping);
+  const initialCode = parseMapping(market.code_violations_field_mapping);
+  const initialTax = parseMapping(market.tax_delinquent_field_mapping);
+
+  const [form, setForm] = useState({
+    assessorFeedType: market.assessor_feed_type || '',
+    assessorFeedUrl: market.assessor_feed_url || '',
+    assessorOwnerName: initialAssessor.owner_name || '',
+    assessorMailingAddress: initialAssessor.mailing_address || '',
+    assessorSitusAddress: initialAssessor.situs_address || '',
+    assessorUnits: initialAssessor.units || '',
+    assessorSaleDate: initialAssessor.sale_date || '',
+    assessorAssessedValue: initialAssessor.assessed_value || '',
+    codeFeedType: market.code_violations_feed_type || '',
+    codeFeedUrl: market.code_violations_feed_url || '',
+    codeAddress: initialCode.address || '',
+    codeUnits: initialCode.units || '',
+    taxFeedType: market.tax_delinquent_feed_type || '',
+    taxFeedUrl: market.tax_delinquent_feed_url || '',
+    taxOwnerName: initialTax.owner_name || '',
+    taxAddress: initialTax.address || '',
+    taxUnits: initialTax.units || '',
+    taxAssessedValue: initialTax.assessed_value || '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const update = (field: keyof typeof form, value: string) => setForm((f) => ({ ...f, [field]: value }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const assessorMapping: Record<string, string> = {};
+      if (form.assessorOwnerName) assessorMapping.owner_name = form.assessorOwnerName;
+      if (form.assessorMailingAddress) assessorMapping.mailing_address = form.assessorMailingAddress;
+      if (form.assessorSitusAddress) assessorMapping.situs_address = form.assessorSitusAddress;
+      if (form.assessorUnits) assessorMapping.units = form.assessorUnits;
+      if (form.assessorSaleDate) assessorMapping.sale_date = form.assessorSaleDate;
+      if (form.assessorAssessedValue) assessorMapping.assessed_value = form.assessorAssessedValue;
+
+      const codeMapping: Record<string, string> = {};
+      if (form.codeAddress) codeMapping.address = form.codeAddress;
+      if (form.codeUnits) codeMapping.units = form.codeUnits;
+
+      const taxMapping: Record<string, string> = {};
+      if (form.taxOwnerName) taxMapping.owner_name = form.taxOwnerName;
+      if (form.taxAddress) taxMapping.address = form.taxAddress;
+      if (form.taxUnits) taxMapping.units = form.taxUnits;
+      if (form.taxAssessedValue) taxMapping.assessed_value = form.taxAssessedValue;
+
+      await onSave({
+        assessor_feed_url: form.assessorFeedUrl || null,
+        assessor_feed_type: (form.assessorFeedType || null) as SignalMarket['assessor_feed_type'],
+        assessor_field_mapping: form.assessorFeedUrl && Object.keys(assessorMapping).length ? assessorMapping : null,
+        tax_delinquent_feed_url: form.taxFeedUrl || null,
+        tax_delinquent_feed_type: (form.taxFeedType || null) as SignalMarket['tax_delinquent_feed_type'],
+        tax_delinquent_field_mapping: form.taxFeedUrl && Object.keys(taxMapping).length ? taxMapping : null,
+        code_violations_feed_url: form.codeFeedUrl || null,
+        code_violations_feed_type: (form.codeFeedType || null) as SignalMarket['code_violations_feed_type'],
+        code_violations_field_mapping: form.codeFeedUrl && Object.keys(codeMapping).length ? codeMapping : null,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectClass = 'text-sm px-2.5 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:border-primary-500';
+  const inputClass = 'text-sm px-2.5 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:border-primary-500';
+  const smallInputClass = 'text-xs px-2 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:border-primary-500';
+
+  return (
+    <div className="px-3 pb-3 pt-1 bg-gray-50 border border-t-0 border-gray-100 rounded-b-md space-y-4">
+      <div>
+        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 mt-2">
+          Assessor / Parcel Feed <span className="normal-case font-normal text-gray-400">(powers Absentee / Long-Hold Owner)</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <select value={form.assessorFeedType} onChange={(e) => update('assessorFeedType', e.target.value)} className={selectClass}>
+            <option value="">Feed type…</option>
+            <option value="arcgis">ArcGIS FeatureServer/MapServer</option>
+            <option value="socrata">Socrata SODA API</option>
+          </select>
+          <input value={form.assessorFeedUrl} onChange={(e) => update('assessorFeedUrl', e.target.value)} placeholder="Feed URL" className={inputClass} />
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <input value={form.assessorOwnerName} onChange={(e) => update('assessorOwnerName', e.target.value)} placeholder="owner_name field" className={smallInputClass} />
+          <input value={form.assessorMailingAddress} onChange={(e) => update('assessorMailingAddress', e.target.value)} placeholder="mailing_address field" className={smallInputClass} />
+          <input value={form.assessorSitusAddress} onChange={(e) => update('assessorSitusAddress', e.target.value)} placeholder="situs_address field" className={smallInputClass} />
+          <input value={form.assessorUnits} onChange={(e) => update('assessorUnits', e.target.value)} placeholder="units field" className={smallInputClass} />
+          <input value={form.assessorSaleDate} onChange={(e) => update('assessorSaleDate', e.target.value)} placeholder="sale_date field" className={smallInputClass} />
+          <input value={form.assessorAssessedValue} onChange={(e) => update('assessorAssessedValue', e.target.value)} placeholder="assessed_value field" className={smallInputClass} />
+        </div>
+      </div>
+      <div>
+        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Code Violations Feed</div>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <select value={form.codeFeedType} onChange={(e) => update('codeFeedType', e.target.value)} className={selectClass}>
+            <option value="">Feed type…</option>
+            <option value="arcgis">ArcGIS FeatureServer/MapServer</option>
+            <option value="socrata">Socrata SODA API</option>
+          </select>
+          <input value={form.codeFeedUrl} onChange={(e) => update('codeFeedUrl', e.target.value)} placeholder="Feed URL" className={inputClass} />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <input value={form.codeAddress} onChange={(e) => update('codeAddress', e.target.value)} placeholder="address field" className={smallInputClass} />
+          <input value={form.codeUnits} onChange={(e) => update('codeUnits', e.target.value)} placeholder="units field (optional)" className={smallInputClass} />
+        </div>
+      </div>
+      <div>
+        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+          Tax Delinquent Feed <span className="normal-case font-normal text-gray-400">(live feed — where available; otherwise use the CSV upload button instead)</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <select value={form.taxFeedType} onChange={(e) => update('taxFeedType', e.target.value)} className={selectClass}>
+            <option value="">Feed type…</option>
+            <option value="arcgis">ArcGIS FeatureServer/MapServer</option>
+            <option value="socrata">Socrata SODA API</option>
+          </select>
+          <input value={form.taxFeedUrl} onChange={(e) => update('taxFeedUrl', e.target.value)} placeholder="Feed URL" className={inputClass} />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <input value={form.taxOwnerName} onChange={(e) => update('taxOwnerName', e.target.value)} placeholder="owner_name field" className={smallInputClass} />
+          <input value={form.taxAddress} onChange={(e) => update('taxAddress', e.target.value)} placeholder="address field" className={smallInputClass} />
+          <input value={form.taxUnits} onChange={(e) => update('taxUnits', e.target.value)} placeholder="units field (optional)" className={smallInputClass} />
+          <input value={form.taxAssessedValue} onChange={(e) => update('taxAssessedValue', e.target.value)} placeholder="assessed/tax amount field (optional)" className={smallInputClass} />
+        </div>
+      </div>
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="px-3 py-1.5 text-sm bg-primary-800 text-white rounded-md hover:bg-primary-700 transition-colors disabled:opacity-50"
+      >
+        {saving ? 'Saving…' : 'Save feed config'}
       </button>
     </div>
   );
+};
 
-  if (view === 'list') {
-    return (
-      <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
-        {uploadBannerEl}
-        {uwPromptEl}
-        {errorBannerEl}
-        <div className="mb-6">
-          <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700">Sourcing</h1>
-          <p className="text-sm text-gray-500 mt-1">Track properties, brokers, and operators by market</p>
+// ── Main page ────────────────────────────────────────────────────────────────
+
+const Sourcing = () => {
+  const [markets, setMarkets] = useState<SignalMarket[]>([]);
+  const [defs, setDefs] = useState<SignalDefinition[]>([]);
+  const [hits, setHits] = useState<SignalHit[]>([]);
+  // Pinned hits are tracked separately from the (market/source-filtered) `hits` list above —
+  // otherwise switching a filter would make a pinned hit outside that filter vanish from the
+  // Pinned drawer even though it's still pinned in the database.
+  const [pinnedHits, setPinnedHits] = useState<SignalHit[]>([]);
+  const [digestCount, setDigestCount] = useState(0);
+
+  const [filterMarketId, setFilterMarketId] = useState<string>('all');
+  const [filterSource, setFilterSource] = useState<string>('all');
+  const [stackedOnly, setStackedOnly] = useState(false);
+
+  const [expandedHitId, setExpandedHitId] = useState<string | null>(null);
+  const [pinDrawerOpen, setPinDrawerOpen] = useState(false);
+  const [showSignalPanel, setShowSignalPanel] = useState(false);
+  const [showMarketEditor, setShowMarketEditor] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [newMarketName, setNewMarketName] = useState('');
+  const [newMarketCity, setNewMarketCity] = useState('');
+  const [newMarketState, setNewMarketState] = useState('');
+  const csvInputRef = useRef<HTMLInputElement | null>(null);
+  const [csvUploadMarketId, setCsvUploadMarketId] = useState<string | null>(null);
+  const [feedConfigMarketId, setFeedConfigMarketId] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
+
+  const [hitsLoading, setHitsLoading] = useState(true);
+
+  const refreshHits = useCallback(async () => {
+    setHitsLoading(true);
+    try {
+      const loaded = await signalsApi.fetchHits({
+        marketId: filterMarketId !== 'all' ? filterMarketId : undefined,
+        source: filterSource !== 'all' ? filterSource : undefined,
+        minStacked: stackedOnly ? 2 : undefined,
+      });
+      setHits(loaded);
+    } finally {
+      setHitsLoading(false);
+    }
+  }, [filterMarketId, filterSource, stackedOnly]);
+
+  const refreshPinnedHits = useCallback(async () => {
+    const loaded = await signalsApi.fetchHits({ pinned: true });
+    setPinnedHits(loaded);
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const [m, d] = await Promise.all([signalsApi.fetchMarkets(), signalsApi.fetchDefinitions()]);
+      setMarkets(m);
+      setDefs(d);
+      const digest = await signalsApi.fetchDigest();
+      setDigestCount(digest.count);
+      await refreshPinnedHits();
+      setInitialLoading(false);
+    })();
+  }, [refreshPinnedHits]);
+
+  useEffect(() => {
+    refreshHits();
+  }, [refreshHits]);
+
+  const handleScan = async (marketId?: string) => {
+    setScanning(true);
+    try {
+      await signalsApi.triggerScan(marketId);
+      await refreshHits();
+      const digest = await signalsApi.fetchDigest();
+      setDigestCount(digest.count);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Scan failed');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleToggleSignal = async (def: SignalDefinition) => {
+    if (def.stubbed) return;
+    try {
+      const updated = await signalsApi.updateDefinition(def.id, !def.enabled);
+      setDefs((prev) => prev.map((d) => (d.id === def.id ? updated : d)));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to update signal');
+    }
+  };
+
+  const handleAddMarket = async () => {
+    if (!newMarketName.trim()) return;
+    try {
+      const created = await signalsApi.createMarket({
+        name: newMarketName.trim(), city: newMarketCity.trim(), state: newMarketState.trim(),
+      });
+      setMarkets((prev) => [...prev, created]);
+      setNewMarketName(''); setNewMarketCity(''); setNewMarketState('');
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to add market');
+    }
+  };
+
+  const handleSaveFeedConfig = async (marketId: string, patch: MarketFeedPayload) => {
+    try {
+      const updated = await signalsApi.updateMarket(marketId, patch);
+      setMarkets((prev) => prev.map((m) => (m.id === marketId ? updated : m)));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to save feed config');
+    }
+  };
+
+  const handleDeleteMarket = async (id: string) => {
+    if (!confirm('Remove this market and all its hits?')) return;
+    try {
+      await signalsApi.deleteMarket(id);
+      setMarkets((prev) => prev.filter((m) => m.id !== id));
+      if (filterMarketId === id) setFilterMarketId('all');
+      await refreshHits();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to remove market');
+    }
+  };
+
+  // Keeps `hits` (filtered feed) and `pinnedHits` (unfiltered, drives the drawer) consistent
+  // after any pin/note change, regardless of which view triggered it.
+  const applyHitUpdate = (hitId: string, updated: SignalHit) => {
+    setHits((prev) => prev.map((h) => (h.id === hitId ? { ...updated, stacked_count: h.stacked_count } : h)));
+    setPinnedHits((prev) => {
+      const stackedCount = prev.find((h) => h.id === hitId)?.stacked_count
+        ?? hits.find((h) => h.id === hitId)?.stacked_count
+        ?? 1;
+      const withUpdate = { ...updated, stacked_count: stackedCount };
+      if (!updated.pinned) return prev.filter((h) => h.id !== hitId);
+      const exists = prev.some((h) => h.id === hitId);
+      return exists ? prev.map((h) => (h.id === hitId ? withUpdate : h)) : [withUpdate, ...prev];
+    });
+  };
+
+  const handlePinToggle = async (hit: SignalHit) => {
+    const updated = await signalsApi.updateHit(hit.id, { pinned: !hit.pinned });
+    applyHitUpdate(hit.id, updated);
+  };
+
+  const handleNoteChange = async (hit: SignalHit, note: string) => {
+    const updated = await signalsApi.updateHit(hit.id, { note });
+    applyHitUpdate(hit.id, updated);
+  };
+
+  const handleCsvFileChosen = async (file: File) => {
+    if (!csvUploadMarketId) return;
+    try {
+      const result = await signalsApi.importTaxDelinquent(csvUploadMarketId, file);
+      await refreshHits();
+      alert(`Imported ${result.created} new tax-delinquent hits.`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Import failed');
+    } finally {
+      setCsvUploadMarketId(null);
+      if (csvInputRef.current) csvInputRef.current.value = '';
+    }
+  };
+
+  const publicRecordsSignals = defs.filter((d) => d.category === 'public_records');
+  const inboxSignals = defs.filter((d) => d.category === 'inbox');
+  const allSources = defs.map((d) => d.key);
+
+  return (
+    <div className="max-w-6xl mx-auto px-6 py-8">
+      <input
+        ref={csvInputRef}
+        type="file"
+        accept=".csv,.xlsx,.xls"
+        className="hidden"
+        onChange={(e) => e.target.files?.[0] && handleCsvFileChosen(e.target.files[0])}
+      />
+
+      {/* Header */}
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-800">Sourcing Signals</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Public-records + HUD signals for off-market multifamily leads. Runs on-demand — click "Scan all" or scan a single market below.
+          </p>
         </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPinDrawerOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-md text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <Pin size={15} /> Pinned
+          </button>
+          <button
+            onClick={() => handleScan()}
+            disabled={scanning}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm bg-primary-800 text-white rounded-md hover:bg-primary-700 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={15} className={scanning ? 'animate-spin' : ''} /> {scanning ? 'Scanning…' : 'Scan all'}
+          </button>
+        </div>
+      </div>
 
-        {showAddMarket ? (
-          <div className="mb-6 bg-white rounded-xl border border-gray-200 p-4 shadow-sm max-w-sm">
-            <input
-              autoFocus type="text" placeholder="City, ST" value={newMarketInput}
-              onChange={e => setNewMarketInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') addMarket(); if (e.key === 'Escape') setShowAddMarket(false); }}
-              className="w-full text-sm px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500 mb-3"
-            />
-            <div className="flex gap-2">
-              <button onClick={addMarket} className="flex-1 text-sm py-1.5 bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium">Add</button>
-              <button onClick={() => setShowAddMarket(false)} className="flex-1 text-sm py-1.5 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+      {scanning && (
+        <div className="mb-6 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-500">
+          Scanning all markets and signals — the first scan after a backend restart can take up to a minute or two while the HUD national datasets download. Later scans in the same session are faster.
+        </div>
+      )}
+
+      {digestCount > 0 && (
+        <div className="mb-6 px-4 py-3 bg-primary-50 border border-primary-200 rounded-lg text-sm text-primary-800">
+          <strong>{digestCount}</strong> new hit{digestCount === 1 ? '' : 's'} in the last 7 days.
+        </div>
+      )}
+
+      {/* Signal toggle panel */}
+      <div className="mb-4 border border-gray-200 rounded-lg overflow-hidden">
+        <button
+          onClick={() => setShowSignalPanel((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+        >
+          <span className="flex items-center gap-2">
+            <Settings size={15} /> Signal library {initialLoading ? '(loading…)' : `(${defs.filter((d) => d.enabled).length} active)`}
+          </span>
+          {showSignalPanel ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
+        {showSignalPanel && (
+          <div className="p-4 space-y-4">
+            <div>
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Public Records</div>
+              <div className="grid grid-cols-2 gap-2">
+                {publicRecordsSignals.map((d) => (
+                  <label
+                    key={d.id}
+                    title={d.stubbed ? d.disabled_reason ?? undefined : undefined}
+                    className={`flex items-center gap-2 text-sm px-3 py-2 rounded-md border ${
+                      d.stubbed ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50' : 'border-gray-200 cursor-pointer hover:bg-gray-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={d.enabled}
+                      disabled={d.stubbed}
+                      onChange={() => handleToggleSignal(d)}
+                    />
+                    {d.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Inbox</div>
+              <div className="grid grid-cols-2 gap-2">
+                {inboxSignals.map((d) => (
+                  <label
+                    key={d.id}
+                    title={d.stubbed ? d.disabled_reason ?? undefined : undefined}
+                    className="flex items-center gap-2 text-sm px-3 py-2 rounded-md border border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed"
+                  >
+                    <input type="checkbox" checked={d.enabled} disabled />
+                    {d.label}
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
-        ) : (
-          <button
-            onClick={() => setShowAddMarket(true)}
-            className="mb-6 flex items-center gap-2 px-4 py-2 bg-primary-800 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
-          >
-            <Plus size={15} /> Add Market
-          </button>
         )}
+      </div>
 
-        {loading ? (
-          <p className="text-sm text-gray-400">Loading…</p>
-        ) : markets.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
-            <p>No markets yet. Add one to get started.</p>
-          </div>
-        ) : (
-          <div className="space-y-3 max-w-2xl">
-            {markets.map(m => {
-              const pCount = data.properties.filter(p => p.market === m.name).length;
-              const bCount = data.brokers.filter(b => b.market === m.name).length;
-              const oCount = data.operators.filter(o => o.market === m.name).length;
+      {/* Market editor */}
+      <div className="mb-6 border border-gray-200 rounded-lg overflow-hidden">
+        <button
+          onClick={() => setShowMarketEditor((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+        >
+          <span>Markets {initialLoading ? '(loading…)' : `(${markets.length})`}</span>
+          {showMarketEditor ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
+        {showMarketEditor && (
+          <div className="p-4 space-y-3">
+            {markets.map((m) => {
+              const feedsConfigured = !!(m.assessor_feed_url || m.code_violations_feed_url || m.tax_delinquent_feed_url);
+              const cityState = [m.city, m.state].filter(Boolean).join(', ');
+              const cityStateRedundant = !cityState || cityState === m.name;
               return (
-                <div
-                  key={m.id}
-                  onClick={() => { setSelectedMarket(m); setView('detail'); }}
-                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 cursor-pointer hover:border-primary-400 hover:shadow-md transition-all group"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4 flex-wrap">
-                      <h2 className="text-base font-semibold text-gray-800 group-hover:text-primary-700 transition-colors">{m.name}</h2>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="flex items-center gap-1 px-2.5 py-0.5 bg-gray-50 text-gray-700 border border-gray-200 rounded-full text-xs font-medium">
-                          <Building2 size={11} /> {pCount} Properties
-                        </span>
-                        <span className="flex items-center gap-1 px-2.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-full text-xs font-medium">
-                          <Users size={11} /> {bCount} Brokers
-                        </span>
-                        <span className="flex items-center gap-1 px-2.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-full text-xs font-medium">
-                          <Briefcase size={11} /> {oCount} Operators
-                        </span>
-                      </div>
+                <div key={m.id}>
+                  <div className="flex items-center justify-between px-3 py-2 border border-gray-100 rounded-md">
+                    <div>
+                      <span className="text-sm font-medium text-gray-800">{m.name}</span>
+                      {!cityStateRedundant && (
+                        <span className="text-xs text-gray-400 ml-2">{cityState}</span>
+                      )}
+                      {!feedsConfigured && (
+                        <span className="text-xs text-amber-600 ml-2">No feeds configured yet</span>
+                      )}
                     </div>
-                    <button
-                      onClick={e => { e.stopPropagation(); removeMarket(m.id); }}
-                      className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-opacity flex-shrink-0 ml-3"
-                    >
-                      <X size={14} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setFeedConfigMarketId(feedConfigMarketId === m.id ? null : m.id)}
+                        className={`text-xs px-2.5 py-1 border rounded flex items-center gap-1 transition-colors ${
+                          feedConfigMarketId === m.id ? 'border-primary-300 bg-primary-50 text-primary-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        <Sliders size={12} /> Configure feeds
+                      </button>
+                      <button
+                        onClick={() => handleScan(m.id)}
+                        disabled={scanning}
+                        className="text-xs px-2.5 py-1 border border-gray-200 rounded text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Scan now
+                      </button>
+                      <button
+                        onClick={() => { setCsvUploadMarketId(m.id); csvInputRef.current?.click(); }}
+                        className="text-xs px-2.5 py-1 border border-gray-200 rounded text-gray-600 hover:bg-gray-50 flex items-center gap-1"
+                      >
+                        <Upload size={12} /> Tax-delinquent CSV
+                      </button>
+                      <button
+                        onClick={() => handleDeleteMarket(m.id)}
+                        className="text-gray-300 hover:text-red-400 transition-colors"
+                        aria-label="Remove market"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
+                  {feedConfigMarketId === m.id && (
+                    <MarketFeedConfig market={m} onSave={(patch) => handleSaveFeedConfig(m.id, patch)} />
+                  )}
                 </div>
               );
             })}
+            <div className="flex items-center gap-2 pt-2">
+              <input
+                value={newMarketName}
+                onChange={(e) => setNewMarketName(e.target.value)}
+                placeholder="Market name (e.g. Tampa, FL)"
+                className="flex-1 text-sm px-2.5 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:border-primary-500"
+              />
+              <input
+                value={newMarketCity}
+                onChange={(e) => setNewMarketCity(e.target.value)}
+                placeholder="City"
+                className="w-28 text-sm px-2.5 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:border-primary-500"
+              />
+              <input
+                value={newMarketState}
+                onChange={(e) => setNewMarketState(e.target.value)}
+                placeholder="State"
+                className="w-20 text-sm px-2.5 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:border-primary-500"
+              />
+              <button
+                onClick={handleAddMarket}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-primary-800 text-white rounded-md hover:bg-primary-700 transition-colors"
+              >
+                <Plus size={14} /> Add
+              </button>
+            </div>
           </div>
         )}
       </div>
-    );
-  }
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex">
-      {uploadBannerEl}
-      {uwPromptEl}
-      {errorBannerEl}
-      {/* Left sidebar */}
-      <div className="w-48 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
-        <button
-          onClick={() => setView('list')}
-          className="flex items-center gap-1.5 px-4 py-3 text-sm text-gray-500 hover:text-gray-800 border-b border-gray-200 transition-colors"
+      {/* Filters */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <select
+          value={filterMarketId}
+          onChange={(e) => setFilterMarketId(e.target.value)}
+          className="text-sm px-2.5 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:border-primary-500"
         >
-          <ArrowLeft size={14} /> All Markets
+          <option value="all">All markets</option>
+          {markets.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
+        <select
+          value={filterSource}
+          onChange={(e) => setFilterSource(e.target.value)}
+          className="text-sm px-2.5 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:border-primary-500"
+        >
+          <option value="all">All sources</option>
+          {allSources.map((s) => <option key={s} value={s}>{sourceLabel(s, defs)}</option>)}
+        </select>
+        <button
+          onClick={() => setStackedOnly((v) => !v)}
+          className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border transition-colors ${
+            stackedOnly ? 'bg-amber-50 text-amber-700 border-amber-200' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <Layers size={14} /> Stacked (2+)
         </button>
-        <nav className="flex-1 overflow-y-auto py-2">
-          {markets.map((m) => (
-            <button
-              key={m.id}
-              onClick={() => setSelectedMarket(m)}
-              className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                selectedMarket?.id === m.id
-                  ? 'bg-gray-50 text-gray-700 font-medium border-r-2 border-primary-700'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-800'
-              }`}
-            >
-              {m.name}
-            </button>
-          ))}
-        </nav>
       </div>
 
-      <div className="flex-1 min-w-0">
-        {/* Detail panel */}
-        {selectedProp && (
-          <PropertyDetailPanel
-            prop={selectedProp}
-            onClose={() => setSelectedProp(null)}
-            onEdit={() => { setEditProp(selectedProp); setSelectedProp(null); }}
-            onStartUnderwriting={() => startUnderwriting(selectedProp)}
-            startingUw={startingUwId === selectedProp.id}
-            onAddActivity={async (note) => {
-              const updated = await sourcingApi.addPropertyActivity(selectedProp.id, note);
-              setData(prev => ({ ...prev, properties: prev.properties.map(x => x.id === updated.id ? updated : x) }));
-              setSelectedProp(updated);
-            }}
-            gps={gps}
-          />
+      {/* Feed */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+        {hitsLoading ? (
+          <p className="text-sm text-gray-400 text-center py-12">Loading…</p>
+        ) : hits.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-12">
+            No hits yet. Configure a market's data feeds under "Markets" above, then click "Scan all".
+          </p>
+        ) : (
+          hits.map((h) => (
+            <HitCard
+              key={h.id}
+              hit={h}
+              market={markets.find((m) => m.id === h.market_id)}
+              defs={defs}
+              expanded={expandedHitId === h.id}
+              onToggle={() => setExpandedHitId(expandedHitId === h.id ? null : h.id)}
+              onPin={() => handlePinToggle(h)}
+              onNoteChange={(note) => handleNoteChange(h, note)}
+            />
+          ))
         )}
-
-        {/* Modals */}
-        {(showAddProp || editProp) && (
-          <PropertyModal
-            initial={editProp}
-            market={selectedMarket?.name ?? ''}
-            onSave={saveProp}
-            onClose={() => { setShowAddProp(false); setEditProp(null); }}
-          />
-        )}
-        {(showAddBroker || editBroker) && (
-          <BrokerModal
-            initial={editBroker}
-            market={selectedMarket?.name ?? ''}
-            onSave={saveBroker}
-            onClose={() => { setShowAddBroker(false); setEditBroker(null); }}
-          />
-        )}
-        {(showAddOperator || editOperator) && (
-          <OperatorModal
-            initial={editOperator}
-            market={selectedMarket?.name ?? ''}
-            onSave={saveOperator}
-            onClose={() => { setShowAddOperator(false); setEditOperator(null); }}
-          />
-        )}
-        {showImport && (
-          <ImportModal
-            tab={activeTab}
-            market={selectedMarket?.name ?? ''}
-            onImport={handleImport}
-            onClose={() => setShowImport(false)}
-          />
-        )}
-        {showImportDeal && (
-          <UploadDealModal
-            market={selectedMarket?.name ?? ''}
-            markets={markets}
-            gps={gps}
-            operators={data.operators}
-            brokers={data.brokers}
-            onSave={async (p) => {
-              await saveProp(p);
-              const [ops, brs] = await Promise.all([
-                sourcingApi.fetchOperators().catch(() => null),
-                sourcingApi.fetchBrokers().catch(() => null),
-              ]);
-              setData(prev => ({ ...prev, operators: ops ?? prev.operators, brokers: brs ?? prev.brokers }));
-              setShowImportDeal(false);
-            }}
-            onClose={() => setShowImportDeal(false)}
-          />
-        )}
-        {showImportOM && (
-          <UploadDealModal
-            mode="om"
-            market={selectedMarket?.name ?? ''}
-            markets={markets}
-            gps={gps}
-            operators={data.operators}
-            brokers={data.brokers}
-            onSave={async (p) => {
-              await saveProp(p);
-              const [ops, brs] = await Promise.all([
-                sourcingApi.fetchOperators().catch(() => null),
-                sourcingApi.fetchBrokers().catch(() => null),
-              ]);
-              setData(prev => ({ ...prev, operators: ops ?? prev.operators, brokers: brs ?? prev.brokers }));
-              setShowImportOM(false);
-            }}
-            onClose={() => setShowImportOM(false)}
-          />
-        )}
-
-        {/* Main Content */}
-        <div className="p-4 md:p-6 lg:p-8 min-w-0">
-          <div className="mb-6">
-            <h1 className="text-3xl md:text-4xl font-semibold text-brandPurple-700">{selectedMarket?.name ?? 'Sourcing'}</h1>
-            <p className="text-sm text-gray-500 mt-1">Track properties, brokers, and operators</p>
-          </div>
-
-          {/* Tabs + Actions */}
-          <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
-            <div className="flex bg-white border border-gray-200 rounded-xl p-1 gap-1 shadow-sm">
-              {(Object.keys(tabConfig) as Tab[]).map(tab => {
-                const cfg = tabConfig[tab];
-                return (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      activeTab === tab ? 'bg-primary-800 text-white shadow-sm' : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                    }`}
-                  >
-                    {cfg.icon}
-                    {cfg.label}
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${activeTab === tab ? 'bg-primary-800 text-gray-100' : 'bg-gray-100 text-gray-500'}`}>
-                      {cfg.count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex items-center gap-2">
-              {activeTab === 'properties' ? (
-                <div className="relative" ref={addMenuRef}>
-                  <button
-                    onClick={() => setShowAddMenu(v => !v)}
-                    className="flex items-center gap-2 px-3 py-2 text-sm bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
-                  >
-                    <Plus size={15} /> Add Deal <ChevronDown size={13} />
-                  </button>
-                  {showAddMenu && (
-                    <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1">
-                      <button
-                        onClick={() => { setShowImportDeal(true); setShowAddMenu(false); }}
-                        className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        <Mail size={14} className="text-primary-800 shrink-0" /> Import from Email
-                      </button>
-                      <button
-                        onClick={() => { setShowImportOM(true); setShowAddMenu(false); }}
-                        className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        <FileText size={14} className="text-purple-500 shrink-0" /> Import from OM
-                      </button>
-                      <div className="border-t border-gray-100 my-1" />
-                      <button
-                        onClick={() => { setShowAddProp(true); setShowAddMenu(false); }}
-                        className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        <Plus size={14} className="text-green-500 shrink-0" /> Add Manually
-                      </button>
-                      <button
-                        onClick={() => { setShowImport(true); setShowAddMenu(false); }}
-                        className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        <Upload size={14} className="text-orange-500 shrink-0" /> Bulk Import from Excel
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <button
-                  onClick={handleAdd}
-                  className="flex items-center gap-2 px-3 py-2 text-sm bg-primary-800 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
-                >
-                  <Plus size={15} /> {addLabel}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Stats bar */}
-          <div className="flex items-center gap-6 mb-5 px-4 py-3 bg-white border border-gray-200 rounded-xl shadow-sm">
-            <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">{selectedMarket ? selectedMarket.name : 'All Markets'}</span>
-            <div className="flex items-center gap-1.5">
-              <Building2 size={14} className="text-primary-800" />
-              <span className="text-sm font-semibold text-gray-800">{filteredProps.length}</span>
-              <span className="text-xs text-gray-500">properties</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Users size={14} className="text-purple-500" />
-              <span className="text-sm font-semibold text-gray-800">{filteredBrokers.length}</span>
-              <span className="text-xs text-gray-500">brokers</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Briefcase size={14} className="text-green-500" />
-              <span className="text-sm font-semibold text-gray-800">{filteredOps.length}</span>
-              <span className="text-xs text-gray-500">operators</span>
-            </div>
-            <span className="text-xs text-gray-400 ml-auto">in {currentMarket}</span>
-          </div>
-
-          {/* Tab content */}
-          {activeTab === 'properties' && (
-            <>
-              <SourcingMap
-                properties={filteredProps}
-                selectedMarket={selectedMarket}
-                onGeocode={handleGeocode}
-                focusPropId={highlightPropId}
-              />
-              <PropertiesTable
-                properties={filteredProps}
-                onRowClick={p => setSelectedProp(p)}
-                onEdit={p => setEditProp(p)}
-                onDelete={deleteProp}
-                highlightPropId={highlightPropId}
-                onStartUnderwriting={startUnderwriting}
-                startingUwId={startingUwId}
-                gps={gps}
-              />
-            </>
-          )}
-          {activeTab === 'brokers' && (
-            <BrokersTable brokers={filteredBrokers} onEdit={b => setEditBroker(b)} onDelete={deleteBroker} />
-          )}
-          {activeTab === 'operators' && (
-            <OperatorsTable operators={filteredOps} onEdit={o => setEditOperator(o)} onDelete={deleteOperator} />
-          )}
-        </div>
       </div>
+
+      <PinnedDrawer
+        open={pinDrawerOpen}
+        onClose={() => setPinDrawerOpen(false)}
+        pinnedHits={pinnedHits}
+        markets={markets}
+        defs={defs}
+        onUnpin={(h) => handlePinToggle(h)}
+        onNoteChange={(h, note) => handleNoteChange(h, note)}
+      />
     </div>
   );
 };

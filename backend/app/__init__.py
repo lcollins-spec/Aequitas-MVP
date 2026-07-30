@@ -153,6 +153,82 @@ def create_app(test_config=None):
     except Exception as e:
         logger.warning(f"om_drive_url column migration note: {e}")
 
+    # Inline migration: add tax_delinquent_feed_* columns to signal_markets if not present.
+    try:
+        with app.app_context():
+            from sqlalchemy import text, inspect as sa_inspect
+            inspector = sa_inspect(db.engine)
+            if 'signal_markets' in inspector.get_table_names():
+                cols = [c['name'] for c in inspector.get_columns('signal_markets')]
+                new_cols = {
+                    'tax_delinquent_feed_url': 'VARCHAR(1000)',
+                    'tax_delinquent_feed_type': 'VARCHAR(20)',
+                    'tax_delinquent_field_mapping': 'TEXT',
+                }
+                with db.engine.connect() as conn:
+                    for col, col_type in new_cols.items():
+                        if col not in cols:
+                            conn.execute(text(f"ALTER TABLE signal_markets ADD COLUMN {col} {col_type}"))
+                            conn.commit()
+                            logger.info(f"Added '{col}' column to signal_markets")
+    except Exception as e:
+        logger.warning(f"tax_delinquent_feed column migration note: {e}")
+
+    # Seed default signal-engine markets + signal-library rows (idempotent —
+    # only inserts if the tables are empty, so it's a no-op on every boot
+    # after the first).
+    try:
+        with app.app_context():
+            from app.database import SignalMarketModel, SignalDefinitionModel
+            import time as _time
+
+            if SignalMarketModel.query.count() == 0:
+                seed_markets = [
+                    {'name': 'Sacramento, CA', 'city': 'Sacramento', 'state': 'CA'},
+                    {'name': 'Columbus, GA', 'city': 'Columbus', 'state': 'GA'},
+                ]
+                for i, m in enumerate(seed_markets):
+                    db.session.add(SignalMarketModel(
+                        id=str(int(_time.time() * 1000) + i),
+                        name=m['name'], city=m['city'], state=m['state'],
+                    ))
+                db.session.commit()
+                logger.info("Seeded default signal_markets (Sacramento CA, Columbus GA)")
+
+            if SignalDefinitionModel.query.count() == 0:
+                seed_signals = [
+                    # Feasible for v1 — fully active
+                    ('absentee_owner', 'Absentee / Long-Hold Owner', 'public_records', True, False, None),
+                    ('code_violations', 'Code Violations / Housing Court', 'public_records', True, False, None),
+                    ('tax_delinquency', 'Tax Delinquency', 'public_records', True, False, None),
+                    # HUD national datasets — fully active
+                    ('hud_fha_loan_maturity', 'HUD FHA-Insured Loan Maturity', 'public_records', True, False, None),
+                    ('hud_section8_contract_expiration', 'HUD Section 8 Contract Expiration', 'public_records', True, False, None),
+                    ('hud_lihtc_year15', 'HUD LIHTC Year 15 Approaching', 'public_records', True, False, None),
+                    # Flagged in original spec — stubbed, disabled
+                    ('pre_foreclosure', 'Pre-Foreclosure / Notice of Default', 'public_records', False, True,
+                     'County recorder portals have no API and differ per county; no reliable bulk search found.'),
+                    ('probate', 'Probate Filings', 'public_records', False, True,
+                     'Court portals are auth-walled with no structured search available.'),
+                    ('ucc_lien', "UCC / Mechanic's Liens", 'public_records', False, True,
+                     'UCC search is by owner name, not address; real mechanic\'s liens are recorded at the county, not the state UCC registry.'),
+                    ('loan_maturity_cmbs', 'Loan Maturity (CMBS)', 'public_records', False, True,
+                     'CMBS loan data (Trepp/CompStak) is proprietary; no free public source found. See HUD FHA loan maturity for a public substitute.'),
+                    # Inbox sources — deferred to v1.1
+                    ('inbox_loopnet', 'Inbox — LoopNet Alerts', 'inbox', False, True, 'Planned for v1.1.'),
+                    ('inbox_crexi', 'Inbox — Crexi Alerts', 'inbox', False, True, 'Planned for v1.1.'),
+                ]
+                for i, (key, label, category, enabled, stubbed, reason) in enumerate(seed_signals):
+                    db.session.add(SignalDefinitionModel(
+                        id=str(int(_time.time() * 1000) + 100 + i),
+                        key=key, label=label, category=category,
+                        enabled=enabled, stubbed=stubbed, disabled_reason=reason,
+                    ))
+                db.session.commit()
+                logger.info("Seeded default signal_definitions (12 signals)")
+    except Exception as e:
+        logger.warning(f"Signal engine seed data note: {e}")
+
     # Enable CORS for frontend communication (only in development)
     # In production (Docker), CORS not needed as same-origin
     if not in_docker:
@@ -302,9 +378,13 @@ def create_app(test_config=None):
     from .api.v1.memo_routes import memo_bp
     app.register_blueprint(memo_bp, url_prefix='/api/v1')
 
-    # Sourcing import API
+    # Sourcing import API (deal-pipeline CRM, now surfaced at /pipeline)
     from .api.v1.sourcing_routes import sourcing_bp
     app.register_blueprint(sourcing_bp, url_prefix='/api/v1')
+
+    # Sourcing signals engine (public-records + HUD lead-sourcing, surfaced at /sourcing)
+    from .api.v1.signals_routes import signals_bp
+    app.register_blueprint(signals_bp, url_prefix='/api/v1')
 
     # Generic app-data key-value store (sourcing, fund settings, op performance)
     from .api.v1.app_data_routes import app_data_bp

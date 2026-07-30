@@ -38,7 +38,7 @@ const GlobalUploadDealButton = ({ onBeforeOpen }: GlobalUploadDealButtonProps) =
     await sourcingApi.createProperty(p);
     setOpen(false);
     const marketParam = p.market ? `&uploadedMarket=${encodeURIComponent(p.market)}` : '';
-    navigate(`/sourcing?uploadedPropertyId=${p.id}${marketParam}`);
+    navigate(`/pipeline?uploadedPropertyId=${p.id}${marketParam}`);
   };
 
   return (

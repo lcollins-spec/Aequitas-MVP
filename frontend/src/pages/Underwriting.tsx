@@ -1443,7 +1443,7 @@ const Underwriting = () => {
                 <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="City, State" className={inp} />
                 {location && (
                   <div className="flex flex-wrap gap-3 mt-1 items-center">
-                    <Link to={`/sourcing?address=${encodeURIComponent(location)}`} className="text-xs text-primary-800 hover:text-primary-700" tabIndex={-1}>View in Sourcing →</Link>
+                    <Link to={`/pipeline?address=${encodeURIComponent(location)}`} className="text-xs text-primary-800 hover:text-primary-700" tabIndex={-1}>View in Pipeline →</Link>
                     <Link to={`/regulations?market=${encodeURIComponent(location.split(',').map(p => p.trim()).slice(-2).join(', '))}`} className="text-xs text-indigo-500 hover:text-indigo-700" tabIndex={-1}>Local Regs →</Link>
                     <button onClick={handleFetchLegislation} disabled={legislationFetching} className="text-xs px-2 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 transition-colors">
                       {legislationFetching ? <><Loader2 size={10} className="inline animate-spin mr-1" />Fetching…</> :

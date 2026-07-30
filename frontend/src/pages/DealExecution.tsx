@@ -873,10 +873,10 @@ const DealExecution = () => {
             </p>
             {linkedPropAddress && (
               <Link
-                to={`/sourcing?address=${encodeURIComponent(linkedPropAddress)}`}
+                to={`/pipeline?address=${encodeURIComponent(linkedPropAddress)}`}
                 className="inline-flex items-center gap-1 text-xs text-primary-800 hover:text-primary-700 mt-0.5"
               >
-                View in Sourcing →
+                View in Pipeline →
               </Link>
             )}
             {record.location && (

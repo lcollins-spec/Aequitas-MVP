@@ -1919,6 +1919,122 @@ class SourcingOperatorModel(db.Model):
         }
 
 
+# ── Sourcing Signals tables (public-records + HUD lead-sourcing engine) ──────
+# Deliberately a separate market list from sourcing_markets above: this engine's
+# markets configure data-feed URLs/mappings, a different concern from the
+# deal-pipeline CRM's market grouping, and the two shouldn't move in lockstep.
+
+class SignalMarketModel(db.Model):
+    """Markets tracked by the sourcing signals engine."""
+    __tablename__ = 'signal_markets'
+
+    id = Column(String(64), primary_key=True)
+    name = Column(String(255), nullable=False)
+    city = Column(String(255), nullable=False, default='')
+    state = Column(String(50), nullable=False, default='')
+    assessor_feed_url = Column(String(1000), nullable=True)
+    assessor_feed_type = Column(String(20), nullable=True)  # 'arcgis' | 'socrata'
+    assessor_field_mapping = Column(Text, nullable=True)  # JSON
+    code_violations_feed_url = Column(String(1000), nullable=True)
+    code_violations_feed_type = Column(String(20), nullable=True)  # 'arcgis' | 'socrata'
+    code_violations_field_mapping = Column(Text, nullable=True)  # JSON
+    # Some counties publish a real live tax-delinquency feed (e.g. Muscogee County,
+    # GA does, via an ArcGIS-hosted geocoded layer) rather than only a purchasable/
+    # downloadable list — this is a live-feed alternative to the CSV-upload path.
+    tax_delinquent_feed_url = Column(String(1000), nullable=True)
+    tax_delinquent_feed_type = Column(String(20), nullable=True)  # 'arcgis' | 'socrata'
+    tax_delinquent_field_mapping = Column(Text, nullable=True)  # JSON
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'city': self.city,
+            'state': self.state,
+            'assessor_feed_url': self.assessor_feed_url,
+            'assessor_feed_type': self.assessor_feed_type,
+            'assessor_field_mapping': self.assessor_field_mapping,
+            'code_violations_feed_url': self.code_violations_feed_url,
+            'code_violations_feed_type': self.code_violations_feed_type,
+            'code_violations_field_mapping': self.code_violations_field_mapping,
+            'tax_delinquent_feed_url': self.tax_delinquent_feed_url,
+            'tax_delinquent_feed_type': self.tax_delinquent_feed_type,
+            'tax_delinquent_field_mapping': self.tax_delinquent_field_mapping,
+        }
+
+
+class SignalDefinitionModel(db.Model):
+    """Toggleable signal-library entries for the sourcing signals engine."""
+    __tablename__ = 'signal_definitions'
+
+    id = Column(String(64), primary_key=True)
+    key = Column(String(100), nullable=False, unique=True)
+    label = Column(String(255), nullable=False)
+    category = Column(String(20), nullable=False, default='public_records')  # 'public_records' | 'inbox'
+    enabled = Column(Boolean, nullable=False, default=True)
+    stubbed = Column(Boolean, nullable=False, default=False)
+    disabled_reason = Column(Text, nullable=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'key': self.key,
+            'label': self.label,
+            'category': self.category,
+            'enabled': self.enabled,
+            'stubbed': self.stubbed,
+            'disabled_reason': self.disabled_reason,
+        }
+
+
+class SignalHitModel(db.Model):
+    """A single property flagged by a public-records signal or inbox source."""
+    __tablename__ = 'signal_hits'
+    __table_args__ = (
+        Index('ix_signal_hits_dedup', 'dedup_key', unique=True),
+    )
+
+    id = Column(String(64), primary_key=True)
+    market_id = Column(String(64), ForeignKey('signal_markets.id'), nullable=False, index=True)
+    source = Column(String(50), nullable=False, index=True)
+    address = Column(String(500), nullable=False, default='')
+    owner_name = Column(String(255), nullable=True)
+    owner_mailing_address = Column(String(500), nullable=True)
+    unit_count = Column(Integer, nullable=True)
+    assessed_value = Column(Float, nullable=True)
+    listing_price = Column(Float, nullable=True)
+    listing_broker = Column(String(255), nullable=True)
+    listing_url = Column(String(1000), nullable=True)
+    raw_data = Column(Text, nullable=True)  # JSON
+    dedup_key = Column(String(600), nullable=False)
+    first_seen_at = Column(DateTime, default=func.now(), nullable=False)
+    last_seen_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    pinned = Column(Boolean, nullable=False, default=False)
+    note = Column(Text, nullable=False, default='')
+
+    def to_dict(self, stacked_count=None):
+        return {
+            'id': self.id,
+            'market_id': self.market_id,
+            'source': self.source,
+            'address': self.address,
+            'owner_name': self.owner_name,
+            'owner_mailing_address': self.owner_mailing_address,
+            'unit_count': self.unit_count,
+            'assessed_value': self.assessed_value,
+            'listing_price': self.listing_price,
+            'listing_broker': self.listing_broker,
+            'listing_url': self.listing_url,
+            'raw_data': self.raw_data,
+            'first_seen_at': self.first_seen_at.isoformat() if self.first_seen_at else None,
+            'last_seen_at': self.last_seen_at.isoformat() if self.last_seen_at else None,
+            'pinned': self.pinned,
+            'note': self.note,
+            'stacked_count': stacked_count if stacked_count is not None else 1,
+        }
+
+
 # ── Operating Performance table ───────────────────────────────────────────────
 
 class DealOpPerformanceModel(db.Model):
