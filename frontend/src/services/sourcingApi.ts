@@ -24,6 +24,7 @@ export interface SourcingProperty {
   updated_at?: string;
   property_legislation?: string | null;
   activity_log?: string;
+  om_drive_url?: string | null;
 }
 
 export interface SourcingBroker {
