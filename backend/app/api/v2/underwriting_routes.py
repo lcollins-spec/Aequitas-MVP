@@ -637,10 +637,23 @@ def extract_rent_roll():
 
 # ─── /draft-clarification-email ─────────────────────────────────────────────
 
+def _format_discrepancy_line(d):
+    """One discrepancy can involve 2 or 3 of {OM, Rent Roll, T-12} — only list
+    the sources that actually supplied a value for this field."""
+    parts = []
+    if d.get('omValue') is not None:
+        parts.append(f"Offering Memorandum shows {d.get('omValue')}")
+    if d.get('rentRollValue') is not None:
+        parts.append(f"Rent Roll shows {d.get('rentRollValue')}")
+    if d.get('t12Value') is not None:
+        parts.append(f"T-12 shows {d.get('t12Value')}")
+    return f"- {d.get('label')}: " + ', '.join(parts)
+
+
 @underwriting_v2_bp.route('/draft-clarification-email', methods=['POST'])
 def draft_clarification_email():
     """Draft a short email to the listing broker asking them to clarify
-    discrepancies found between an OM and a Rent Roll for the same deal."""
+    discrepancies found between the OM, Rent Roll, and/or T-12 for the same deal."""
     api_key = os.environ.get('ANTHROPIC_API_KEY', '')
     if not api_key:
         return jsonify({'success': False, 'error': 'ANTHROPIC_API_KEY not configured', 'code': 'AUTH_ERROR'}), 503
@@ -652,19 +665,15 @@ def draft_clarification_email():
 
     property_name = body.get('propertyName') or body.get('dealName') or 'the property'
 
-    discrepancy_lines = '\n'.join(
-        f"- {d.get('label')}: Offering Memorandum shows {d.get('omValue')}, "
-        f"Rent Roll shows {d.get('rentRollValue')}"
-        for d in discrepancies
-    )
+    discrepancy_lines = '\n'.join(_format_discrepancy_line(d) for d in discrepancies)
 
     prompt = (
         'Draft a short, professional email from a real estate acquisitions analyst to a listing '
-        f'broker for "{property_name}". The Offering Memorandum and the Rent Roll for this deal '
-        'disagree on the figures below. Politely ask the broker to confirm which figures are '
-        'correct, or explain the discrepancy. Keep it concise (under 150 words), specific about '
-        'each figure, and professional in tone. Return only the email body text — no subject line, '
-        'no markdown, no placeholders like [Your Name].\n\n'
+        f'broker for "{property_name}". The deal documents (Offering Memorandum, Rent Roll, and/or '
+        'T-12 operating statement) disagree on the figures below. Politely ask the broker to confirm '
+        'which figures are correct, or explain the discrepancy. Keep it concise (under 150 words), '
+        'specific about each figure, and professional in tone. Return only the email body text — no '
+        'subject line, no markdown, no placeholders like [Your Name].\n\n'
         f'Discrepancies:\n{discrepancy_lines}'
     )
 

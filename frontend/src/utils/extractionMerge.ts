@@ -1,11 +1,20 @@
-// Merges an OM extraction and a Rent Roll extraction into one dataset for the
-// shared ExtractionReviewModal, and flags fields where the two sources disagree.
+// Merges OM, Rent Roll, and T-12 extractions into one dataset for the shared
+// ExtractionReviewModal, and flags fields where the sources disagree.
 //
-// Precedence: Rent Roll is the source of truth for rents/occupancy (unit mix,
-// vacancy, bad debt, rent stabilization). OM is the source of truth for
-// location/identity and everything Rent Roll doesn't extract (pricing, NOI,
-// opex, tax/deal-structure). Manually-seeded fields (deal costs, senior loan,
-// abatement schedule) pass straight through untouched.
+// Precedence:
+//  - Occupancy/lease-term fields (vacancy, bad debt, rent stabilization, rent
+//    growth cap): T-12 > Rent Roll > OM. T-12 reflects actual trailing-12-month
+//    realized performance; Rent Roll is a current snapshot; OM is often an
+//    optimistic underwriting assumption.
+//  - Expense/actuals fields (operating expenses, laundry income): T-12 > OM.
+//    Rent Roll never supplies these.
+//  - Location/identity fields: OM > Rent Roll > T-12 (OM is the primary
+//    property document; the others only fill gaps).
+//  - Unit mix: Rent Roll > OM. T-12 never extracts unit mix.
+//  - Everything else: OM-only, uncontested (pricing, NOI, opex-per-unit
+//    breakdowns, tax/deal-structure fields Rent Roll and T-12 don't extract).
+// Manually-seeded fields (deal costs, senior loan, abatement schedule) pass
+// straight through untouched.
 
 import type { ReviewField } from '../components/ExtractionReviewModal';
 
@@ -95,18 +104,24 @@ export const MERGED_REVIEW_FIELDS: ReviewField[] = (() => {
   return merged;
 })();
 
-// Fields Rent Roll is authoritative for when present (rents/occupancy).
-const RENT_ROLL_AUTHORITATIVE_KEYS = new Set(['vacancyRate', 'badDebtRate', 'rentStabilized', 'annualRentGrowthCap']);
-// Fields OM is authoritative for when present (location/identity).
-const OM_AUTHORITATIVE_KEYS = new Set(['propertyName', 'address', 'city', 'state', 'zipcode']);
+// Occupancy/lease-term fields: T-12 wins when present, else Rent Roll, else OM.
+const OCCUPANCY_KEYS = ['vacancyRate', 'badDebtRate', 'rentStabilized', 'annualRentGrowthCap'];
+// Location/identity fields: OM wins when present, else Rent Roll, else T-12.
+const LOCATION_KEYS = ['propertyName', 'address', 'city', 'state', 'zipcode'];
+// Expense sub-fields nested under `operatingExpenses`: T-12 wins when present, else OM.
+// Rent Roll's extraction always returns `operatingExpenses: null`, so it's never a contender.
+const EXPENSE_SUBFIELD_KEYS = ['utilitiesAnnual', 'insuranceAnnual', 'propertyTaxAnnual', 'repairsMaintenanceAnnual', 'managementFeePct'];
+
+type SourceKey = 'om' | 'rentRoll' | 't12';
 
 export interface Discrepancy {
   field: string;
   label: string;
   omValue: any;
   rentRollValue: any;
+  t12Value?: any;
   appliedValue: any;
-  appliedSource: 'om' | 'rentRoll';
+  appliedSource: SourceKey;
 }
 
 function normalizeText(v: any): string {
@@ -166,50 +181,135 @@ function diffUnitMix(omMix: UnitMixRow[], rrMix: UnitMixRow[]): Discrepancy[] {
   return discrepancies;
 }
 
-export function mergeExtractions(om: any | null, rentRoll: any | null): { merged: any; discrepancies: Discrepancy[] } {
-  // Base merge is null-coalescing, not a raw spread: the Rent Roll extraction
-  // schema explicitly returns null for fields it doesn't cover (askingPrice,
-  // operatingExpenses, ...), and a `{...om, ...rentRoll}` spread would let
-  // those explicit nulls stomp over real OM values. OM wins by default here;
-  // the precedence loops below then explicitly override the few keys Rent
-  // Roll should actually win.
+type ValueKind = 'percent' | 'text' | 'boolean';
+
+function valuesDiffer(a: any, b: any, kind: ValueKind): boolean {
+  if (kind === 'boolean') return Boolean(a) !== Boolean(b);
+  if (kind === 'percent') return percentDiffers(Number(a), Number(b));
+  return normalizeText(a) !== normalizeText(b);
+}
+
+// Builds at most one Discrepancy per field, even when all three sources are
+// present — pairwise OM-vs-T12 and RentRoll-vs-T12 checks would otherwise
+// double up the same field in the banner when only one source is an outlier.
+function buildDiscrepancy(
+  key: string,
+  kind: ValueKind,
+  present: { source: SourceKey; value: any }[],
+  appliedValue: any,
+  appliedSource: SourceKey,
+): Discrepancy | null {
+  if (present.length < 2) return null;
+  const disagree = present.some((a, i) => present.slice(i + 1).some((b) => valuesDiffer(a.value, b.value, kind)));
+  if (!disagree) return null;
+  const valueFor = (s: SourceKey) => present.find((p) => p.source === s)?.value;
+  return {
+    field: key, label: fieldLabel(key),
+    omValue: valueFor('om'), rentRollValue: valueFor('rentRoll'), t12Value: valueFor('t12'),
+    appliedValue, appliedSource,
+  };
+}
+
+export function mergeExtractions(
+  om: any | null,
+  rentRoll: any | null,
+  t12: any | null = null,
+): { merged: any; discrepancies: Discrepancy[] } {
+  // Base merge is null-coalescing, not a raw spread: extraction schemas
+  // explicitly return null for fields they don't cover (e.g. Rent Roll's
+  // askingPrice, T-12's askingPrice), and a spread would let those explicit
+  // nulls stomp over a real value from another source. Default order is
+  // OM, then Rent Roll, then T-12; the precedence blocks below override
+  // that default for the specific fields where it doesn't apply.
   const merged: any = {};
-  for (const key of new Set([...Object.keys(om ?? {}), ...Object.keys(rentRoll ?? {})])) {
+  for (const key of new Set([...Object.keys(om ?? {}), ...Object.keys(rentRoll ?? {}), ...Object.keys(t12 ?? {})])) {
     const omValue = om?.[key];
-    merged[key] = omValue != null ? omValue : rentRoll?.[key];
+    const rrValue = rentRoll?.[key];
+    merged[key] = omValue != null ? omValue : (rrValue != null ? rrValue : t12?.[key]);
   }
   const discrepancies: Discrepancy[] = [];
 
-  if (om && rentRoll) {
-    for (const key of RENT_ROLL_AUTHORITATIVE_KEYS) {
-      const omValue = om[key];
-      const rrValue = rentRoll[key];
-      merged[key] = rrValue != null ? rrValue : omValue;
-      if (omValue == null || rrValue == null) continue;
-      if (key === 'rentStabilized') {
-        if (Boolean(omValue) !== Boolean(rrValue)) {
-          discrepancies.push({ field: key, label: fieldLabel(key), omValue, rentRollValue: rrValue, appliedValue: merged[key], appliedSource: 'rentRoll' });
-        }
-      } else if (percentDiffers(Number(omValue), Number(rrValue))) {
-        discrepancies.push({ field: key, label: fieldLabel(key), omValue, rentRollValue: rrValue, appliedValue: merged[key], appliedSource: 'rentRoll' });
-      }
-    }
-
-    for (const key of OM_AUTHORITATIVE_KEYS) {
-      const omValue = om[key];
-      const rrValue = rentRoll[key];
-      merged[key] = omValue != null && omValue !== '' ? omValue : rrValue;
-      if (omValue == null || rrValue == null || omValue === '' || rrValue === '') continue;
-      if (normalizeText(omValue) !== normalizeText(rrValue)) {
-        discrepancies.push({ field: key, label: fieldLabel(key), omValue, rentRollValue: rrValue, appliedValue: merged[key], appliedSource: 'om' });
-      }
-    }
-
-    discrepancies.push(...diffUnitMix(om.unitMix ?? [], rentRoll.unitMix ?? []));
-    merged.unitMix = rentRoll.unitMix?.length > 0 ? rentRoll.unitMix : om.unitMix;
+  // Occupancy/lease-term fields: T-12 > Rent Roll > OM.
+  for (const key of OCCUPANCY_KEYS) {
+    const omValue = om?.[key];
+    const rrValue = rentRoll?.[key];
+    const t12Value = t12?.[key];
+    merged[key] = t12Value != null ? t12Value : (rrValue != null ? rrValue : omValue);
+    const appliedSource: SourceKey = t12Value != null ? 't12' : rrValue != null ? 'rentRoll' : 'om';
+    const present = [
+      omValue != null && { source: 'om' as const, value: omValue },
+      rrValue != null && { source: 'rentRoll' as const, value: rrValue },
+      t12Value != null && { source: 't12' as const, value: t12Value },
+    ].filter(Boolean) as { source: SourceKey; value: any }[];
+    const d = buildDiscrepancy(key, key === 'rentStabilized' ? 'boolean' : 'percent', present, merged[key], appliedSource);
+    if (d) discrepancies.push(d);
   }
-  // Single-source case (only om or only rentRoll): the null-coalescing base
-  // merge above already copied every field from whichever one exists.
+
+  // Location/identity fields: OM > Rent Roll > T-12.
+  for (const key of LOCATION_KEYS) {
+    const omValue = om?.[key];
+    const rrValue = rentRoll?.[key];
+    const t12Value = t12?.[key];
+    const omPresent = omValue != null && omValue !== '';
+    const rrPresent = rrValue != null && rrValue !== '';
+    const t12Present = t12Value != null && t12Value !== '';
+    merged[key] = omPresent ? omValue : rrPresent ? rrValue : (t12Present ? t12Value : undefined);
+    const appliedSource: SourceKey = omPresent ? 'om' : rrPresent ? 'rentRoll' : 't12';
+    const present = [
+      omPresent && { source: 'om' as const, value: omValue },
+      rrPresent && { source: 'rentRoll' as const, value: rrValue },
+      t12Present && { source: 't12' as const, value: t12Value },
+    ].filter(Boolean) as { source: SourceKey; value: any }[];
+    const d = buildDiscrepancy(key, 'text', present, merged[key], appliedSource);
+    if (d) discrepancies.push(d);
+  }
+
+  // Expense sub-fields: T-12 > OM, merged field-by-field (not whole-object) so
+  // T-12 partially covering (e.g.) just utilities doesn't blank out OM's
+  // insurance/tax/management-fee figures for the fields T-12 didn't extract.
+  const omOe = om?.operatingExpenses ?? null;
+  const t12Oe = t12?.operatingExpenses ?? null;
+  if (omOe || t12Oe) {
+    const mergedOe: any = {};
+    for (const subKey of EXPENSE_SUBFIELD_KEYS) {
+      const omValue = omOe?.[subKey];
+      const t12Value = t12Oe?.[subKey];
+      mergedOe[subKey] = t12Value != null ? t12Value : omValue;
+      if (omValue != null && t12Value != null) {
+        const d = buildDiscrepancy(
+          `operatingExpenses.${subKey}`, 'percent',
+          [{ source: 'om', value: omValue }, { source: 't12', value: t12Value }],
+          mergedOe[subKey], 't12',
+        );
+        if (d) discrepancies.push(d);
+      }
+    }
+    merged.operatingExpenses = mergedOe;
+  }
+
+  // laundryIncome: T-12 > OM. Rent Roll's extraction always returns null here,
+  // but fall through to it defensively rather than assuming that never changes.
+  {
+    const omValue = om?.laundryIncome;
+    const t12Value = t12?.laundryIncome;
+    merged.laundryIncome = t12Value != null ? t12Value : (omValue != null ? omValue : rentRoll?.laundryIncome);
+    if (omValue != null && t12Value != null) {
+      const d = buildDiscrepancy(
+        'laundryIncome', 'percent',
+        [{ source: 'om', value: omValue }, { source: 't12', value: t12Value }],
+        merged.laundryIncome, 't12',
+      );
+      if (d) discrepancies.push(d);
+    }
+  }
+
+  // Unit mix: Rent Roll > OM, unchanged. T-12 never extracts unit mix, so it's
+  // simply never passed into this comparison.
+  if (om && rentRoll) {
+    discrepancies.push(...diffUnitMix(om.unitMix ?? [], rentRoll.unitMix ?? []));
+  }
+  const rrMixLen = rentRoll?.unitMix?.length ?? 0;
+  merged.unitMix = rrMixLen > 0 ? rentRoll.unitMix : (om?.unitMix ?? t12?.unitMix ?? []);
 
   return { merged, discrepancies };
 }

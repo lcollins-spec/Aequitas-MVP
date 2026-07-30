@@ -193,13 +193,14 @@ const Underwriting = () => {
   const [pipelineStatus, setPipelineStatusState] = useState<PipelineStatus>('Analyzing');
   const [showDataRoomModal, setShowDataRoomModal] = useState(false);
   const [showLoiModal, setShowLoiModal] = useState(false);
-  // Raw extractions from the most recent OM / Rent Roll upload for this deal. Kept around
-  // (not nulled on confirm) so a later upload of the other document type can still be
+  // Raw extractions from the most recent OM / Rent Roll / T-12 upload for this deal. Kept
+  // around (not nulled on confirm) so a later upload of another document type can still be
   // merged and diffed against it — this is what lets the review card stay accurate and
   // "the same card" no matter which document arrives first.
   const [omData, setOmData] = useState<any>(null);
   const [pendingOmFile, setPendingOmFile] = useState<File | null>(null);
   const [rentRollData, setRentRollData] = useState<any>(null);
+  const [t12Data, setT12Data] = useState<any>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
 
   const isUnderwritingLocked =
@@ -245,7 +246,7 @@ const Underwriting = () => {
   const [rrError, setRrError] = useState<string | null>(null);
   const [t12Uploading, setT12Uploading] = useState(false);
   const [t12Error, setT12Error] = useState<string | null>(null);
-  const [t12Success, setT12Success] = useState(false);
+  const [t12Uploaded, setT12Uploaded] = useState(false);
   const [omLaundryIncome, setOmLaundryIncome] = useState<number | null>(null);
   const [omRentStabilized, setOmRentStabilized] = useState<boolean | null>(null);
   const [omAnnualRentGrowthCap, setOmAnnualRentGrowthCap] = useState<number | null>(null);
@@ -385,6 +386,7 @@ const Underwriting = () => {
         if (dealId !== currentDealId) {
           setOmData(null);
           setRentRollData(null);
+          setT12Data(null);
           setPendingOmFile(null);
           setReviewOpen(false);
         }
@@ -639,13 +641,14 @@ const Underwriting = () => {
 
   const handleSelectDeal = (deal: Deal) => {
     if (!deal.id) return;
-    // omData/rentRollData deliberately survive a Confirm & Apply so a later upload of the
-    // complementary document type can still merge/diff against it (see applyMergedDataToForm).
+    // omData/rentRollData/t12Data deliberately survive a Confirm & Apply so a later upload
+    // of another document type can still merge/diff against it (see applyMergedDataToForm).
     // Switching to a different deal must clear that cache — otherwise uploading an OM here
-    // could silently merge against a stale Rent Roll left over from whatever deal was open before.
+    // could silently merge against a stale Rent Roll/T-12 left over from whatever deal was open before.
     if (deal.id !== currentDealId) {
       setOmData(null);
       setRentRollData(null);
+      setT12Data(null);
       setPendingOmFile(null);
       setReviewOpen(false);
     }
@@ -694,10 +697,10 @@ const Underwriting = () => {
 
   // Applies (possibly user-edited) extracted OM data to the live underwriting form.
   // Only called after the user confirms the extraction review modal.
-  // Applies the (possibly user-edited) merged OM + Rent Roll data to the live
-  // underwriting form. Precedence between the two sources was already resolved
+  // Applies the (possibly user-edited) merged OM + Rent Roll + T-12 data to the live
+  // underwriting form. Precedence between the sources was already resolved
   // by mergeExtractions before this runs — this just writes whatever `data` says.
-  const applyMergedDataToForm = async (data: any, sources: { hasOm: boolean; hasRentRoll: boolean }, file: File | null) => {
+  const applyMergedDataToForm = async (data: any, sources: { hasOm: boolean; hasRentRoll: boolean; hasT12: boolean }, file: File | null) => {
     if (data.propertyName) setDealName(data.propertyName);
     if (data.unitMix?.length > 0) {
       setTotalUnits(data.unitMix.reduce((s: number, u: any) => s + (u.count ?? 0), 0));
@@ -791,6 +794,7 @@ const Underwriting = () => {
 
     if (sources.hasOm) setOmUploaded(true);
     if (sources.hasRentRoll) setRrUploaded(true);
+    if (sources.hasT12) setT12Uploaded(true);
 
     if (!sources.hasOm) return;
 
@@ -893,12 +897,21 @@ const Underwriting = () => {
     }
   };
 
-  // Merged view of the two raw extractions, recomputed whenever either changes —
-  // this is what drives the single shared review card and its discrepancy banner.
+  // Merged view of the three raw extractions, recomputed whenever any of them
+  // changes — this is what drives the single shared review card and its
+  // discrepancy banner.
   const { merged: mergedReviewData, discrepancies: reviewDiscrepancies } = useMemo(
-    () => mergeExtractions(omData, rentRollData),
-    [omData, rentRollData]
+    () => mergeExtractions(omData, rentRollData, t12Data),
+    [omData, rentRollData, t12Data]
   );
+
+  // Drives the review card's title/subtitle so they read naturally for any
+  // combination of 1-3 present sources, instead of a hand-written ternary chain.
+  const reviewSourceLabels = [
+    omData != null && 'OM',
+    rentRollData != null && 'Rent Roll',
+    t12Data != null && 'T-12',
+  ].filter(Boolean) as string[];
 
   const handleGenerateClarificationEmail = async (discrepancies: ReturnType<typeof mergeExtractions>['discrepancies']) => {
     const res = await fetch('/api/v2/underwriting/draft-clarification-email', {
@@ -907,7 +920,7 @@ const Underwriting = () => {
       body: JSON.stringify({
         propertyName: mergedReviewData?.propertyName || dealName,
         dealName,
-        discrepancies: discrepancies.map((d) => ({ label: d.label, omValue: d.omValue, rentRollValue: d.rentRollValue })),
+        discrepancies: discrepancies.map((d) => ({ label: d.label, omValue: d.omValue, rentRollValue: d.rentRollValue, t12Value: d.t12Value })),
       }),
     });
     const json = await res.json();
@@ -918,15 +931,22 @@ const Underwriting = () => {
   const handleT12Upload = async (file: File) => {
     setT12Uploading(true);
     setT12Error(null);
-    setT12Success(false);
     try {
       const data = await scrapingApi.extractT12FromFile(file, currentDealId ?? undefined);
-      if (data.laundryIncome != null) setOmLaundryIncome(data.laundryIncome);
-      if (data.vacancyRate != null) { const v = data.vacancyRate; setVacancyRates([v, v, v, v, v]); }
-      if (data.badDebtRate != null) { const v = data.badDebtRate; setBadDebtRates([v, v, v, v, v]); }
-      if (data.rentStabilized != null) setOmRentStabilized(data.rentStabilized);
-      if (data.annualRentGrowthCap != null) setOmAnnualRentGrowthCap(data.annualRentGrowthCap);
-      setT12Success(true);
+      // Same review card as OM/Rent Roll uploads — hand off instead of applying directly.
+      // Seed deal-cost/senior-loan fields with current form state (not extracted) so the
+      // card opens pre-filled, same pattern as handleOmUpload/handleRentRollUpload.
+      setT12Data({
+        ...data,
+        closingCostPct,
+        acquisitionFeePct,
+        workingCapitalPerUnit,
+        seniorLtvPct,
+        seniorInterestRate,
+        seniorIoPeriods,
+        seniorFinancingCostsPct,
+      });
+      setReviewOpen(true);
     } catch (err) {
       setT12Error(err instanceof Error ? err.message : 'Failed to extract T12 data');
     } finally {
@@ -1361,11 +1381,17 @@ const Underwriting = () => {
                     <Loader2 size={18} className="text-gray-500 animate-spin" />
                     <span className="text-xs text-gray-500">Analyzing T12…</span>
                   </div>
-                ) : t12Success ? (
+                ) : t12Uploaded ? (
                   <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
                     <CheckCircle size={16} className="text-green-600" />
                     <span className="text-xs font-semibold text-green-800">T12 Parsed</span>
-                    <button onClick={() => setT12Success(false)} className="ml-auto text-xs text-green-600 hover:text-red-500">Clear</button>
+                    <label className="ml-auto text-xs text-green-600 hover:text-primary-700 cursor-pointer">
+                      Re-upload
+                      <input type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden" onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) { handleT12Upload(f); e.target.value = ''; }
+                      }} />
+                    </label>
                   </div>
                 ) : (
                   <label className="flex items-center gap-2 w-full h-20 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 hover:border-gray-400 transition-colors px-3 py-2">
@@ -1966,14 +1992,18 @@ const Underwriting = () => {
         <LoiModal dealName={dealName} onConfirm={handleLoiConfirm} onSkip={handleLoiSkip} onClose={() => setShowLoiModal(false)} />
       )}
       <ExtractionReviewModal
-        isOpen={reviewOpen && (omData != null || rentRollData != null)}
-        title={omData && rentRollData ? 'Review Extracted Deal Data' : omData ? 'Review Extracted OM Data' : 'Review Extracted Rent Roll Data'}
+        isOpen={reviewOpen && (omData != null || rentRollData != null || t12Data != null)}
+        title={
+          reviewSourceLabels.length > 1 ? 'Review Extracted Deal Data'
+          : reviewSourceLabels.length === 1 ? `Review Extracted ${reviewSourceLabels[0]} Data`
+          : 'Review Extracted Data'
+        }
         subtitle={
-          omData && rentRollData
-            ? "Rent Roll is the source of truth for rents; the OM fills in everything else. Double-check before they're added to this deal."
-            : omData
-            ? "Double-check the values pulled from the Offering Memorandum before they're added to this deal."
-            : "Double-check the values pulled from the rent roll before they're added to this deal."
+          reviewSourceLabels.length > 1
+            ? "Merged from the documents you uploaded — Rent Roll takes priority for rents/occupancy, T-12 for actual income and expenses where available, and the OM fills in the rest. Double-check before they're added to this deal."
+            : reviewSourceLabels.length === 1
+            ? `Double-check the values pulled from the ${reviewSourceLabels[0] === 'OM' ? 'Offering Memorandum' : reviewSourceLabels[0] === 'Rent Roll' ? 'rent roll' : 'T-12'} before they're added to this deal.`
+            : undefined
         }
         data={mergedReviewData}
         fields={MERGED_REVIEW_FIELDS}
@@ -1983,7 +2013,7 @@ const Underwriting = () => {
         onCancel={() => setReviewOpen(false)}
         onConfirm={(edited) => {
           const file = pendingOmFile;
-          const sources = { hasOm: omData != null, hasRentRoll: rentRollData != null };
+          const sources = { hasOm: omData != null, hasRentRoll: rentRollData != null, hasT12: t12Data != null };
           setReviewOpen(false);
           setPendingOmFile(null);
           applyMergedDataToForm(edited, sources, file);

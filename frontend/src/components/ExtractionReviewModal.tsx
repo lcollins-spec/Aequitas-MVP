@@ -175,17 +175,24 @@ const ExtractionReviewModal: React.FC<ExtractionReviewModalProps> = ({
               <div className="flex items-start gap-2">
                 <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
                 <p className="text-sm font-semibold text-amber-800">
-                  {discrepancies.length} discrepanc{discrepancies.length === 1 ? 'y' : 'ies'} between the OM and the Rent Roll
+                  {discrepancies.length} discrepanc{discrepancies.length === 1 ? 'y' : 'ies'} between the uploaded documents
                 </p>
               </div>
               <div className="space-y-1.5">
-                {discrepancies.map((d) => (
-                  <div key={d.field} className="text-xs text-amber-800 bg-white/60 border border-amber-100 rounded px-2.5 py-1.5">
-                    <span className="font-medium">{d.label}</span> — OM: <span className="font-mono">{String(d.omValue)}</span>
-                    {' · '}Rent Roll: <span className="font-mono">{String(d.rentRollValue)}</span>
-                    <span className="text-amber-600"> (using {d.appliedSource === 'rentRoll' ? 'Rent Roll' : 'OM'} value below)</span>
-                  </div>
-                ))}
+                {discrepancies.map((d) => {
+                  const parts = [
+                    d.omValue != null && `OM: ${d.omValue}`,
+                    d.rentRollValue != null && `Rent Roll: ${d.rentRollValue}`,
+                    d.t12Value != null && `T-12: ${d.t12Value}`,
+                  ].filter(Boolean) as string[];
+                  const sourceLabel = d.appliedSource === 'rentRoll' ? 'Rent Roll' : d.appliedSource === 't12' ? 'T-12' : 'OM';
+                  return (
+                    <div key={d.field} className="text-xs text-amber-800 bg-white/60 border border-amber-100 rounded px-2.5 py-1.5">
+                      <span className="font-medium">{d.label}</span> — <span className="font-mono">{parts.join(' · ')}</span>
+                      <span className="text-amber-600"> (using {sourceLabel} value below)</span>
+                    </div>
+                  );
+                })}
               </div>
               {onGenerateClarificationEmail && (
                 <div className="pt-1">
