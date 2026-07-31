@@ -29,12 +29,17 @@ decide when to stop streaming — iter_rows() is called with an explicit
 oversized max_row/max_col below specifically to bypass that and read the
 real ~15k rows regardless.
 
-The LIHTC database is a real, free, address-level public dataset too, but
-HUD serves it through an interactive query tool (https://lihtc.huduser.gov/)
-rather than a static bulk file URL, so HUD_LIHTC_URL is left unset until a
-finalized query/export endpoint is confirmed. Results simply skip that
-signal while it's unset, the same way a market with no assessor feed
-configured just produces no hits for that signal.
+The LIHTC database is also a real, free, address-level public dataset.
+HUD's own huduser.gov/lihtc/ page is an interactive query tool with no
+static bulk file, but HUD separately publishes the same data as a plain
+ArcGIS FeatureServer layer (HUD_LIHTC_ARCGIS_URL below) — found by searching
+HUD's ArcGIS org rather than the huduser.gov page, verified with live
+queries (119 real Sacramento projects, 26 real Columbus projects). Unlike
+the three bulk-file datasets above, this one is queried per-market with a
+server-side WHERE clause (city/state uppercased — the layer stores them
+that way) rather than downloaded once and filtered client-side, since
+Esri's query endpoint does the filtering for us. Watch for YR_PIS == 8888,
+a placeholder the dataset uses for "unknown," not a real year.
 """
 import io
 import logging
@@ -43,6 +48,8 @@ from datetime import datetime, timedelta
 import requests
 import openpyxl
 
+from app.services import signal_connectors
+
 logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 60
@@ -50,7 +57,8 @@ REQUEST_TIMEOUT = 60
 HUD_FHA_MORTGAGES_URL = 'https://www.hud.gov/sites/default/files/Housing/documents/FHA-BF90-RM-A.xlsx'
 HUD_SECTION8_PROPERTIES_URL = 'https://www.hud.gov/sites/dfiles/Housing/documents/MF-Properties-with-Assistance-Sec8-Contracts1.xlsx'
 HUD_SECTION8_CONTRACTS_URL = 'https://www.hud.gov/sites/dfiles/Housing/documents/MF-Assistance-Sec8-Contracts1.xlsx'
-HUD_LIHTC_URL = None  # unset — see module docstring
+HUD_LIHTC_ARCGIS_URL = 'https://egis.hud.gov/arcgis/rest/services/affht/AffhtMapService/MapServer/30'
+LIHTC_YEAR15_UNKNOWN_YEAR = 8888
 
 UNIT_MIN = 20
 UNIT_MAX = 80
@@ -150,6 +158,61 @@ def _raw(row):
     return {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in row.items()}
 
 
+def _sql_quote(value):
+    """Escape single quotes for an ArcGIS SQL WHERE clause (not parametrized like a DB driver)."""
+    return (value or '').replace("'", "''")
+
+
+def scan_lihtc_for_market(market, year15_horizon_years=2):
+    """
+    Query the HUD LIHTC ArcGIS layer directly for this market's city/state
+    (server-side WHERE, no bulk download) and flag properties approaching or
+    past Year 15 (when LIHTC compliance restrictions ease and owners commonly
+    sell). Returns a list of normalized hit dicts (not yet persisted).
+    """
+    city = _sql_quote((market.city or '').strip().upper())
+    state = _sql_quote((market.state or '').strip().upper())
+    if not city or not state:
+        return []
+
+    where = f"PROJ_CTY='{city}' AND PROJ_ST='{state}'"
+    field_mapping = {
+        'project_name': 'PROJECT', 'address': 'PROJ_ADD', 'units': 'N_UNITS',
+        'year_placed_in_service': 'YR_PIS', 'owner_name': 'COMPANY',
+    }
+    try:
+        records = signal_connectors.fetch_arcgis_feature_server(HUD_LIHTC_ARCGIS_URL, field_mapping, where=where)
+    except Exception as e:
+        logger.warning(f"HUD LIHTC query failed for market {market.id}: {e}")
+        return []
+
+    current_year = datetime.utcnow().year
+    hits = []
+    for rec in records:
+        units = rec.get('units')
+        if not _in_unit_range(units):
+            continue
+        year_pis = rec.get('year_placed_in_service')
+        if year_pis in (None, '', LIHTC_YEAR15_UNKNOWN_YEAR):
+            continue  # unknown placed-in-service year — can't compute Year 15, skip rather than guess
+        try:
+            years_since = current_year - int(year_pis)
+        except (TypeError, ValueError):
+            continue
+        if years_since < (15 - year15_horizon_years):
+            continue  # not yet approaching Year 15
+        address = rec.get('address') or rec.get('project_name') or ''
+        owner_name = rec.get('owner_name')
+        hits.append({
+            'source': 'hud_lihtc_year15',
+            'address': str(address).strip(),
+            'owner_name': str(owner_name).strip() if owner_name and str(owner_name).strip() else None,
+            'unit_count': int(float(units)) if units not in (None, '') else None,
+            'raw_data': rec,
+        })
+    return hits
+
+
 def scan_hud_signals_for_market(market, maturity_horizon_months=24):
     """
     Filter cached HUD rows down to this market's city/state + the 20-80 unit
@@ -157,6 +220,7 @@ def scan_hud_signals_for_market(market, maturity_horizon_months=24):
     expiration. Returns a list of normalized hit dicts (not yet persisted).
     """
     hits = []
+    hits.extend(scan_lihtc_for_market(market))
     now = datetime.utcnow()
     horizon = now + timedelta(days=30 * maturity_horizon_months)
     city = (market.city or '').strip().lower()
@@ -226,7 +290,5 @@ def scan_hud_signals_for_market(market, maturity_horizon_months=24):
                         **{f'property_{k}': v for k, v in _raw(prop).items()},
                     },
                 })
-
-    # LIHTC Year 15: skipped while HUD_LIHTC_URL is unset (see module docstring).
 
     return hits

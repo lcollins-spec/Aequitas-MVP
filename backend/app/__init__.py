@@ -198,7 +198,7 @@ def create_app(test_config=None):
             if SignalDefinitionModel.query.count() == 0:
                 seed_signals = [
                     # Feasible for v1 — fully active
-                    ('absentee_owner', 'Absentee / Long-Hold Owner', 'public_records', True, False, None),
+                    ('absentee_owner', 'Long-Hold Owner (Sacramento only)', 'public_records', True, False, None),
                     ('code_violations', 'Code Violations / Housing Court', 'public_records', True, False, None),
                     ('tax_delinquency', 'Tax Delinquency', 'public_records', True, False, None),
                     # HUD national datasets — fully active
@@ -228,6 +228,57 @@ def create_app(test_config=None):
                 logger.info("Seeded default signal_definitions (12 signals)")
     except Exception as e:
         logger.warning(f"Signal engine seed data note: {e}")
+
+    # Ensure known-good feed configs + signal-definition labels are applied
+    # even on a database that was already seeded before these were found —
+    # the seed block above only runs once (on an empty table), so a later
+    # code change to seed constants doesn't retroactively update existing
+    # rows. Matches by city/state, and only touches feed columns that are
+    # still null — never overwrites something a user configured by hand
+    # through the "Configure feeds" panel.
+    try:
+        with app.app_context():
+            from app.database import SignalMarketModel, SignalDefinitionModel
+            import json as _json
+
+            absentee_def = SignalDefinitionModel.query.filter_by(key='absentee_owner').first()
+            if absentee_def and absentee_def.label == 'Absentee / Long-Hold Owner':
+                absentee_def.label = 'Long-Hold Owner (Sacramento only)'
+                db.session.commit()
+                logger.info("Updated absentee_owner signal label to reflect real scope")
+
+            sacramento = SignalMarketModel.query.filter_by(city='Sacramento', state='CA').first()
+            if sacramento:
+                if not sacramento.code_violations_feed_url:
+                    sacramento.code_violations_feed_url = 'https://mapservices.gis.saccounty.net/arcgis/rest/services/ACCELA_ACTIVITIES/MapServer/1'
+                    sacramento.code_violations_feed_type = 'arcgis'
+                    sacramento.code_violations_field_mapping = _json.dumps({
+                        'address': 'StreetAddress', 'owner_name': 'OwnerName',
+                        'owner_mailing_address': 'OwnerAddress', 'units': 'NumOfUnits',
+                    })
+                    logger.info("Applied known-good code_violations feed config to Sacramento")
+                if not sacramento.assessor_feed_url:
+                    sacramento.assessor_feed_url = 'https://mapservices.gis.saccounty.net/arcgis/rest/services/ASSESSOR/MapServer/1'
+                    sacramento.assessor_feed_type = 'arcgis'
+                    sacramento.assessor_field_mapping = _json.dumps({
+                        'situs_address': 'SITUS_ADDRESS1', 'sale_date': 'DOCUMENT_DATE',
+                        'units': 'Units', 'property_type': 'Property_Type',
+                        '_where': "Property_Type='Multiple Family Residence' AND Units>=20 AND Units<=80",
+                    })
+                    logger.info("Applied known-good assessor (long-hold) feed config to Sacramento")
+                db.session.commit()
+
+            columbus = SignalMarketModel.query.filter_by(city='Columbus', state='GA').first()
+            if columbus and not columbus.tax_delinquent_feed_url:
+                columbus.tax_delinquent_feed_url = 'https://services2.arcgis.com/hKwZvjnqryeqGRIt/arcgis/rest/services/Muscogee_County_Prop/FeatureServer/0'
+                columbus.tax_delinquent_feed_type = 'arcgis'
+                columbus.tax_delinquent_field_mapping = _json.dumps({
+                    'address': 'USER_Address', 'owner_name': 'USER_Owner',
+                })
+                db.session.commit()
+                logger.info("Applied known-good tax_delinquent feed config to Columbus")
+    except Exception as e:
+        logger.warning(f"Known-good feed config patch note: {e}")
 
     # Enable CORS for frontend communication (only in development)
     # In production (Docker), CORS not needed as same-origin

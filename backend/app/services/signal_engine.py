@@ -111,14 +111,22 @@ def _upsert_hit(market_id, source, record):
 
 
 def _fetch_via_feed(feed_url, feed_type, field_mapping_json):
+    """
+    `_where` is a reserved key in the field_mapping JSON (not a data field —
+    stripped before building the attribute mapping): an optional server-side
+    filter clause. Some feeds are large enough that fetching the default
+    page and filtering client-side would miss the records that actually
+    matter (verified case: Sacramento's sales-history layer has 56,891 rows;
+    the 20-80-unit multifamily ones aren't guaranteed to be in the first
+    2000 returned) — pushing the filter server-side fixes that.
+    """
     if not feed_url or not feed_type or not field_mapping_json:
         return []
     mapping = json.loads(field_mapping_json)
-    fetcher = (
-        signal_connectors.fetch_arcgis_feature_server if feed_type == 'arcgis'
-        else signal_connectors.fetch_socrata_dataset
-    )
-    return fetcher(feed_url, mapping)
+    where = mapping.pop('_where', None)
+    if feed_type == 'arcgis':
+        return signal_connectors.fetch_arcgis_feature_server(feed_url, mapping, where=where or '1=1')
+    return signal_connectors.fetch_socrata_dataset(feed_url, mapping, where=where)
 
 
 def run_market_scan(market):
@@ -132,22 +140,44 @@ def run_market_scan(market):
         except Exception as e:
             logger.warning(f"assessor feed fetch failed for market {market.id}: {e}")
             records = []
+
+        # Some assessor feeds (e.g. Sacramento's) are sales HISTORY, not a
+        # current-ownership roll — multiple rows per address across past
+        # decades. Keep only the most recent sale per address before
+        # checking long-hold age, otherwise an old historical sale row
+        # would misflag an address that has since resold recently.
+        latest_by_address = {}
         for rec in records:
+            situs = _normalize_address(rec.get('situs_address') or rec.get('address'))
+            if not situs:
+                continue
+            sale_dt = _parse_date(rec.get('sale_date'))
+            prev = latest_by_address.get(situs)
+            if prev is None or (sale_dt is not None and (prev[1] is None or sale_dt > prev[1])):
+                latest_by_address[situs] = (rec, sale_dt)
+
+        for rec, sale_dt in latest_by_address.values():
             mailing = _normalize_address(rec.get('mailing_address'))
             situs = _normalize_address(rec.get('situs_address') or rec.get('address'))
-            sale_dt = _parse_date(rec.get('sale_date'))
             long_hold = bool(sale_dt and (datetime.utcnow() - sale_dt).days > LONG_HOLD_DAYS)
             is_absentee = bool(mailing) and bool(situs) and mailing != situs
-            if is_absentee or long_hold:
-                if _upsert_hit(market.id, 'absentee_owner', {
-                    'address': rec.get('situs_address') or rec.get('address'),
-                    'owner_name': rec.get('owner_name'),
-                    'owner_mailing_address': rec.get('mailing_address'),
-                    'unit_count': rec.get('units'),
-                    'assessed_value': rec.get('assessed_value'),
-                    'raw_data': rec,
-                }):
-                    created += 1
+            if not (is_absentee or long_hold):
+                continue
+            # A feed carrying a property_type field (e.g. Sacramento's sales-
+            # history layer) lets us skip single-family/commercial/vacant-land
+            # rows outright; feeds without this field pass through unfiltered.
+            property_type = rec.get('property_type')
+            if property_type and 'multi' not in str(property_type).strip().lower():
+                continue
+            if _upsert_hit(market.id, 'absentee_owner', {
+                'address': rec.get('situs_address') or rec.get('address'),
+                'owner_name': rec.get('owner_name'),
+                'owner_mailing_address': rec.get('mailing_address'),
+                'unit_count': rec.get('units'),
+                'assessed_value': rec.get('assessed_value'),
+                'raw_data': rec,
+            }):
+                created += 1
 
     if 'code_violations' in signal_defs:
         try:

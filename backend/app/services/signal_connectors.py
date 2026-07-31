@@ -22,10 +22,16 @@ logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT = 20
 
 
-def fetch_arcgis_feature_server(feed_url, field_mapping, limit=2000):
+def fetch_arcgis_feature_server(feed_url, field_mapping, limit=2000, where='1=1'):
     """
     Query an Esri FeatureServer/MapServer `/query` endpoint and normalize
     records using field_mapping (target_key -> source attribute name).
+
+    `where` defaults to matching everything, but callers hitting a national
+    layer (e.g. the HUD LIHTC dataset) can pass a real filter so the server
+    does the city/state narrowing instead of downloading everything and
+    filtering client-side — this is what makes a per-market county feed and
+    a national HUD layer usable through the same function.
 
     Returns a list of dicts with the target_key names from field_mapping.
     """
@@ -37,7 +43,7 @@ def fetch_arcgis_feature_server(feed_url, field_mapping, limit=2000):
         query_url = f'{query_url}/query'
 
     params = {
-        'where': '1=1',
+        'where': where,
         'outFields': '*',
         'f': 'json',
         'resultRecordCount': limit,
@@ -55,10 +61,14 @@ def fetch_arcgis_feature_server(feed_url, field_mapping, limit=2000):
     return records
 
 
-def fetch_socrata_dataset(feed_url, field_mapping, limit=2000):
+def fetch_socrata_dataset(feed_url, field_mapping, limit=2000, where=None):
     """
     Query a Socrata SODA API resource endpoint and normalize records using
     field_mapping (target_key -> source column name).
+
+    `where` is a SoQL filter (Socrata's `$where` param) — same rationale as
+    fetch_arcgis_feature_server's `where`: push filtering server-side rather
+    than fetching `limit` rows and hoping the ones you care about are in it.
 
     Returns a list of dicts with the target_key names from field_mapping.
     """
@@ -66,6 +76,8 @@ def fetch_socrata_dataset(feed_url, field_mapping, limit=2000):
         return []
 
     params = {'$limit': limit}
+    if where:
+        params['$where'] = where
     resp = requests.get(feed_url, params=params, timeout=REQUEST_TIMEOUT)
     resp.raise_for_status()
     rows = resp.json()
