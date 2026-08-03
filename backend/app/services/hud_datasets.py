@@ -220,7 +220,6 @@ def scan_hud_signals_for_market(market, maturity_horizon_months=24):
     expiration. Returns a list of normalized hit dicts (not yet persisted).
     """
     hits = []
-    hits.extend(scan_lihtc_for_market(market))
     now = datetime.utcnow()
     horizon = now + timedelta(days=30 * maturity_horizon_months)
     city = (market.city or '').strip().lower()

@@ -228,6 +228,16 @@ def run_market_scan(market):
             if _upsert_hit(market.id, rec['source'], rec):
                 created += 1
 
+    # Cut for now (out of buy box — LIHTC/affordable properties don't match
+    # this fund's conventional Class B/C target). Called separately, and only
+    # when enabled, rather than unconditionally like the other HUD signals
+    # above, so a disabled signal costs nothing per scan. Real, verified,
+    # working data if this is ever turned back on — see hud_datasets.py.
+    if 'hud_lihtc_year15' in signal_defs:
+        for rec in hud_datasets.scan_lihtc_for_market(market):
+            if _upsert_hit(market.id, rec['source'], rec):
+                created += 1
+
     db.session.commit()
     return created
 

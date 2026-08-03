@@ -204,7 +204,10 @@ def create_app(test_config=None):
                     # HUD national datasets — fully active
                     ('hud_fha_loan_maturity', 'HUD FHA-Insured Loan Maturity', 'public_records', True, False, None),
                     ('hud_section8_contract_expiration', 'HUD Section 8 Contract Expiration', 'public_records', True, False, None),
-                    ('hud_lihtc_year15', 'HUD LIHTC Year 15 Approaching', 'public_records', True, False, None),
+                    ('hud_lihtc_year15', 'HUD LIHTC Year 15 Approaching', 'public_records', False, True,
+                     "Out of buy box for now: LIHTC/affordable properties don't match this fund's conventional "
+                     'Class B/C target, extended-use rent restrictions often outlive Year 15, and transfers can '
+                     'require a right-of-first-refusal waiver. Data source is real and verified working if this changes.'),
                     # Flagged in original spec — stubbed, disabled
                     ('pre_foreclosure', 'Pre-Foreclosure / Notice of Default', 'public_records', False, True,
                      'County recorder portals have no API and differ per county; no reliable bulk search found.'),
@@ -246,6 +249,18 @@ def create_app(test_config=None):
                 absentee_def.label = 'Long-Hold Owner (Sacramento only)'
                 db.session.commit()
                 logger.info("Updated absentee_owner signal label to reflect real scope")
+
+            lihtc_def = SignalDefinitionModel.query.filter_by(key='hud_lihtc_year15').first()
+            if lihtc_def and lihtc_def.enabled and not lihtc_def.stubbed:
+                lihtc_def.enabled = False
+                lihtc_def.stubbed = True
+                lihtc_def.disabled_reason = (
+                    "Out of buy box for now: LIHTC/affordable properties don't match this fund's conventional "
+                    'Class B/C target, extended-use rent restrictions often outlive Year 15, and transfers can '
+                    'require a right-of-first-refusal waiver. Data source is real and verified working if this changes.'
+                )
+                db.session.commit()
+                logger.info("Disabled hud_lihtc_year15 signal — out of buy box, not a data problem")
 
             sacramento = SignalMarketModel.query.filter_by(city='Sacramento', state='CA').first()
             if sacramento:
