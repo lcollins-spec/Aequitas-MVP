@@ -163,6 +163,38 @@ def _sql_quote(value):
     return (value or '').replace("'", "''")
 
 
+def _normalize_address(address):
+    import re
+    return re.sub(r'[^a-z0-9]', '', (address or '').lower())
+
+
+def get_lihtc_addresses_for_market(market):
+    """
+    Every LIHTC address in this market, regardless of unit count or Year-15
+    proximity — unlike scan_lihtc_for_market (which is specifically the
+    Year-15 signal's filtered view), this is for the "not LIHTC" cross-
+    reference exclusion applied to every hit from every signal: a small or
+    newly-placed-in-service LIHTC property should still be excluded, not
+    just ones near their Year-15 milestone. Returns a set of normalized
+    addresses, not hit dicts — nothing here gets persisted directly.
+    """
+    city = _sql_quote((market.city or '').strip().upper())
+    state = _sql_quote((market.state or '').strip().upper())
+    if not city or not state:
+        return set()
+
+    where = f"PROJ_CTY='{city}' AND PROJ_ST='{state}'"
+    try:
+        records = signal_connectors.fetch_arcgis_feature_server(
+            HUD_LIHTC_ARCGIS_URL, {'address': 'PROJ_ADD'}, where=where
+        )
+    except Exception as e:
+        logger.warning(f"HUD LIHTC address lookup failed for market {market.id}: {e}")
+        return set()
+
+    return {_normalize_address(rec.get('address')) for rec in records if rec.get('address')}
+
+
 def scan_lihtc_for_market(market, year15_horizon_years=2):
     """
     Query the HUD LIHTC ArcGIS layer directly for this market's city/state

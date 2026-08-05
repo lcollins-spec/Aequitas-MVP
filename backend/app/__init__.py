@@ -189,6 +189,25 @@ def create_app(test_config=None):
     except Exception as e:
         logger.warning(f"signal_hits status column migration note: {e}")
 
+    # Inline migration: add 'year_built' and 'is_lihtc' columns to signal_hits if not present.
+    try:
+        with app.app_context():
+            from sqlalchemy import text, inspect as sa_inspect
+            inspector = sa_inspect(db.engine)
+            if 'signal_hits' in inspector.get_table_names():
+                cols = [c['name'] for c in inspector.get_columns('signal_hits')]
+                with db.engine.connect() as conn:
+                    if 'year_built' not in cols:
+                        conn.execute(text("ALTER TABLE signal_hits ADD COLUMN year_built INTEGER"))
+                        conn.commit()
+                        logger.info("Added 'year_built' column to signal_hits")
+                    if 'is_lihtc' not in cols:
+                        conn.execute(text("ALTER TABLE signal_hits ADD COLUMN is_lihtc BOOLEAN NOT NULL DEFAULT 0"))
+                        conn.commit()
+                        logger.info("Added 'is_lihtc' column to signal_hits")
+    except Exception as e:
+        logger.warning(f"signal_hits year_built/is_lihtc column migration note: {e}")
+
     # Seed default signal-engine markets + signal-library rows (idempotent —
     # only inserts if the tables are empty, so it's a no-op on every boot
     # after the first).
@@ -292,10 +311,33 @@ def create_app(test_config=None):
                     sacramento.assessor_feed_type = 'arcgis'
                     sacramento.assessor_field_mapping = _json.dumps({
                         'situs_address': 'SITUS_ADDRESS1', 'sale_date': 'DOCUMENT_DATE',
-                        'units': 'Units', 'property_type': 'Property_Type',
-                        '_where': "Property_Type='Multiple Family Residence' AND Units>=20 AND Units<=80",
+                        'units': 'Units', 'property_type': 'Property_Type', 'year_built': 'EFFECTIVE_YEAR_BUILT',
+                        '_where': "Property_Type='Multiple Family Residence'",
                     })
                     logger.info("Applied known-good assessor (long-hold) feed config to Sacramento")
+                elif sacramento.assessor_field_mapping:
+                    # Big-bucket ingestion pivot: drop the 20-80 unit bound from an
+                    # already-configured market's WHERE clause (verified separately:
+                    # property-type-only is 1,633 records, fits one page, no
+                    # pagination needed) and backfill year_built if it predates that
+                    # field being added to the mapping. Only touches the mapping if
+                    # it still matches what THIS code originally set — never
+                    # clobbers a manually-edited "Configure feeds" config.
+                    try:
+                        existing_mapping = _json.loads(sacramento.assessor_field_mapping)
+                    except (ValueError, TypeError):
+                        existing_mapping = {}
+                    old_where = "Property_Type='Multiple Family Residence' AND Units>=20 AND Units<=80"
+                    changed = False
+                    if existing_mapping.get('_where') == old_where:
+                        existing_mapping['_where'] = "Property_Type='Multiple Family Residence'"
+                        changed = True
+                    if 'year_built' not in existing_mapping:
+                        existing_mapping['year_built'] = 'EFFECTIVE_YEAR_BUILT'
+                        changed = True
+                    if changed:
+                        sacramento.assessor_field_mapping = _json.dumps(existing_mapping)
+                        logger.info("Updated Sacramento assessor feed config: dropped unit bound, added year_built")
                 db.session.commit()
 
             columbus = SignalMarketModel.query.filter_by(city='Columbus', state='GA').first()

@@ -56,13 +56,24 @@ def _parse_date(value):
     return None
 
 
-def _upsert_hit(market_id, source, record):
+def _upsert_hit(market_id, source, record, is_lihtc=False):
+    """
+    No unit-range gate here on purpose (big-bucket ingestion pivot): this
+    used to reject any record with a known unit_count outside 20-80,
+    which — since every signal routes through this one function — was
+    silently dropping out-of-range properties from every signal, not just
+    the one it was originally written for. Capture everything; unit range
+    (and every other criterion) is a UI filter now, not an ingestion gate.
+
+    is_lihtc is computed by the caller (run_market_scan), not the connector
+    record itself — it's a cross-reference against the market's LIHTC
+    address set, checked once per scan and applied regardless of source.
+    """
     address = (record.get('address') or '').strip()
     if not address:
         return False
     units = record.get('unit_count')
-    if not _in_unit_range(units):
-        return False
+    year_built = record.get('year_built')
 
     dedup_key = _make_dedup_key(market_id, source, address)
     existing = SignalHitModel.query.filter_by(dedup_key=dedup_key).first()
@@ -77,6 +88,10 @@ def _upsert_hit(market_id, source, record):
             existing.owner_mailing_address = record['owner_mailing_address']
         if units not in (None, ''):
             existing.unit_count = int(float(units))
+        if year_built not in (None, ''):
+            existing.year_built = int(float(year_built))
+        if is_lihtc:
+            existing.is_lihtc = True  # sticky — never un-flag once matched, matches are cheap false positives at worst
         if record.get('assessed_value') is not None:
             existing.assessed_value = record['assessed_value']
         if record.get('listing_price') is not None:
@@ -97,6 +112,8 @@ def _upsert_hit(market_id, source, record):
         owner_name=record.get('owner_name'),
         owner_mailing_address=record.get('owner_mailing_address'),
         unit_count=int(float(units)) if units not in (None, '') else None,
+        year_built=int(float(year_built)) if year_built not in (None, '') else None,
+        is_lihtc=bool(is_lihtc),
         assessed_value=record.get('assessed_value'),
         listing_price=record.get('listing_price'),
         listing_broker=record.get('listing_broker'),
@@ -134,6 +151,14 @@ def run_market_scan(market):
     signal_defs = {s.key: s for s in SignalDefinitionModel.query.filter_by(enabled=True, stubbed=False).all()}
     created = 0
 
+    # Computed once per scan, applied to every hit below regardless of which
+    # signal produced it — "not LIHTC" is a universal exclusion now, not
+    # specific to the (disabled) hud_lihtc_year15 signal.
+    lihtc_addresses = hud_datasets.get_lihtc_addresses_for_market(market)
+
+    def _is_lihtc(address):
+        return _normalize_address(address) in lihtc_addresses
+
     if 'absentee_owner' in signal_defs:
         try:
             records = _fetch_via_feed(market.assessor_feed_url, market.assessor_feed_type, market.assessor_field_mapping)
@@ -169,14 +194,16 @@ def run_market_scan(market):
             property_type = rec.get('property_type')
             if property_type and 'multi' not in str(property_type).strip().lower():
                 continue
+            hit_address = rec.get('situs_address') or rec.get('address')
             if _upsert_hit(market.id, 'absentee_owner', {
-                'address': rec.get('situs_address') or rec.get('address'),
+                'address': hit_address,
                 'owner_name': rec.get('owner_name'),
                 'owner_mailing_address': rec.get('mailing_address'),
                 'unit_count': rec.get('units'),
+                'year_built': rec.get('year_built'),
                 'assessed_value': rec.get('assessed_value'),
                 'raw_data': rec,
-            }):
+            }, is_lihtc=_is_lihtc(hit_address)):
                 created += 1
 
     if 'code_violations' in signal_defs:
@@ -196,7 +223,7 @@ def run_market_scan(market):
                 'owner_mailing_address': rec.get('owner_mailing_address'),
                 'unit_count': rec.get('units'),
                 'raw_data': rec,
-            }):
+            }, is_lihtc=_is_lihtc(rec.get('address'))):
                 created += 1
 
     if 'tax_delinquency' in signal_defs:
@@ -217,7 +244,7 @@ def run_market_scan(market):
                 'unit_count': rec.get('units'),
                 'assessed_value': rec.get('assessed_value'),
                 'raw_data': rec,
-            }):
+            }, is_lihtc=_is_lihtc(rec.get('address'))):
                 created += 1
 
     if 'hud_fha_loan_maturity' in signal_defs or 'hud_section8_contract_expiration' in signal_defs:
@@ -225,7 +252,7 @@ def run_market_scan(market):
         for rec in hud_datasets.scan_hud_signals_for_market(market):
             if rec['source'] not in signal_defs:
                 continue
-            if _upsert_hit(market.id, rec['source'], rec):
+            if _upsert_hit(market.id, rec['source'], rec, is_lihtc=_is_lihtc(rec.get('address'))):
                 created += 1
 
     # Cut for now (out of buy box — LIHTC/affordable properties don't match

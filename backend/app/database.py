@@ -2002,6 +2002,13 @@ class SignalHitModel(db.Model):
     owner_name = Column(String(255), nullable=True)
     owner_mailing_address = Column(String(500), nullable=True)
     unit_count = Column(Integer, nullable=True)
+    year_built = Column(Integer, nullable=True)
+    # Cross-referenced against the HUD LIHTC dataset regardless of which
+    # signal produced this hit — "not LIHTC" is a universal exclusion, not
+    # specific to the (disabled) hud_lihtc_year15 signal. Null-permissive:
+    # only known-multifamily hits get checked; unknown stays False, not
+    # excluded by default, same philosophy as unit_count/year_built.
+    is_lihtc = Column(Boolean, nullable=False, default=False)
     assessed_value = Column(Float, nullable=True)
     listing_price = Column(Float, nullable=True)
     listing_broker = Column(String(255), nullable=True)
@@ -2025,6 +2032,8 @@ class SignalHitModel(db.Model):
             'owner_name': self.owner_name,
             'owner_mailing_address': self.owner_mailing_address,
             'unit_count': self.unit_count,
+            'year_built': self.year_built,
+            'is_lihtc': self.is_lihtc,
             'assessed_value': self.assessed_value,
             'listing_price': self.listing_price,
             'listing_broker': self.listing_broker,
