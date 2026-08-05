@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 signals_bp = Blueprint('signals', __name__)
 
+# Manual pipeline-conversion tracking — fixed set, no automation.
+HIT_STATUSES = ['New', 'Enriched', 'Contacted', 'Responding', 'Dead', 'Under LOI']
+
 
 # ── Markets ───────────────────────────────────────────────────────────────────
 
@@ -159,6 +162,10 @@ def update_hit(hit_id):
         hit.pinned = bool(data['pinned'])
     if 'note' in data:
         hit.note = data['note'] or ''
+    if 'status' in data:
+        if data['status'] not in HIT_STATUSES:
+            return jsonify({'error': f"status must be one of {HIT_STATUSES}"}), 400
+        hit.status = data['status']
     db.session.commit()
     return jsonify({'hit': hit.to_dict()}), 200
 

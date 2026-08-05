@@ -1,5 +1,10 @@
 // API helpers for the sourcing signals engine (public-records + HUD lead sourcing).
 
+// Manual pipeline-conversion tracking — fixed set, no automation. Must match
+// HIT_STATUSES in backend/app/api/v1/signals_routes.py.
+export const HIT_STATUSES = ['New', 'Enriched', 'Contacted', 'Responding', 'Dead', 'Under LOI'] as const;
+export type HitStatus = typeof HIT_STATUSES[number];
+
 export interface SignalMarket {
   id: string;
   name: string;
@@ -43,6 +48,7 @@ export interface SignalHit {
   last_seen_at: string;
   pinned: boolean;
   note: string;
+  status: HitStatus;
   stacked_count: number;
 }
 
@@ -135,7 +141,7 @@ export async function fetchHits(params: {
   return j.hits ?? [];
 }
 
-export async function updateHit(id: string, patch: { pinned?: boolean; note?: string }): Promise<SignalHit> {
+export async function updateHit(id: string, patch: { pinned?: boolean; note?: string; status?: HitStatus }): Promise<SignalHit> {
   const r = await fetch(`${BASE}/hits/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },

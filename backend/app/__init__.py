@@ -174,6 +174,21 @@ def create_app(test_config=None):
     except Exception as e:
         logger.warning(f"tax_delinquent_feed column migration note: {e}")
 
+    # Inline migration: add 'status' column to signal_hits if not present.
+    try:
+        with app.app_context():
+            from sqlalchemy import text, inspect as sa_inspect
+            inspector = sa_inspect(db.engine)
+            if 'signal_hits' in inspector.get_table_names():
+                cols = [c['name'] for c in inspector.get_columns('signal_hits')]
+                if 'status' not in cols:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE signal_hits ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'New'"))
+                        conn.commit()
+                    logger.info("Added 'status' column to signal_hits")
+    except Exception as e:
+        logger.warning(f"signal_hits status column migration note: {e}")
+
     # Seed default signal-engine markets + signal-library rows (idempotent —
     # only inserts if the tables are empty, so it's a no-op on every boot
     # after the first).

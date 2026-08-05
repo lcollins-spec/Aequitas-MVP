@@ -14,7 +14,8 @@ import {
   Sliders,
 } from 'lucide-react';
 import * as signalsApi from '../services/signalsApi';
-import type { SignalMarket, SignalDefinition, SignalHit, MarketFeedPayload } from '../services/signalsApi';
+import { HIT_STATUSES } from '../services/signalsApi';
+import type { SignalMarket, SignalDefinition, SignalHit, HitStatus, MarketFeedPayload } from '../services/signalsApi';
 
 function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -124,9 +125,10 @@ interface HitCardProps {
   onToggle: () => void;
   onPin: () => void;
   onNoteChange: (note: string) => void;
+  onStatusChange: (status: HitStatus) => void;
 }
 
-const HitCard = ({ hit, market, defs, expanded, onToggle, onPin, onNoteChange }: HitCardProps) => {
+const HitCard = ({ hit, market, defs, expanded, onToggle, onPin, onNoteChange, onStatusChange }: HitCardProps) => {
   return (
     <div className={`p-5 hover:bg-gray-50 transition-colors border-b border-gray-100 ${hit.stacked_count >= 2 ? 'border-l-2 border-amber-400' : ''}`}>
       <div className="flex items-start justify-between cursor-pointer" onClick={onToggle}>
@@ -143,6 +145,14 @@ const HitCard = ({ hit, market, defs, expanded, onToggle, onPin, onNoteChange }:
             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary-50 text-primary-800 border border-primary-200">
               {sourceLabel(hit.source, defs)}
             </span>
+            <select
+              value={hit.status}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => onStatusChange(e.target.value as HitStatus)}
+              className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-50 text-gray-700 border border-gray-200 focus:outline-none focus:border-primary-500"
+            >
+              {HIT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
             <span className="text-xs text-gray-400">{market?.name ?? hit.market_id}</span>
             <span className="text-xs text-gray-400">Seen {formatTimestamp(hit.last_seen_at)}</span>
           </div>
@@ -495,6 +505,11 @@ const Sourcing = () => {
     applyHitUpdate(hit.id, updated);
   };
 
+  const handleStatusChange = async (hit: SignalHit, status: HitStatus) => {
+    const updated = await signalsApi.updateHit(hit.id, { status });
+    applyHitUpdate(hit.id, updated);
+  };
+
   const handleCsvFileChosen = async (file: File) => {
     if (!csvUploadMarketId) return;
     try {
@@ -755,6 +770,7 @@ const Sourcing = () => {
               onToggle={() => setExpandedHitId(expandedHitId === h.id ? null : h.id)}
               onPin={() => handlePinToggle(h)}
               onNoteChange={(note) => handleNoteChange(h, note)}
+              onStatusChange={(status) => handleStatusChange(h, status)}
             />
           ))
         )}

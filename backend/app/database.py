@@ -2012,6 +2012,9 @@ class SignalHitModel(db.Model):
     last_seen_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     pinned = Column(Boolean, nullable=False, default=False)
     note = Column(Text, nullable=False, default='')
+    # Manual pipeline-conversion tracking — no automation, purely user-selected.
+    # Fixed set: New, Enriched, Contacted, Responding, Dead, Under LOI.
+    status = Column(String(20), nullable=False, default='New')
 
     def to_dict(self, stacked_count=None):
         return {
@@ -2031,6 +2034,7 @@ class SignalHitModel(db.Model):
             'last_seen_at': self.last_seen_at.isoformat() if self.last_seen_at else None,
             'pinned': self.pinned,
             'note': self.note,
+            'status': self.status,
             'stacked_count': stacked_count if stacked_count is not None else 1,
         }
 
