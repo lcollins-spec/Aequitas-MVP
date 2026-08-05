@@ -7,6 +7,7 @@ this module is just the CRUD/trigger surface over it.
 """
 import json
 import logging
+import re
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -119,12 +120,21 @@ def _normalized_address_of(hit):
     return parts[2] if len(parts) == 3 else hit.dedup_key
 
 
+def _normalized_owner_of(hit):
+    return re.sub(r'[^a-z0-9]', '', (hit.owner_name or '').lower())
+
+
 @signals_bp.route('/signals/hits', methods=['GET'])
 def list_hits():
     market_id = request.args.get('market_id')
     source = request.args.get('source')
     pinned_param = request.args.get('pinned')
     min_stacked = request.args.get('min_stacked', type=int)
+    unit_min = request.args.get('unit_min', type=int)
+    unit_max = request.args.get('unit_max', type=int)
+    built_after = request.args.get('built_after', type=int)
+    exclude_lihtc = request.args.get('exclude_lihtc')
+    owner_search = (request.args.get('owner_search') or '').strip().lower()
 
     base_query = SignalHitModel.query
     if market_id:
@@ -132,8 +142,12 @@ def list_hits():
     in_scope = base_query.all()
 
     group_sources = defaultdict(set)
+    group_owners = defaultdict(set)
     for h in in_scope:
         group_sources[(h.market_id, _normalized_address_of(h))].add(h.source)
+        owner_key = _normalized_owner_of(h)
+        if owner_key:
+            group_owners[owner_key].add(h.id)
 
     filtered = in_scope
     if source:
@@ -141,13 +155,29 @@ def list_hits():
     if pinned_param is not None:
         want_pinned = pinned_param.lower() == 'true'
         filtered = [h for h in filtered if h.pinned == want_pinned]
+    # Unit range, year-built, and LIHTC are UI filters now, not ingestion
+    # gates (big-bucket pivot) — unknown values pass through rather than
+    # being excluded, same permissive-for-unknowns philosophy used
+    # everywhere else in this engine.
+    if unit_min is not None:
+        filtered = [h for h in filtered if h.unit_count is None or h.unit_count >= unit_min]
+    if unit_max is not None:
+        filtered = [h for h in filtered if h.unit_count is None or h.unit_count <= unit_max]
+    if built_after is not None:
+        filtered = [h for h in filtered if h.year_built is None or h.year_built >= built_after]
+    if exclude_lihtc and exclude_lihtc.lower() == 'true':
+        filtered = [h for h in filtered if not h.is_lihtc]
+    if owner_search:
+        filtered = [h for h in filtered if owner_search in (h.owner_name or '').lower()]
 
     results = []
     for h in sorted(filtered, key=lambda x: x.first_seen_at, reverse=True):
         stacked = len(group_sources[(h.market_id, _normalized_address_of(h))])
         if min_stacked and stacked < min_stacked:
             continue
-        results.append(h.to_dict(stacked_count=stacked))
+        owner_key = _normalized_owner_of(h)
+        owner_stacked = len(group_owners[owner_key]) if owner_key else 1
+        results.append(h.to_dict(stacked_count=stacked, owner_stacked_count=owner_stacked))
 
     return jsonify({'hits': results}), 200
 

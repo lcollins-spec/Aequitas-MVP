@@ -2023,7 +2023,7 @@ class SignalHitModel(db.Model):
     # Fixed set: New, Enriched, Contacted, Responding, Dead, Under LOI.
     status = Column(String(20), nullable=False, default='New')
 
-    def to_dict(self, stacked_count=None):
+    def to_dict(self, stacked_count=None, owner_stacked_count=None):
         return {
             'id': self.id,
             'market_id': self.market_id,
@@ -2045,6 +2045,7 @@ class SignalHitModel(db.Model):
             'note': self.note,
             'status': self.status,
             'stacked_count': stacked_count if stacked_count is not None else 1,
+            'owner_stacked_count': owner_stacked_count if owner_stacked_count is not None else 1,
         }
 
 

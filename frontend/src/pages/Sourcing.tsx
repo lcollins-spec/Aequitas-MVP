@@ -140,6 +140,16 @@ const HitCard = ({ hit, market, defs, expanded, onToggle, onPin, onNoteChange, o
                 <Layers size={11} /> {hit.stacked_count} signals matched
               </span>
             )}
+            {hit.owner_stacked_count >= 2 && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1">
+                <Layers size={11} /> {hit.owner_stacked_count} hits, same owner
+              </span>
+            )}
+            {hit.is_lihtc && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
+                LIHTC
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2 flex-wrap mb-1">
             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary-50 text-primary-800 border border-primary-200">
@@ -161,6 +171,7 @@ const HitCard = ({ hit, market, defs, expanded, onToggle, onPin, onNoteChange, o
               <div><span className="text-gray-400">Owner:</span> {hit.owner_name || '—'}</div>
               <div><span className="text-gray-400">Mailing address:</span> {hit.owner_mailing_address || '—'}</div>
               <div><span className="text-gray-400">Units:</span> {hit.unit_count ?? '—'}</div>
+              <div><span className="text-gray-400">Year built:</span> {hit.year_built ?? '—'}</div>
               <div><span className="text-gray-400">Assessed value:</span> {formatCurrency(hit.assessed_value)}</div>
               {hit.listing_price != null && (
                 <div><span className="text-gray-400">Listing price:</span> {formatCurrency(hit.listing_price)}</div>
@@ -371,6 +382,15 @@ const Sourcing = () => {
   const [filterMarketId, setFilterMarketId] = useState<string>('all');
   const [filterSource, setFilterSource] = useState<string>('all');
   const [stackedOnly, setStackedOnly] = useState(false);
+  // Big-bucket pivot: ingestion captures everything now, these are pure UI
+  // filters. Defaults match the stated target (20-80 units, built after
+  // 1960, no LIHTC) but are all removable — unknown values always pass
+  // through rather than being excluded (server-side, same permissive
+  // philosophy used everywhere else in this engine).
+  const [unitFilterOn, setUnitFilterOn] = useState(true);
+  const [builtAfterOn, setBuiltAfterOn] = useState(true);
+  const [excludeLihtcOn, setExcludeLihtcOn] = useState(true);
+  const [ownerSearch, setOwnerSearch] = useState('');
 
   const [expandedHitId, setExpandedHitId] = useState<string | null>(null);
   const [pinDrawerOpen, setPinDrawerOpen] = useState(false);
@@ -394,12 +414,17 @@ const Sourcing = () => {
         marketId: filterMarketId !== 'all' ? filterMarketId : undefined,
         source: filterSource !== 'all' ? filterSource : undefined,
         minStacked: stackedOnly ? 2 : undefined,
+        unitMin: unitFilterOn ? 20 : undefined,
+        unitMax: unitFilterOn ? 80 : undefined,
+        builtAfter: builtAfterOn ? 1960 : undefined,
+        excludeLihtc: excludeLihtcOn,
+        ownerSearch: ownerSearch.trim() || undefined,
       });
       setHits(loaded);
     } finally {
       setHitsLoading(false);
     }
-  }, [filterMarketId, filterSource, stackedOnly]);
+  }, [filterMarketId, filterSource, stackedOnly, unitFilterOn, builtAfterOn, excludeLihtcOn, ownerSearch]);
 
   const refreshPinnedHits = useCallback(async () => {
     const loaded = await signalsApi.fetchHits({ pinned: true });
@@ -749,6 +774,36 @@ const Sourcing = () => {
         >
           <Layers size={14} /> Stacked (2+)
         </button>
+        <button
+          onClick={() => setUnitFilterOn((v) => !v)}
+          className={`text-sm px-3 py-1.5 rounded-md border transition-colors ${
+            unitFilterOn ? 'bg-primary-50 text-primary-800 border-primary-200' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          20-80 units
+        </button>
+        <button
+          onClick={() => setBuiltAfterOn((v) => !v)}
+          className={`text-sm px-3 py-1.5 rounded-md border transition-colors ${
+            builtAfterOn ? 'bg-primary-50 text-primary-800 border-primary-200' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          Built after 1960
+        </button>
+        <button
+          onClick={() => setExcludeLihtcOn((v) => !v)}
+          className={`text-sm px-3 py-1.5 rounded-md border transition-colors ${
+            excludeLihtcOn ? 'bg-primary-50 text-primary-800 border-primary-200' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          Exclude LIHTC
+        </button>
+        <input
+          value={ownerSearch}
+          onChange={(e) => setOwnerSearch(e.target.value)}
+          placeholder="Search owner name…"
+          className="text-sm px-2.5 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:border-primary-500 w-48"
+        />
       </div>
 
       {/* Feed */}

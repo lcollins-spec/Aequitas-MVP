@@ -39,6 +39,8 @@ export interface SignalHit {
   owner_name?: string | null;
   owner_mailing_address?: string | null;
   unit_count?: number | null;
+  year_built?: number | null;
+  is_lihtc: boolean;
   assessed_value?: number | null;
   listing_price?: number | null;
   listing_broker?: string | null;
@@ -50,6 +52,7 @@ export interface SignalHit {
   note: string;
   status: HitStatus;
   stacked_count: number;
+  owner_stacked_count: number;
 }
 
 const BASE = '/api/v1/signals';
@@ -130,12 +133,22 @@ export async function fetchHits(params: {
   source?: string;
   pinned?: boolean;
   minStacked?: number;
+  unitMin?: number;
+  unitMax?: number;
+  builtAfter?: number;
+  excludeLihtc?: boolean;
+  ownerSearch?: string;
 } = {}): Promise<SignalHit[]> {
   const qs = new URLSearchParams();
   if (params.marketId) qs.set('market_id', params.marketId);
   if (params.source) qs.set('source', params.source);
   if (params.pinned !== undefined) qs.set('pinned', String(params.pinned));
   if (params.minStacked !== undefined) qs.set('min_stacked', String(params.minStacked));
+  if (params.unitMin !== undefined) qs.set('unit_min', String(params.unitMin));
+  if (params.unitMax !== undefined) qs.set('unit_max', String(params.unitMax));
+  if (params.builtAfter !== undefined) qs.set('built_after', String(params.builtAfter));
+  if (params.excludeLihtc !== undefined) qs.set('exclude_lihtc', String(params.excludeLihtc));
+  if (params.ownerSearch) qs.set('owner_search', params.ownerSearch);
   const r = await fetch(`${BASE}/hits${qs.toString() ? `?${qs}` : ''}`);
   const j = await unwrap<{ hits: SignalHit[] }>(r);
   return j.hits ?? [];
