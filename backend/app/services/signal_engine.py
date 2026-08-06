@@ -188,12 +188,14 @@ def run_market_scan(market):
             is_absentee = bool(mailing) and bool(situs) and mailing != situs
             if not (is_absentee or long_hold):
                 continue
-            # A feed carrying a property_type field (e.g. Sacramento's sales-
-            # history layer) lets us skip single-family/commercial/vacant-land
-            # rows outright; feeds without this field pass through unfiltered.
-            property_type = rec.get('property_type')
-            if property_type and 'multi' not in str(property_type).strip().lower():
-                continue
+            # No property-type gate here on purpose: it used to require the
+            # raw property_type string to literally contain "multi", which
+            # only ever matched Sacramento's exact wording ("Multiple Family
+            # Residence") and silently dropped every genuine multifamily
+            # record elsewhere (e.g. LA County's "Five or More Units or
+            # Apartments" never matches "multi"). property_type is still
+            # captured in raw_data for manual inspection; filtering by it
+            # is a UI/server-side-WHERE concern now, same as unit_count.
             hit_address = rec.get('situs_address') or rec.get('address')
             if _upsert_hit(market.id, 'absentee_owner', {
                 'address': hit_address,

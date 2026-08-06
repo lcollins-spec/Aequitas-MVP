@@ -22,6 +22,21 @@ logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT = 20
 
 
+def _extract(attrs, source):
+    """
+    Look up a mapped field's value. `source` is normally a single field name
+    (string) — the original, unchanged behavior. Some feeds split an address
+    across several fields with no single composed one (e.g. LA's code-
+    violations feed, Hamilton County's assessor layer); for those, `source`
+    can be a list of field names, joined with a space, skipping any that are
+    empty/null. Every existing config uses a plain string, so this is a no-op
+    for them.
+    """
+    if isinstance(source, list):
+        return ' '.join(str(attrs[s]) for s in source if attrs.get(s))
+    return attrs.get(source)
+
+
 def fetch_arcgis_feature_server(feed_url, field_mapping, limit=2000, where='1=1'):
     """
     Query an Esri FeatureServer/MapServer `/query` endpoint and normalize
@@ -56,7 +71,7 @@ def fetch_arcgis_feature_server(feed_url, field_mapping, limit=2000, where='1=1'
     records = []
     for feature in features:
         attrs = feature.get('attributes', {})
-        record = {target: attrs.get(source) for target, source in field_mapping.items()}
+        record = {target: _extract(attrs, source) for target, source in field_mapping.items()}
         records.append(record)
     return records
 
@@ -84,7 +99,7 @@ def fetch_socrata_dataset(feed_url, field_mapping, limit=2000, where=None):
 
     records = []
     for row in rows:
-        record = {target: row.get(source) for target, source in field_mapping.items()}
+        record = {target: _extract(row, source) for target, source in field_mapping.items()}
         records.append(record)
     return records
 
