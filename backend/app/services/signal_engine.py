@@ -74,6 +74,16 @@ def _upsert_hit(market_id, source, record, is_lihtc=False):
         return False
     units = record.get('unit_count')
     year_built = record.get('year_built')
+    # 0 is a "no data" sentinel in some county feeds (e.g. LA, Concord),
+    # never a real construction year — same class of issue as the HUD LIHTC
+    # dataset's 8888 sentinel (already handled in hud_datasets.py). Some
+    # feeds (Concord) return it as a padded string ('0000', '   0') rather
+    # than a literal 0/'0', so parse numerically before comparing.
+    try:
+        if year_built not in (None, '') and float(year_built) == 0:
+            year_built = None
+    except (TypeError, ValueError):
+        pass
 
     dedup_key = _make_dedup_key(market_id, source, address)
     existing = SignalHitModel.query.filter_by(dedup_key=dedup_key).first()
