@@ -296,6 +296,14 @@ def create_app(test_config=None):
                 db.session.commit()
                 logger.info("Disabled hud_lihtc_year15 signal — out of buy box, not a data problem")
 
+            loopnet_def = SignalDefinitionModel.query.filter_by(key='inbox_loopnet').first()
+            if loopnet_def and loopnet_def.stubbed:
+                loopnet_def.enabled = True
+                loopnet_def.stubbed = False
+                loopnet_def.disabled_reason = None
+                db.session.commit()
+                logger.info("Enabled inbox_loopnet signal — real Gmail connector + parser now built")
+
             sacramento = SignalMarketModel.query.filter_by(city='Sacramento', state='CA').first()
             if sacramento:
                 if not sacramento.code_violations_feed_url:

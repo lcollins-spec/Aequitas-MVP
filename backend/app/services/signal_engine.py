@@ -292,10 +292,73 @@ def run_market_scan(market):
     return created
 
 
+def scan_inbox():
+    """
+    Fetch and parse the "Sourcing Feed" Gmail label once — unlike every
+    other signal, inbox mail isn't scoped to one market's feed config, so
+    this runs a single time per "scan all" rather than once per market
+    (avoids re-fetching/re-parsing the same mailbox once per market).
+    Matches each listing's city/state against every configured market and
+    upserts into whichever one matches; listings that don't match any
+    configured market are skipped and counted, not guessed into one.
+    """
+    signal_defs = {s.key: s for s in SignalDefinitionModel.query.filter_by(enabled=True, stubbed=False).all()}
+    inbox_keys = {'inbox_loopnet', 'inbox_crexi'}
+    if not (inbox_keys & signal_defs.keys()):
+        return 0
+
+    from app.services import gmail_connector, inbox_parser
+
+    try:
+        messages = gmail_connector.fetch_sourcing_feed_messages()
+    except Exception as e:
+        logger.warning(f"Gmail inbox fetch failed: {e}")
+        return 0
+
+    markets = SignalMarketModel.query.all()
+
+    def _find_market(city, state):
+        city_n = (city or '').strip().lower()
+        state_n = (state or '').strip().lower()
+        if not city_n or not state_n:
+            return None
+        for m in markets:
+            if m.city.strip().lower() == city_n and m.state.strip().lower() == state_n:
+                return m
+        return None
+
+    lihtc_cache = {}
+
+    def _is_lihtc(market, address):
+        if market.id not in lihtc_cache:
+            lihtc_cache[market.id] = hud_datasets.get_lihtc_addresses_for_market(market)
+        return _normalize_address(address) in lihtc_cache[market.id]
+
+    created = 0
+    unmatched = 0
+    for message in messages:
+        for listing in inbox_parser.parse_message(message):
+            if listing['source'] not in signal_defs:
+                continue
+            market = _find_market(listing.get('city'), listing.get('state'))
+            if not market:
+                unmatched += 1
+                continue
+            if _upsert_hit(market.id, listing['source'], listing, is_lihtc=_is_lihtc(market, listing['address'])):
+                created += 1
+
+    if unmatched:
+        logger.info(f"Inbox scan: {unmatched} listing(s) skipped — no configured market matched their city/state")
+
+    db.session.commit()
+    return created
+
+
 def run_all_market_scans():
     total = 0
     for market in SignalMarketModel.query.all():
         total += run_market_scan(market)
+    total += scan_inbox()
     return total
 
 
