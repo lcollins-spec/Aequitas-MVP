@@ -810,15 +810,24 @@ const Sourcing = () => {
               </div>
             </div>
             <div>
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Inbox</div>
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                Inbox <span className="normal-case font-normal text-gray-400">(reads the "Sourcing Feed" Gmail label only)</span>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 {inboxSignals.map((d) => (
                   <label
                     key={d.id}
                     title={d.stubbed ? d.disabled_reason ?? undefined : undefined}
-                    className="flex items-center gap-2 text-sm px-3 py-2 rounded-md border border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed"
+                    className={`flex items-center gap-2 text-sm px-3 py-2 rounded-md border ${
+                      d.stubbed ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50' : 'border-gray-200 cursor-pointer hover:bg-gray-50'
+                    }`}
                   >
-                    <input type="checkbox" checked={d.enabled} disabled />
+                    <input
+                      type="checkbox"
+                      checked={d.enabled}
+                      disabled={d.stubbed}
+                      onChange={() => handleToggleSignal(d)}
+                    />
                     {d.label}
                   </label>
                 ))}
