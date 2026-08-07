@@ -1,5 +1,6 @@
 """
-One-time script to obtain a Google OAuth refresh token for Drive access.
+One-time script to obtain a Google OAuth refresh token for Drive + Gmail
+(read-only) access.
 
 Usage:
     cd backend
@@ -8,12 +9,20 @@ Usage:
 
 Prerequisites:
     - GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set in backend/.env
-    - Your Google Cloud project must have the Drive API enabled
+    - Your Google Cloud project must have both the Drive API and the Gmail
+      API enabled
     - Add http://localhost:8080/ as an authorised redirect URI in your OAuth client
 
 After running:
     - Copy the printed refresh token
     - Add it to Render as the environment variable: GOOGLE_REFRESH_TOKEN
+      (replaces the existing Drive-only token — the new one covers both)
+
+Note on scope: gmail.readonly grants read access to the whole mailbox at
+the Google level — there's no OAuth scope limited to a single label. The
+inbox connector (gmail_connector.py) restricts itself in code to only ever
+query the "Sourcing Feed" label; that's an application-level restriction,
+not a token-level one.
 """
 
 import os
@@ -38,7 +47,10 @@ if not client_id or not client_secret:
 
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-SCOPES = ["https://www.googleapis.com/auth/drive"]
+SCOPES = [
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/gmail.readonly",
+]
 
 client_config = {
     "installed": {
