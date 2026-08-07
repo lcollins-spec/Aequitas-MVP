@@ -12,10 +12,23 @@ import {
   Upload,
   Trash2,
   Sliders,
+  BarChart3,
 } from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  Cell,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 import * as signalsApi from '../services/signalsApi';
 import { HIT_STATUSES } from '../services/signalsApi';
-import type { SignalMarket, SignalDefinition, SignalHit, HitStatus, MarketFeedPayload } from '../services/signalsApi';
+import type { SignalMarket, SignalDefinition, SignalHit, HitStatus, MarketFeedPayload, MarketInsights } from '../services/signalsApi';
 
 function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -367,6 +380,152 @@ const MarketFeedConfig = ({ market, onSave }: MarketFeedConfigProps) => {
   );
 };
 
+// ── Insights panel ───────────────────────────────────────────────────────────
+
+const SOURCE_COLORS: Record<string, string> = {
+  absentee_owner: '#3b82f6',
+  code_violations: '#f59e0b',
+  tax_delinquency: '#ef4444',
+  hud_fha_loan_maturity: '#8b5cf6',
+  hud_section8_contract_expiration: '#10b981',
+};
+
+interface InsightsPanelProps {
+  markets: SignalMarket[];
+}
+
+const InsightsPanel = ({ markets }: InsightsPanelProps) => {
+  const [marketId, setMarketId] = useState('all');
+  const [insights, setInsights] = useState<MarketInsights | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    signalsApi.fetchInsights(marketId)
+      .then((data) => { if (mounted) setInsights(data); })
+      .finally(() => { if (mounted) setLoading(false); });
+    return () => { mounted = false; };
+  }, [marketId]);
+
+  const bySourceData = insights
+    ? Object.entries(insights.by_source).map(([source, count]) => ({ source, count }))
+    : [];
+  const trendByMarket: Record<string, { ran_at: string; hits_total_after: number }[]> = {};
+  (insights?.trend ?? []).forEach((t) => {
+    (trendByMarket[t.market_id] ??= []).push({ ran_at: t.ran_at, hits_total_after: t.hits_total_after });
+  });
+
+  return (
+    <div className="p-4 space-y-4">
+      <select
+        value={marketId}
+        onChange={(e) => setMarketId(e.target.value)}
+        className="text-sm px-2.5 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:border-primary-500"
+      >
+        <option value="all">All markets</option>
+        {markets.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+      </select>
+
+      {loading && <div className="text-sm text-gray-400">Loading…</div>}
+
+      {!loading && insights && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-gray-50 rounded-lg p-3">
+              <div className="text-xs text-gray-500">Total hits</div>
+              <div className="text-xl font-semibold text-gray-800">{insights.total_hits.toLocaleString()}</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <div className="text-xs text-gray-500">Avg. unit count</div>
+              <div className="text-xl font-semibold text-gray-800">{insights.avg_unit_count ?? '—'}</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <div className="text-xs text-gray-500">Avg. year built</div>
+              <div className="text-xl font-semibold text-gray-800">{insights.avg_year_built ?? '—'}</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <div className="text-xs text-gray-500">New (7 days)</div>
+              <div className="text-xl font-semibold text-gray-800">{insights.new_last_7_days.toLocaleString()}</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Unit size distribution</div>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={insights.unit_histogram} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                  <XAxis dataKey="bucket" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Hits by source</div>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={bySourceData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                  <XAxis dataKey="source" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={50} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                    {bySourceData.map((d) => (
+                      <Cell key={d.source} fill={SOURCE_COLORS[d.source] ?? '#6b7280'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {Object.keys(trendByMarket).length > 0 && (
+            <div>
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                Hits over time {marketId === 'all' ? '(per market)' : ''}
+              </div>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                  <XAxis
+                    dataKey="ran_at"
+                    type="category"
+                    allowDuplicatedCategory={false}
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#6b7280', fontSize: 10 }}
+                    tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip labelFormatter={(v) => new Date(v as string).toLocaleString()} />
+                  {Object.entries(trendByMarket).map(([mid, points], i) => (
+                    <Line
+                      key={mid}
+                      data={points}
+                      dataKey="hits_total_after"
+                      name={markets.find((m) => m.id === mid)?.name ?? mid}
+                      stroke={['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'][i % 7]}
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          <div className="flex gap-4 text-xs text-gray-500">
+            <span>{insights.stacked_2plus_count} addresses matched 2+ signals</span>
+            <span>{insights.lihtc_excluded_count} excluded as LIHTC</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 const Sourcing = () => {
@@ -396,6 +555,7 @@ const Sourcing = () => {
   const [pinDrawerOpen, setPinDrawerOpen] = useState(false);
   const [showSignalPanel, setShowSignalPanel] = useState(false);
   const [showMarketEditor, setShowMarketEditor] = useState(false);
+  const [showInsightsPanel, setShowInsightsPanel] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [newMarketName, setNewMarketName] = useState('');
   const [newMarketCity, setNewMarketCity] = useState('');
@@ -599,6 +759,20 @@ const Sourcing = () => {
           <strong>{digestCount}</strong> new hit{digestCount === 1 ? '' : 's'} in the last 7 days.
         </div>
       )}
+
+      {/* Insights panel */}
+      <div className="mb-4 border border-gray-200 rounded-lg overflow-hidden">
+        <button
+          onClick={() => setShowInsightsPanel((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+        >
+          <span className="flex items-center gap-2">
+            <BarChart3 size={15} /> Insights
+          </span>
+          {showInsightsPanel ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
+        {showInsightsPanel && <InsightsPanel markets={markets} />}
+      </div>
 
       {/* Signal toggle panel */}
       <div className="mb-4 border border-gray-200 rounded-lg overflow-hidden">

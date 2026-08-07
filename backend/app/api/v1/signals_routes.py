@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 
 from flask import Blueprint, request, jsonify
 
-from app.database import db, SignalMarketModel, SignalDefinitionModel, SignalHitModel
+from app.database import db, SignalMarketModel, SignalDefinitionModel, SignalHitModel, SignalScanRunModel
 from app.services import signal_engine
 
 logger = logging.getLogger(__name__)
@@ -180,6 +180,90 @@ def list_hits():
         results.append(h.to_dict(stacked_count=stacked, owner_stacked_count=owner_stacked))
 
     return jsonify({'hits': results}), 200
+
+
+def _unit_bucket(units):
+    if units is None:
+        return 'unknown'
+    if units < 20:
+        return '<20'
+    if units < 40:
+        return '20-39'
+    if units < 60:
+        return '40-59'
+    if units < 80:
+        return '60-79'
+    return '80+'
+
+
+def _decade_bucket(year):
+    if year is None:
+        return 'unknown'
+    if year < 1960:
+        return 'pre-1960'
+    return f'{(year // 10) * 10}s'
+
+
+@signals_bp.route('/signals/markets/<market_id>/insights', methods=['GET'])
+def market_insights(market_id):
+    query = SignalHitModel.query
+    if market_id != 'all':
+        if not SignalMarketModel.query.get(market_id):
+            return jsonify({'error': 'Market not found'}), 404
+        query = query.filter_by(market_id=market_id)
+    hits = query.all()
+
+    unit_counts = [h.unit_count for h in hits if h.unit_count is not None]
+    year_builts = [h.year_built for h in hits if h.year_built is not None]
+
+    unit_buckets = defaultdict(int)
+    for h in hits:
+        unit_buckets[_unit_bucket(h.unit_count)] += 1
+    year_buckets = defaultdict(int)
+    for h in hits:
+        year_buckets[_decade_bucket(h.year_built)] += 1
+
+    by_source = defaultdict(int)
+    for h in hits:
+        by_source[h.source] += 1
+
+    address_groups = defaultdict(set)
+    for h in hits:
+        address_groups[(h.market_id, _normalized_address_of(h))].add(h.source)
+    stacked_2plus = sum(1 for sources in address_groups.values() if len(sources) >= 2)
+
+    since = datetime.utcnow() - timedelta(days=7)
+    new_last_7_days = sum(1 for h in hits if h.first_seen_at and h.first_seen_at >= since)
+
+    trend_query = SignalScanRunModel.query.order_by(SignalScanRunModel.ran_at)
+    if market_id != 'all':
+        trend_query = trend_query.filter_by(market_id=market_id)
+    else:
+        trend_query = trend_query.filter(SignalScanRunModel.market_id.isnot(None))
+    trend_rows = trend_query.all()
+    # Global "all" trend: sum hits_total_after across markets per scan
+    # timestamp isn't meaningful (different markets scan at different
+    # times) — keep it simple and just show each market's own points on
+    # one chart, distinguished by market_id, rather than trying to merge
+    # them into one synthetic series.
+    trend = [{'ran_at': r.ran_at.isoformat(), 'market_id': r.market_id, 'hits_total_after': r.hits_total_after}
+              for r in trend_rows]
+
+    return jsonify({
+        'total_hits': len(hits),
+        'avg_unit_count': round(sum(unit_counts) / len(unit_counts), 1) if unit_counts else None,
+        'avg_year_built': round(sum(year_builts) / len(year_builts)) if year_builts else None,
+        'unit_histogram': [{'bucket': b, 'count': unit_buckets[b]} for b in ['<20', '20-39', '40-59', '60-79', '80+', 'unknown'] if unit_buckets[b]],
+        'year_built_histogram': sorted(
+            ({'bucket': b, 'count': c} for b, c in year_buckets.items()),
+            key=lambda x: (x['bucket'] == 'unknown', x['bucket'])
+        ),
+        'by_source': dict(by_source),
+        'lihtc_excluded_count': sum(1 for h in hits if h.is_lihtc),
+        'stacked_2plus_count': stacked_2plus,
+        'new_last_7_days': new_last_7_days,
+        'trend': trend,
+    }), 200
 
 
 @signals_bp.route('/signals/hits/<hit_id>', methods=['PATCH'])

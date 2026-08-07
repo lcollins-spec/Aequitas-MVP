@@ -10,7 +10,7 @@ import re
 import uuid
 from datetime import datetime
 
-from app.database import db, SignalMarketModel, SignalDefinitionModel, SignalHitModel
+from app.database import db, SignalMarketModel, SignalDefinitionModel, SignalHitModel, SignalScanRunModel
 from app.services import signal_connectors, hud_datasets
 
 logger = logging.getLogger(__name__)
@@ -268,6 +268,17 @@ def run_market_scan(market):
                 created += 1
 
     db.session.commit()
+
+    # One row per market per scan — powers the insights "what's new" /
+    # trend view. Logged after the commit above so hits_total_after reflects
+    # what actually landed.
+    total_after = SignalHitModel.query.filter_by(market_id=market.id).count()
+    db.session.add(SignalScanRunModel(
+        id=uuid.uuid4().hex, market_id=market.id,
+        hits_created=created, hits_total_after=total_after,
+    ))
+    db.session.commit()
+
     return created
 
 

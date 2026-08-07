@@ -2049,6 +2049,26 @@ class SignalHitModel(db.Model):
         }
 
 
+class SignalScanRunModel(db.Model):
+    """One row per scan run — powers the insights 'what's new' / trend view."""
+    __tablename__ = 'signal_scan_runs'
+
+    id = Column(String(64), primary_key=True)
+    market_id = Column(String(64), ForeignKey('signal_markets.id'), nullable=True, index=True)  # null = all-markets run
+    ran_at = Column(DateTime, default=func.now(), nullable=False, index=True)
+    hits_created = Column(Integer, nullable=False, default=0)
+    hits_total_after = Column(Integer, nullable=False, default=0)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'market_id': self.market_id,
+            'ran_at': self.ran_at.isoformat() if self.ran_at else None,
+            'hits_created': self.hits_created,
+            'hits_total_after': self.hits_total_after,
+        }
+
+
 # ── Operating Performance table ───────────────────────────────────────────────
 
 class DealOpPerformanceModel(db.Model):

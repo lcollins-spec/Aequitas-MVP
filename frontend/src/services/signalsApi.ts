@@ -187,3 +187,23 @@ export async function fetchDigest(): Promise<{ count: number; hits: SignalHit[] 
   const r = await fetch(`${BASE}/digest`);
   return unwrap<{ count: number; hits: SignalHit[] }>(r);
 }
+
+// ── Insights ─────────────────────────────────────────────────────────────────
+
+export interface MarketInsights {
+  total_hits: number;
+  avg_unit_count: number | null;
+  avg_year_built: number | null;
+  unit_histogram: { bucket: string; count: number }[];
+  year_built_histogram: { bucket: string; count: number }[];
+  by_source: Record<string, number>;
+  lihtc_excluded_count: number;
+  stacked_2plus_count: number;
+  new_last_7_days: number;
+  trend: { ran_at: string; market_id: string; hits_total_after: number }[];
+}
+
+export async function fetchInsights(marketId: string): Promise<MarketInsights> {
+  const r = await fetch(`${BASE}/markets/${marketId}/insights`);
+  return unwrap<MarketInsights>(r);
+}
