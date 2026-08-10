@@ -360,6 +360,28 @@ def create_app(test_config=None):
     except Exception as e:
         logger.warning(f"Known-good feed config patch note: {e}")
 
+    # Seed funder-engine definitions (the two automated capital-source scans).
+    # National, no market table — idempotent, only inserts on an empty table.
+    try:
+        with app.app_context():
+            from app.database import FunderDefinitionModel
+            import time as _time
+
+            if FunderDefinitionModel.query.count() == 0:
+                seed_funder_defs = [
+                    ('family_office_adv', 'Family Offices (SEC Form ADV)'),
+                    ('bank_cre_growth', 'Banks Growing CRE Loan Book (FDIC)'),
+                ]
+                for i, (key, label) in enumerate(seed_funder_defs):
+                    db.session.add(FunderDefinitionModel(
+                        id=str(int(_time.time() * 1000) + 200 + i),
+                        key=key, label=label, enabled=True, stubbed=False,
+                    ))
+                db.session.commit()
+                logger.info("Seeded default funder_definitions (family_office_adv, bank_cre_growth)")
+    except Exception as e:
+        logger.warning(f"Funder engine seed data note: {e}")
+
     # Enable CORS for frontend communication (only in development)
     # In production (Docker), CORS not needed as same-origin
     if not in_docker:
@@ -516,6 +538,10 @@ def create_app(test_config=None):
     # Sourcing signals engine (public-records + HUD lead-sourcing, surfaced at /sourcing)
     from .api.v1.signals_routes import signals_bp
     app.register_blueprint(signals_bp, url_prefix='/api/v1')
+
+    # Funders engine (capital-source sourcing, surfaced at /funders)
+    from .api.v1.funders_routes import funders_bp
+    app.register_blueprint(funders_bp, url_prefix='/api/v1')
 
     # Generic app-data key-value store (sourcing, fund settings, op performance)
     from .api.v1.app_data_routes import app_data_bp

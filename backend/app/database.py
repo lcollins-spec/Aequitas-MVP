@@ -2069,6 +2069,82 @@ class SignalScanRunModel(db.Model):
         }
 
 
+# ── Funders (capital-source sourcing) ─────────────────────────────────────────
+# National, market-independent counterpart to the property signal engine above —
+# family offices and banks are national datasets, so there's no market concept
+# here at all (contrast with signal_markets, which every property connector needs).
+
+class FunderDefinitionModel(db.Model):
+    """Toggleable funder-source entries for the two automated (API-backed) sources."""
+    __tablename__ = 'funder_definitions'
+
+    id = Column(String(64), primary_key=True)
+    key = Column(String(100), nullable=False, unique=True)
+    label = Column(String(255), nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+    stubbed = Column(Boolean, nullable=False, default=False)
+    disabled_reason = Column(Text, nullable=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'key': self.key,
+            'label': self.label,
+            'enabled': self.enabled,
+            'stubbed': self.stubbed,
+            'disabled_reason': self.disabled_reason,
+        }
+
+
+class FunderHitModel(db.Model):
+    """A capital source — family office, bank, or curated emerging-manager program."""
+    __tablename__ = 'funder_hits'
+    __table_args__ = (
+        Index('ix_funder_hits_dedup', 'dedup_key', unique=True),
+    )
+
+    id = Column(String(64), primary_key=True)
+    source = Column(String(50), nullable=False, index=True)  # family_office_adv | bank_cre_growth | curated_emerging_manager
+    name = Column(String(255), nullable=False, default='')
+    entity_type = Column(String(50), nullable=True)
+    city = Column(String(255), nullable=True)
+    state = Column(String(50), nullable=True)
+    aum = Column(Float, nullable=True)
+    cre_loan_total = Column(Float, nullable=True)
+    cre_growth_pct = Column(Float, nullable=True)
+    contact_address = Column(String(500), nullable=True)
+    external_id = Column(String(255), nullable=True)
+    raw_data = Column(Text, nullable=True)  # JSON — curated-entry program details, contacts, application URL, check size
+    dedup_key = Column(String(300), nullable=False)  # f"{source}:{external_id}"
+    first_seen_at = Column(DateTime, default=func.now(), nullable=False)
+    last_seen_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    pinned = Column(Boolean, nullable=False, default=False)
+    note = Column(Text, nullable=False, default='')
+    # Fixed set: New, Researching, Contacted, Meeting Scheduled, Committed, Passed.
+    status = Column(String(30), nullable=False, default='New')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'source': self.source,
+            'name': self.name,
+            'entity_type': self.entity_type,
+            'city': self.city,
+            'state': self.state,
+            'aum': self.aum,
+            'cre_loan_total': self.cre_loan_total,
+            'cre_growth_pct': self.cre_growth_pct,
+            'contact_address': self.contact_address,
+            'external_id': self.external_id,
+            'raw_data': self.raw_data,
+            'first_seen_at': self.first_seen_at.isoformat() if self.first_seen_at else None,
+            'last_seen_at': self.last_seen_at.isoformat() if self.last_seen_at else None,
+            'pinned': self.pinned,
+            'note': self.note,
+            'status': self.status,
+        }
+
+
 # ── Operating Performance table ───────────────────────────────────────────────
 
 class DealOpPerformanceModel(db.Model):
