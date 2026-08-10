@@ -150,14 +150,18 @@ const HitCard = ({ hit, market, defs, expanded, onToggle, onPin, onNoteChange, o
       <div className="flex items-start justify-between cursor-pointer" onClick={onToggle}>
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <input
-              type="checkbox"
-              checked={selected}
+            <label
               onClick={(e) => e.stopPropagation()}
-              onChange={onSelectToggle}
-              aria-label="Select for export"
-              className="mr-1"
-            />
+              className="flex items-center p-1.5 -m-1.5 mr-0.5 cursor-pointer"
+            >
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={onSelectToggle}
+                aria-label="Select for export"
+                className="w-4 h-4 accent-primary-800 cursor-pointer"
+              />
+            </label>
             <h3 className="font-medium text-gray-800">{hit.address || 'Unknown address'}</h3>
             {hit.stacked_count >= 2 && (
               <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
