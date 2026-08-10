@@ -107,11 +107,11 @@ def fetch_family_offices():
                 'aum': None,
                 'contact_address': contact_address,
                 'external_id': src.get('firm_source_id'),
-                'raw_data': json.dumps({
+                'raw_data': {
                     'sec_number': src.get('firm_ia_full_sec_number'),
                     'other_names': src.get('firm_other_names'),
                     'branches_count': src.get('firm_branches_count'),
-                }),
+                },
             })
 
         start += len(hits)
@@ -198,11 +198,11 @@ def fetch_bank_cre_growth():
             'cre_growth_pct': round(cre_growth_pct * 100, 2),
             'contact_address': None,
             'external_id': str(cert),
-            'raw_data': json.dumps({
+            'raw_data': {
                 'cert': cert, 'repdte_latest': latest_repdte, 'repdte_prior': prior_repdte,
                 'cre_loans_prior': cre0 * 1000, 'cre_loans_latest': cre1 * 1000,
                 'assets_prior': asset0 * 1000, 'assets_latest': asset1 * 1000,
-            }),
+            },
         })
 
     candidates.sort(key=lambda r: r['cre_growth_pct'], reverse=True)
