@@ -164,6 +164,15 @@ export async function updateHit(id: string, patch: { pinned?: boolean; note?: st
   return j.hit;
 }
 
+export async function exportHits(hitIds: string[]): Promise<{ sheet_url: string }> {
+  const r = await fetch(`${BASE}/hits/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hit_ids: hitIds }),
+  });
+  return unwrap<{ sheet_url: string }>(r);
+}
+
 export async function importTaxDelinquent(marketId: string, file: File): Promise<{ created: number }> {
   const form = new FormData();
   form.append('market_id', marketId);

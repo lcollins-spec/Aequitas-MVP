@@ -231,6 +231,86 @@ def list_files(deal_name: str) -> list:
     ]
 
 
+# ── Leads export ──────────────────────────────────────────────────────────────
+
+_leads_export_folder_id: str | None = None
+
+
+def _get_leads_export_folder_id() -> str:
+    """Find or create the leads-export folder (separate from deal documents). Cached in-process."""
+    global _leads_export_folder_id
+    if _leads_export_folder_id:
+        return _leads_export_folder_id
+
+    folder_name = "Aequitas Leads Exports"
+    service = _build_service()
+
+    query = (
+        f"name = '{folder_name}' "
+        "and mimeType = 'application/vnd.google-apps.folder' "
+        "and trashed = false"
+    )
+    try:
+        results = service.files().list(
+            q=query,
+            spaces="drive",
+            fields="files(id, name)",
+            pageSize=1,
+        ).execute()
+    except Exception as e:
+        raise RuntimeError(f"Drive API error while searching for leads-export folder: {e}") from e
+
+    files = results.get("files", [])
+    if files:
+        _leads_export_folder_id = files[0]["id"]
+        return _leads_export_folder_id
+
+    try:
+        meta = {
+            "name": folder_name,
+            "mimeType": "application/vnd.google-apps.folder",
+        }
+        folder = service.files().create(body=meta, fields="id").execute()
+        _leads_export_folder_id = folder["id"]
+        return _leads_export_folder_id
+    except Exception as e:
+        raise RuntimeError(f"Drive API error while creating leads-export folder: {e}") from e
+
+
+def upload_csv_as_sheet(csv_bytes: bytes, filename: str) -> dict:
+    """
+    Upload CSV bytes into the leads-export folder as a native Google Sheet.
+    Drive auto-converts a CSV upload into a real Sheet when the *target*
+    file's mimeType is set to the Sheets type, even though the uploaded
+    media itself is plain text/csv — no separate Sheets API/scope needed.
+
+    Returns: {"file_id": str, "web_view_link": str}
+    """
+    folder_id = _get_leads_export_folder_id()
+    service = _build_service()
+
+    file_meta = {
+        "name": filename,
+        "parents": [folder_id],
+        "mimeType": "application/vnd.google-apps.spreadsheet",
+    }
+    media = MediaIoBaseUpload(io.BytesIO(csv_bytes), mimetype="text/csv", resumable=False)
+
+    try:
+        uploaded = service.files().create(
+            body=file_meta,
+            media_body=media,
+            fields="id, webViewLink",
+        ).execute()
+    except Exception as e:
+        raise RuntimeError(f"Drive API error while uploading leads export '{filename}': {e}") from e
+
+    return {
+        "file_id": uploaded["id"],
+        "web_view_link": uploaded.get("webViewLink", ""),
+    }
+
+
 def delete_file(file_id: str) -> None:
     """
     Permanently delete a file by its Drive file ID.

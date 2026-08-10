@@ -13,6 +13,7 @@ import {
   Trash2,
   Sliders,
   BarChart3,
+  Download,
 } from 'lucide-react';
 import {
   BarChart,
@@ -139,14 +140,24 @@ interface HitCardProps {
   onPin: () => void;
   onNoteChange: (note: string) => void;
   onStatusChange: (status: HitStatus) => void;
+  selected: boolean;
+  onSelectToggle: () => void;
 }
 
-const HitCard = ({ hit, market, defs, expanded, onToggle, onPin, onNoteChange, onStatusChange }: HitCardProps) => {
+const HitCard = ({ hit, market, defs, expanded, onToggle, onPin, onNoteChange, onStatusChange, selected, onSelectToggle }: HitCardProps) => {
   return (
     <div className={`p-5 hover:bg-gray-50 transition-colors border-b border-gray-100 ${hit.stacked_count >= 2 ? 'border-l-2 border-amber-400' : ''}`}>
       <div className="flex items-start justify-between cursor-pointer" onClick={onToggle}>
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <input
+              type="checkbox"
+              checked={selected}
+              onClick={(e) => e.stopPropagation()}
+              onChange={onSelectToggle}
+              aria-label="Select for export"
+              className="mr-1"
+            />
             <h3 className="font-medium text-gray-800">{hit.address || 'Unknown address'}</h3>
             {hit.stacked_count >= 2 && (
               <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
@@ -556,6 +567,8 @@ const Sourcing = () => {
   const [showSignalPanel, setShowSignalPanel] = useState(false);
   const [showMarketEditor, setShowMarketEditor] = useState(false);
   const [showInsightsPanel, setShowInsightsPanel] = useState(false);
+  const [selectedForExport, setSelectedForExport] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [newMarketName, setNewMarketName] = useState('');
   const [newMarketCity, setNewMarketCity] = useState('');
@@ -685,6 +698,27 @@ const Sourcing = () => {
     applyHitUpdate(hit.id, updated);
   };
 
+  const handleSelectToggle = (hitId: string) => {
+    setSelectedForExport((prev) => {
+      const next = new Set(prev);
+      if (next.has(hitId)) next.delete(hitId); else next.add(hitId);
+      return next;
+    });
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const { sheet_url } = await signalsApi.exportHits(Array.from(selectedForExport));
+      window.open(sheet_url, '_blank');
+      setSelectedForExport(new Set());
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const handleNoteChange = async (hit: SignalHit, note: string) => {
     const updated = await signalsApi.updateHit(hit.id, { note });
     applyHitUpdate(hit.id, updated);
@@ -732,6 +766,15 @@ const Sourcing = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {selectedForExport.size > 0 && (
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm bg-white border border-primary-200 text-primary-800 rounded-md hover:bg-primary-50 transition-colors disabled:opacity-50"
+            >
+              <Download size={15} /> {exporting ? 'Exporting…' : `Export ${selectedForExport.size} to Sheet`}
+            </button>
+          )}
           <button
             onClick={() => setPinDrawerOpen(true)}
             className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-md text-gray-600 hover:bg-gray-50 transition-colors"
@@ -1009,6 +1052,8 @@ const Sourcing = () => {
               onPin={() => handlePinToggle(h)}
               onNoteChange={(note) => handleNoteChange(h, note)}
               onStatusChange={(status) => handleStatusChange(h, status)}
+              selected={selectedForExport.has(h.id)}
+              onSelectToggle={() => handleSelectToggle(h.id)}
             />
           ))
         )}

@@ -5,6 +5,8 @@ Public-records + HUD signal library run on-demand against an editable market
 list. See backend/app/services/signal_engine.py for the actual scan logic —
 this module is just the CRUD/trigger surface over it.
 """
+import csv
+import io
 import json
 import logging
 import re
@@ -16,6 +18,7 @@ from flask import Blueprint, request, jsonify
 
 from app.database import db, SignalMarketModel, SignalDefinitionModel, SignalHitModel, SignalScanRunModel
 from app.services import signal_engine
+from app.utils import google_drive
 
 logger = logging.getLogger(__name__)
 
@@ -300,6 +303,44 @@ def import_tax_delinquent():
     except Exception as e:
         logger.warning(f"tax-delinquent import failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+EXPORT_COLUMNS = [
+    'address', 'market', 'source', 'owner_name', 'owner_mailing_address',
+    'unit_count', 'year_built', 'is_lihtc', 'assessed_value', 'listing_price',
+    'listing_broker', 'listing_url', 'status', 'note', 'first_seen_at', 'last_seen_at',
+]
+
+
+@signals_bp.route('/signals/hits/export', methods=['POST'])
+def export_hits():
+    data = request.get_json() or {}
+    hit_ids = data.get('hit_ids') or []
+    if not hit_ids:
+        return jsonify({'error': 'hit_ids is required'}), 400
+
+    hits = SignalHitModel.query.filter(SignalHitModel.id.in_(hit_ids)).all()
+    if not hits:
+        return jsonify({'error': 'No matching hits found'}), 404
+
+    market_names = {m.id: m.name for m in SignalMarketModel.query.all()}
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=EXPORT_COLUMNS)
+    writer.writeheader()
+    for h in hits:
+        row = h.to_dict()
+        row['market'] = market_names.get(h.market_id, h.market_id)
+        writer.writerow({col: row.get(col) for col in EXPORT_COLUMNS})
+
+    filename = f"Aequitas Leads Export {datetime.utcnow().strftime('%Y-%m-%d %H%M')}"
+    try:
+        result = google_drive.upload_csv_as_sheet(buf.getvalue().encode('utf-8'), filename)
+    except Exception as e:
+        logger.warning(f"leads export failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+    return jsonify({'success': True, 'sheet_url': result['web_view_link']}), 200
 
 
 # ── Scan trigger ──────────────────────────────────────────────────────────────
