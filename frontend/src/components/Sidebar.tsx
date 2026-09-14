@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   Radar,
   Landmark,
+  Presentation,
 } from 'lucide-react';
 import { useState } from 'react';
 import GlobalUploadDealButton from './GlobalUploadDealButton';
@@ -25,6 +26,7 @@ const NAV_ITEMS = [
   { to: '/deal-execution', icon: Briefcase, label: 'Deal Execution' },
   { to: '/asset-management', icon: LayoutDashboard, label: 'Asset Management' },
   { to: '/pipeline', icon: Search, label: 'Pipeline' },
+  { to: '/pipeline/investor', icon: Presentation, label: 'Investor View' },
   { to: '/sourcing', icon: Radar, label: 'Sourcing' },
   { to: '/funders', icon: Landmark, label: 'Funders' },
   { to: '/market-analysis', icon: BarChart3, label: 'Market Analysis' },

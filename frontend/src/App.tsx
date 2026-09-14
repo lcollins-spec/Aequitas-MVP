@@ -5,6 +5,7 @@ import FundReturns from './pages/FundReturns';
 import Underwriting from './pages/Underwriting';
 import MapPage from './pages/MapPage';
 import Pipeline from './pages/Pipeline';
+import InvestorPipeline from './pages/InvestorPipeline';
 import Sourcing from './pages/Sourcing';
 import Funders from './pages/Funders';
 import GPPortfolio from './pages/GPPortfolio';
@@ -25,6 +26,7 @@ function App() {
             <Route path="/fund-returns" element={<FundReturns />} />
             <Route path="/underwriting" element={<Underwriting />} />
             <Route path="/pipeline" element={<Pipeline />} />
+            <Route path="/pipeline/investor" element={<InvestorPipeline />} />
             <Route path="/sourcing" element={<Sourcing />} />
             <Route path="/funders" element={<Funders />} />
             <Route path="/map" element={<MapPage />} />
