@@ -328,16 +328,18 @@ const SourcingMap = ({ properties, selectedMarket, onGeocode, focusPropId }: Sou
 interface PropertyModalProps {
   initial: Partial<SourcingProperty> | null;
   market: string;
+  operators: SourcingOperator[];
   onSave: (p: SourcingProperty) => void;
   onClose: () => void;
 }
 
-const PropertyModal = ({ initial, market, onSave, onClose }: PropertyModalProps) => {
+const PropertyModal = ({ initial, market, operators, onSave, onClose }: PropertyModalProps) => {
   const [form, setForm] = useState<Partial<SourcingProperty>>({
     address: '', units: 0, market, transaction_type: 'Acquisition',
     owner_name: '', operator_name: '', contact_name: '', contact_phone: '',
     contact_email: '', status: 'Identified', priority: 'medium', notes: '',
     deal_id: null,
+    business_plan: '', target_return: '', neighborhood: '', operator_id: null,
     ...initial,
   });
 
@@ -401,6 +403,10 @@ const PropertyModal = ({ initial, market, onSave, onClose }: PropertyModalProps)
       lat: form.lat,
       lng: form.lng,
       property_legislation: form.property_legislation,
+      business_plan: form.business_plan || '',
+      target_return: form.target_return || '',
+      neighborhood: form.neighborhood || '',
+      operator_id: form.operator_id || null,
     });
   };
 
@@ -471,6 +477,52 @@ const PropertyModal = ({ initial, market, onSave, onClose }: PropertyModalProps)
               onChange={e => f('operator_name', e.target.value)}
               className={inputCls}
             />
+          </div>
+          {/* Target Operator (linked) */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Target Operator (from Operators list)</label>
+            <select
+              value={form.operator_id || ''}
+              onChange={e => f('operator_id', e.target.value || null)}
+              className={inputCls}
+            >
+              <option value="">— None linked —</option>
+              {operators.map(o => (
+                <option key={o.id} value={o.id}>{o.name}{o.firm ? ` (${o.firm})` : ''}</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-gray-400 mt-1">Optional — links this property to an existing Operator record for richer display elsewhere. Doesn't replace Operator Name above.</p>
+          </div>
+          {/* Neighborhood */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Neighborhood / Area</label>
+            <textarea
+              rows={2} value={form.neighborhood || ''}
+              onChange={e => f('neighborhood', e.target.value)}
+              placeholder="e.g. East Austin — walkable corridor, opportunity zone"
+              className={`${inputCls} resize-none`}
+            />
+          </div>
+          {/* Business Plan */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Business Plan</label>
+            <textarea
+              rows={3} value={form.business_plan || ''}
+              onChange={e => f('business_plan', e.target.value)}
+              placeholder="e.g. Value-add reposition — renovate units over 18 months, push rents to market, refi at stabilization."
+              className={`${inputCls} resize-none`}
+            />
+          </div>
+          {/* Target Return */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Target Return</label>
+            <input
+              type="text" value={form.target_return || ''}
+              onChange={e => f('target_return', e.target.value)}
+              placeholder="e.g. ~15% IRR (target)"
+              className={inputCls}
+            />
+            <p className="text-[11px] text-gray-400 mt-1">Rough pre-underwriting target only — once a deal is underwritten, real cap rate/IRR is used instead.</p>
           </div>
           {/* Contact group */}
           <div className="space-y-3">
@@ -2035,6 +2087,7 @@ const Pipeline = () => {
           <PropertyModal
             initial={editProp}
             market={selectedMarket?.name ?? ''}
+            operators={data.operators}
             onSave={saveProp}
             onClose={() => { setShowAddProp(false); setEditProp(null); }}
           />
