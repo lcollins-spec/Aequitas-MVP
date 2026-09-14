@@ -148,17 +148,17 @@ const InvestorPipeline = () => {
         setExecVersion(v => v + 1);
 
         const docPairs = await Promise.all(allDeals.map(async d => {
-          if (!d.id) return [null, []] as const;
+          if (!d.id) return [null, [] as DealDocLink[]] as const;
           try {
             const r = await fetch(`/api/v1/documents/${d.id}`);
-            if (!r.ok) return [d.id, []] as const;
+            if (!r.ok) return [d.id, [] as DealDocLink[]] as const;
             const j = await r.json();
             const docs: DealDocLink[] = (j.documents || []).map((doc: any) => ({
               documentType: doc.documentType, fileName: doc.fileName, driveUrl: doc.driveUrl,
             }));
             return [d.id, docs] as const;
           } catch {
-            return [d.id, []] as const;
+            return [d.id, [] as DealDocLink[]] as const;
           }
         }));
         if (cancelled) return;
