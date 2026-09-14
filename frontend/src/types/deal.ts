@@ -11,7 +11,8 @@ export type PipelineStatus =
   | 'LOI Executed'
   | 'Under Contract'
   | 'Closed'
-  | 'Exited';
+  | 'Exited'
+  | 'Dead';
 
 export const PIPELINE_STATUSES: PipelineStatus[] = [
   'Analyzing',
@@ -20,6 +21,7 @@ export const PIPELINE_STATUSES: PipelineStatus[] = [
   'Under Contract',
   'Closed',
   'Exited',
+  'Dead',
 ];
 
 export const PIPELINE_STATUS_STYLES: Record<PipelineStatus, string> = {
@@ -29,6 +31,7 @@ export const PIPELINE_STATUS_STYLES: Record<PipelineStatus, string> = {
   'Under Contract':     'bg-amber-100 text-amber-700 border-amber-200',
   'Closed':             'bg-green-100 text-green-700 border-green-200',
   'Exited':             'bg-teal-100 text-teal-700 border-teal-200',
+  'Dead':               'bg-red-100 text-red-700 border-red-200',
 };
 
 const PIPELINE_STATUS_LS_KEY = 'aequitas_pipeline_statuses';

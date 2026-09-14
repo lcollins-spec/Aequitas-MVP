@@ -224,6 +224,15 @@ export interface DealExecutionRecord {
 
   // ─── Investment Memo Drive link ───────────────────────────────────────────
   memoDriveUrl?: string;
+
+  // ─── Investor Pipeline view fields (for deals with no linked SourcingProperty) ───
+  businessPlan?: string;
+  targetReturn?: string;
+  neighborhood?: string;
+  operatorId?: string;
+  /** Soft-hide from the investor pipeline deck only — the Deal itself is untouched
+   *  everywhere else in the app (Dashboard, GPPortfolio, etc). Reversible. */
+  hiddenFromInvestorView?: boolean;
 }
 
 const DEAL_EXEC_LS_KEY = 'aequitas_deal_executions';
