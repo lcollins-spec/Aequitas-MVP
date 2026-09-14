@@ -300,6 +300,10 @@ def create_property():
         gp_id=data.get('gp_id'),
         lat=data.get('lat'),
         lng=data.get('lng'),
+        business_plan=data.get('business_plan', ''),
+        target_return=data.get('target_return', ''),
+        neighborhood=data.get('neighborhood', ''),
+        operator_id=data.get('operator_id'),
     )
     db.session.add(prop)
     db.session.commit()
@@ -332,6 +336,10 @@ def bulk_create_properties():
             gp_id=data.get('gp_id'),
             lat=data.get('lat'),
             lng=data.get('lng'),
+            business_plan=data.get('business_plan', ''),
+            target_return=data.get('target_return', ''),
+            neighborhood=data.get('neighborhood', ''),
+            operator_id=data.get('operator_id'),
         )
         db.session.add(prop)
         created.append(prop)
@@ -346,7 +354,8 @@ def update_property(prop_id):
         return jsonify({'error': 'Not found'}), 404
     data = request.get_json() or {}
     for field in ['market', 'address', 'transaction_type', 'owner_name', 'operator_name',
-                  'contact_name', 'contact_phone', 'contact_email', 'status', 'priority', 'notes']:
+                  'contact_name', 'contact_phone', 'contact_email', 'status', 'priority', 'notes',
+                  'business_plan', 'target_return', 'neighborhood', 'operator_id']:
         if field in data:
             setattr(prop, field, data[field])
     if 'units' in data:

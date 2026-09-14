@@ -153,6 +153,28 @@ def create_app(test_config=None):
     except Exception as e:
         logger.warning(f"om_drive_url column migration note: {e}")
 
+    # Inline migration: add investor-pipeline-view columns to sourcing_properties if not present.
+    try:
+        with app.app_context():
+            from sqlalchemy import text, inspect as sa_inspect
+            inspector = sa_inspect(db.engine)
+            if 'sourcing_properties' in inspector.get_table_names():
+                cols = [c['name'] for c in inspector.get_columns('sourcing_properties')]
+                new_cols = {
+                    'business_plan': 'TEXT',
+                    'target_return': 'VARCHAR(255)',
+                    'neighborhood': 'TEXT',
+                    'operator_id': 'VARCHAR(64)',
+                }
+                with db.engine.connect() as conn:
+                    for col, col_type in new_cols.items():
+                        if col not in cols:
+                            conn.execute(text(f"ALTER TABLE sourcing_properties ADD COLUMN {col} {col_type}"))
+                            conn.commit()
+                            logger.info(f"Added '{col}' column to sourcing_properties")
+    except Exception as e:
+        logger.warning(f"investor pipeline columns migration note: {e}")
+
     # Inline migration: add tax_delinquent_feed_* columns to signal_markets if not present.
     try:
         with app.app_context():

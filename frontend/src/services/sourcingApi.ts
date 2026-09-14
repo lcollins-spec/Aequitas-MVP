@@ -25,6 +25,10 @@ export interface SourcingProperty {
   property_legislation?: string | null;
   activity_log?: string;
   om_drive_url?: string | null;
+  business_plan?: string;
+  target_return?: string;
+  neighborhood?: string;
+  operator_id?: string | null;
 }
 
 export interface SourcingBroker {

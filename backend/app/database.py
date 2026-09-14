@@ -1838,6 +1838,10 @@ class SourcingPropertyModel(db.Model):
     property_legislation = Column(Text, nullable=True)  # JSON — legislation fetched from Sourcing page
     activity_log = Column(Text, nullable=True, default='[]')  # JSON array of {timestamp, note}
     om_drive_url = Column(String(1000), nullable=True)  # Original OM file, uploaded to Drive after save
+    business_plan = Column(Text, nullable=True)  # Investor-facing narrative blurb
+    target_return = Column(String(255), nullable=True)  # Free-text rough target return, used pre-underwriting only
+    neighborhood = Column(Text, nullable=True)  # Area/submarket blurb, distinct from the coarse `market` field
+    operator_id = Column(String(64), nullable=True)  # Soft link to sourcing_operators.id; no DB-level FK (matches deal_id convention on this table)
 
     def to_dict(self):
         return {
@@ -1862,6 +1866,10 @@ class SourcingPropertyModel(db.Model):
             'property_legislation': self.property_legislation,
             'activity_log': self.activity_log or '[]',
             'om_drive_url': self.om_drive_url,
+            'business_plan': self.business_plan or '',
+            'target_return': self.target_return or '',
+            'neighborhood': self.neighborhood or '',
+            'operator_id': self.operator_id,
         }
 
 
