@@ -33,8 +33,8 @@ ROWS = {
     'cap_rate_valuation': 9,         # analyst's entry cap rate; display-only valuation column
     'sales_cost_pct': 10,
     'closing_cost_pct': 11,          # feeds Sources & Uses "Uses" total (Pro Forma!D38)
-    'working_capital_reserve': 85,   # $ total; derived from working_capital_per_unit x unit count
-    'working_capital_per_unit': 114, # informational raw input, mirrors what fed working_capital_reserve
+    'working_capital_reserve': 85,   # $ total; template formula =C114*SUM(C96:C111), written only for legacy raw totals
+    'working_capital_per_unit': 114, # $/unit input that drives working_capital_reserve
     'acquisition_fee_pct': 112,      # feeds Pro Forma!D42 (Acquisition Fee + Additional Costs)
     'additional_fees_total': 113,    # feeds Pro Forma!D42
     # LP / GP split
@@ -291,13 +291,11 @@ def export():
     if body.get('additionalFeesTotal') is not None:
         set_row(ROWS['additional_fees_total'], max(0.0, float(body['additionalFeesTotal'])))
 
-    # Working Capital/Reserve — $/unit input x unit count, so it stays in sync with
-    # whatever unit mix was actually sent (not the separately-tracked totalUnits field).
+    # Working Capital/Reserve — only the $/unit input is written. Inputs!C85 is a template
+    # formula (=C114*SUM(C96:C111)) so Excel computes the total from the live unit mix.
+    # A caller sending a raw total with no $/unit overwrites that formula for this export.
     if body.get('workingCapitalPerUnit') is not None:
-        wc_per_unit = float(body['workingCapitalPerUnit'])
-        set_row(ROWS['working_capital_per_unit'], wc_per_unit)
-        unit_count = sum(int(u.get('count') or 0) for u in (body.get('unitMix') or []))
-        set_row(ROWS['working_capital_reserve'], wc_per_unit * unit_count)
+        set_row(ROWS['working_capital_per_unit'], float(body['workingCapitalPerUnit']))
     elif body.get('workingCapitalReserveAmount') is not None:
         set_row(ROWS['working_capital_reserve'], float(body['workingCapitalReserveAmount']))
 

@@ -169,6 +169,17 @@ class UnderwritingExportBenchmarkTests(unittest.TestCase):
         self.assertAlmostEqual(ws['D37'].value, 16500000, delta=1.0)
         self.assertAlmostEqual(ws['D24'].value, 1100234 / 0.059472, delta=1.0)
 
+    def test_working_capital_total_is_computed_by_excel(self):
+        """The export writes only $/unit; Excel multiplies by the live unit count."""
+        mix = [{"unitType": "1BR", "count": 40, "askingRent": 1100, "avgSf": 700},
+               {"unitType": "2BR", "count": 30, "askingRent": 1400, "avgSf": 950}]
+        resp = self.client.post('/api/v2/underwriting/export',
+                                json=dict(V8_PAYLOAD, workingCapitalPerUnit=2000, unitMix=mix))
+        inputs = openpyxl.load_workbook(io.BytesIO(resp.data))['Inputs']
+        self.assertEqual(inputs['C85'].value, '=C114*SUM(C96:C111)')
+        ws = recalc(resp.data)['Pro Forma']
+        self.assertAlmostEqual(ws['D39'].value, 2000 * 70, delta=0.01)
+
     def test_blank_noi_still_prices_at_purchase_price(self):
         ws = export_and_recalc(self.client, dict(V8_PAYLOAD, ttmNoi=0))
         self.assertAlmostEqual(ws['D37'].value, 6700000, delta=1.0)
