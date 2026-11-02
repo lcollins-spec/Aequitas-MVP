@@ -21,8 +21,8 @@ abatement credit are two separate rows, not netted):
   row 56 = Total Non-controllable Opex (= 52:55 + 57)
   row 57 = Property Tax Abatement credit (negative contra-expense)
   row 79 = NOI after cap reserve
-  row 85 = Gross Sales Proceeds (exit valuation; adds back trailing-12 of
-           rows 55 and 57 at the exit month only)
+  row 85 = Gross Sales Proceeds (exit valuation = TTM NOI / exit cap, no
+           tax add-back — matches the source model, Milestone + Trails v8)
 
 Row 83 (TTM NOI, pre-existing/out of scope) uses a negative-width
 SUM(OFFSET(cell,,,,-12)) that has a confirmed LibreOffice headless
@@ -254,34 +254,33 @@ class UnderwritingExportAbatementTests(unittest.TestCase):
                     + ws.cell(row=54, column=39).value + month13_gross_tax + month13_credit)
         self.assertAlmostEqual(noncontrollable_month13, expected, places=2)
 
-    @unittest.skipUnless(LIBREOFFICE, 'LibreOffice not available for formula recalculation')
-    def test_exit_addback_direction_and_magnitude(self):
-        """The exit-month addback (row 85, mirrored by G22) must add back
-        trailing-12 gross tax + credit — i.e. the NET tax actually paid —
-        on top of TTM NOI. Verified by replicating row 83's own trailing-12
-        definition directly from row 79 (row 83 itself is skipped: it uses
-        a negative-width OFFSET with a confirmed LibreOffice-only
-        recalculation bug unrelated to this feature)."""
-        payload = dict(ASSESSED_PAYLOAD)
-        payload['insuranceGrowthRate'] = 0.08
-        payload['abatementPctSchedule'] = [0, 0.10, 0.70, 0.90, 0.90]
-        wb = recalc(self._export(payload))
+    def test_exit_formula_has_no_tax_addback(self):
+        """Row 85 (exit valuation) must be plain TTM NOI / exit cap, exactly as
+        in the source model (Milestone + Trails v8). A Jul 29 change added
+        trailing-12 property tax back onto NOI here, which removed taxes from
+        exit value entirely and overstated it ~16%."""
+        wb = openpyxl.load_workbook(io.BytesIO(self._export(BASE_PAYLOAD)), data_only=False)
         ws = wb['Pro Forma']
+        for col in range(column_index_from_string('Z'), column_index_from_string('FB') + 1):
+            letter = get_column_letter(col)
+            self.assertEqual(ws.cell(row=85, column=col).value, f'=IFERROR({letter}83/{letter}84,0)')
 
-        exit_month = int(ws['G18'].value)
-        cap_rate = ws['G23'].value
+    @unittest.skipUnless(LIBREOFFICE, 'LibreOffice not available for formula recalculation')
+    def test_abatement_in_place_at_exit_raises_exit_value(self):
+        """Abatements transfer to the buyer, so abatement savings in the
+        trailing-12 NOI at exit must flow through to a higher exit value.
+        Compares exit value (trailing-12 NOI / exit cap, i.e. what row 85
+        computes) with and without an abatement schedule; TTM NOI is rebuilt
+        from row 79 because of the LibreOffice-only negative-width OFFSET
+        issue noted above."""
+        def exit_value(abatement):
+            payload = dict(ASSESSED_PAYLOAD)
+            payload['abatementPctSchedule'] = abatement
+            ws = recalc(self._export(payload))['Pro Forma']
+            exit_month = int(ws['G18'].value)
+            return trailing_12_sum(ws, 79, exit_month) / ws['G23'].value
 
-        ttm_noi_exit = trailing_12_sum(ws, 79, exit_month)
-        addback = trailing_12_sum(ws, 55, exit_month) + trailing_12_sum(ws, 57, exit_month)
-        exit_noi = ttm_noi_exit + addback
-        exit_value = exit_noi / cap_rate
-
-        self.assertGreater(addback, 0, 'Net tax paid at exit should be positive (partial abatement)')
-        self.assertLess(addback, trailing_12_sum(ws, 55, exit_month),
-                         'Addback (net of credit) must be less than gross tax alone once abatement applies')
-        self.assertGreater(exit_value, 0)
-        print(f'\n[exit_addback] TTM NOI={ttm_noi_exit:,.2f}  addback={addback:,.2f}  '
-              f'exit NOI={exit_noi:,.2f}  exit value={exit_value:,.2f}')
+        self.assertGreater(exit_value([0, 0.10, 0.70, 0.90, 0.90]), exit_value([0, 0, 0, 0, 0]))
 
 
 if __name__ == '__main__':
