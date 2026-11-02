@@ -85,6 +85,10 @@ V8_PAYLOAD = {
     "refiInterestRate": 0.0625,
     "refiFinancingCostsPct": 0.005,
     "refiIoPeriods": 24,
+    "refiSizingMethod": "DSCR",
+    "refiTargetDscr": 1.25,
+    "refiTargetDy": 0.09,
+    "refiTargetLtv": 0.65,
     "rentGrowthRate": 0.02,
     "opexGrowthRate": 0.02,
     "exitCapRate": 0.0675,
@@ -179,6 +183,14 @@ class UnderwritingExportBenchmarkTests(unittest.TestCase):
         self.assertEqual(inputs['C85'].value, '=C114*SUM(C96:C111)')
         ws = recalc(resp.data)['Pro Forma']
         self.assertAlmostEqual(ws['D39'].value, 2000 * 70, delta=0.01)
+
+    def test_refi_sizing_inputs_drive_refi_loan(self):
+        """Sizing method and targets come from the Inputs tab, so changing them
+        on the Underwriting page changes the refi loan."""
+        ltv = export_and_recalc(self.client, dict(V8_PAYLOAD, refiSizingMethod='LTV', refiTargetLtv=0.60))
+        self.assertAlmostEqual(ltv['G46'].value, 0.60 * ltv['F24'].value, delta=1.0)
+        dscr = export_and_recalc(self.client, dict(V8_PAYLOAD, refiTargetDscr=1.40))
+        self.assertLess(dscr['G46'].value, V8_RESULTS['G46'][1], 'a stricter DSCR must shrink the refi loan')
 
     def test_blank_noi_still_prices_at_purchase_price(self):
         ws = export_and_recalc(self.client, dict(V8_PAYLOAD, ttmNoi=0))

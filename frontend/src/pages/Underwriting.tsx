@@ -306,6 +306,7 @@ const Underwriting = () => {
   const [refiTargetDscr, setRefiTargetDscr] = useState(1.25);
   const [refiTargetDy, setRefiTargetDy] = useState(0.09);
   const [refiTargetLtv, setRefiTargetLtv] = useState(0.65);
+  const [refiSizingMethod, setRefiSizingMethod] = useState<'DSCR' | 'DY' | 'LTV'>('DSCR');
 
   // growth & exit
   const [rentGrowthRate, setRentGrowthRate] = useState(0.02);
@@ -619,6 +620,9 @@ const Underwriting = () => {
       if (uw.refiTargetDy != null) setRefiTargetDy(uw.refiTargetDy > 1 ? uw.refiTargetDy / 100 : uw.refiTargetDy);
       const rtl = uw.refiTargetLtv ?? uw.refiLtv;
       if (rtl != null) setRefiTargetLtv(rtl > 1 ? rtl / 100 : rtl);
+      if (uw.refiSizingMethod === 'DSCR' || uw.refiSizingMethod === 'DY' || uw.refiSizingMethod === 'LTV') {
+        setRefiSizingMethod(uw.refiSizingMethod);
+      }
 
       // Waterfall
       if (uw.lpEquityShare != null) setLpEquityShare(uw.lpEquityShare > 1 ? uw.lpEquityShare / 100 : uw.lpEquityShare);
@@ -1012,8 +1016,10 @@ const Underwriting = () => {
       refiInterestRate,
       refiFinancingCostsPct,
       refiIoPeriods,
-      // refiTargetDscr/Dy/Ltv intentionally omitted — F52/F53/F54 in the template are
-      // fixed sizing constants, not per-deal inputs (confirmed during the Inputs-tab redesign).
+      refiSizingMethod,
+      refiTargetDscr,
+      refiTargetDy,
+      refiTargetLtv,
       rentGrowthRate,
       opexGrowthRate,
       exitCapRate,
@@ -1080,7 +1086,7 @@ const Underwriting = () => {
           abatementPctSchedule,
           seniorLtvPct, seniorInterestRate, seniorFinancingCostsPct, seniorIoPeriods,
           refiTermMonths, refiInterestRate, refiFinancingCostsPct, refiIoPeriods,
-          refiTargetDscr, refiTargetDy, refiTargetLtv,
+          refiTargetDscr, refiTargetDy, refiTargetLtv, refiSizingMethod,
           rentGrowthRate, opexGrowthRate, exitCapRate,
           lpEquityShare, amFeePct, pariPassu, preferredReturnPct, gpPromotePct,
           marketAnalysisDemographics: demoData ?? undefined,
@@ -1853,6 +1859,11 @@ const Underwriting = () => {
                   </div>
                 </div>
                 <p className="text-xs font-medium text-gray-500">Sizing Constraints</p>
+                <div><label className={lbl}>Size Loan By</label>
+                  <select value={refiSizingMethod} onChange={e => setRefiSizingMethod(e.target.value as 'DSCR' | 'DY' | 'LTV')} className={inp}>
+                    <option value="DSCR">Min DSCR</option><option value="DY">Min Debt Yield</option><option value="LTV">Max LTV</option>
+                  </select>
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                   <div><label className={lbl}>Min DSCR</label>
                     <input type="number" step="0.01" value={refiTargetDscr} onChange={e => setRefiTargetDscr(Number(e.target.value) || 0)} className={inp} /></div>

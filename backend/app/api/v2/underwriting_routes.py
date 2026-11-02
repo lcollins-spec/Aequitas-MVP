@@ -74,8 +74,6 @@ ROWS = {
     'senior_io_periods': 80,
     'senior_ltv_pct': 115,
     # Refinance loan
-    # Note: DSCR/DY/LTV sizing targets (F52/F53/F54 on Pro Forma) are fixed template
-    # constants, not per-deal inputs — intentionally not mapped here.
     'refi_term_months': 69,
     'refi_interest_rate': 55,
     'refi_financing_costs_pct': 70,
@@ -99,7 +97,14 @@ ROWS = {
     # Property tax abatement (5-year, one Inputs row per year)
     'abatement_pct_rows': [117, 118, 119, 120, 121],
     'insurance_base_cost_confirmed': 122,
+    # Refinance sizing (Pro Forma F46 picks which of F52/F53/F54 sizes the loan)
+    'refi_sizing_method': 123,       # 'DSCR' | 'DY' | 'LTV'
+    'refi_target_dscr': 124,
+    'refi_target_dy': 125,
+    'refi_target_ltv': 126,
 }
+
+REFI_SIZING_METHODS = ('DSCR', 'DY', 'LTV')
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
@@ -380,8 +385,15 @@ def export():
         set_row(ROWS['senior_io_periods'], int(body['seniorIoPeriods']))
 
     # ── Refinance loan ───────────────────────────────────────────────
-    # Note: DSCR/DY/LTV sizing targets (F52/F53/F54 on Pro Forma) are fixed template
-    # constants, not per-deal inputs — intentionally not written here.
+    if body.get('refiSizingMethod') in REFI_SIZING_METHODS:
+        set_row(ROWS['refi_sizing_method'], body['refiSizingMethod'])
+    if body.get('refiTargetDscr') is not None:
+        # A ratio (e.g. 1.25x), not a percent — never run through _to_decimal.
+        set_row(ROWS['refi_target_dscr'], float(body['refiTargetDscr']))
+    if body.get('refiTargetDy') is not None:
+        set_row(ROWS['refi_target_dy'], _to_decimal(body['refiTargetDy']))
+    if body.get('refiTargetLtv') is not None:
+        set_row(ROWS['refi_target_ltv'], _clamp01(_to_decimal(body['refiTargetLtv'])))
     if body.get('refiTermMonths') is not None:
         set_row(ROWS['refi_term_months'], int(body['refiTermMonths']))
     if body.get('refiInterestRate') is not None:
