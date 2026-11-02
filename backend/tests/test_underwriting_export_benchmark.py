@@ -146,14 +146,33 @@ def recalc(xlsx_bytes):
             return openpyxl.load_workbook(io.BytesIO(f.read()), data_only=True)
 
 
+def export_and_recalc(client, payload):
+    resp = client.post('/api/v2/underwriting/export', json=payload)
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    return recalc(resp.data)['Pro Forma']
+
+
 @unittest.skipUnless(LIBREOFFICE, 'LibreOffice not available for formula recalculation')
 class UnderwritingExportBenchmarkTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        client = create_app().test_client()
-        resp = client.post('/api/v2/underwriting/export', json=V8_PAYLOAD)
-        assert resp.status_code == 200, resp.get_data(as_text=True)
-        cls.ws = recalc(resp.data)['Pro Forma']
+        cls.client = create_app().test_client()
+        cls.ws = export_and_recalc(cls.client, V8_PAYLOAD)
+
+    def test_purchase_price_drives_acquisition_when_cap_rate_disagrees(self):
+        """Villa Christina: NOI / entry cap implies $18.5M but the price is
+        $16.5M. Sources & Uses must spend the purchase price; the cap-rate
+        valuation is display only."""
+        payload = dict(V8_PAYLOAD, ttmNoi=1100234, purchasePrice=16500000, entryCapRate=0.059472,
+                       seniorLtvPct=0.65)
+        ws = export_and_recalc(self.client, payload)
+        self.assertAlmostEqual(ws['D37'].value, 16500000, delta=1.0)
+        self.assertAlmostEqual(ws['D24'].value, 1100234 / 0.059472, delta=1.0)
+
+    def test_blank_noi_still_prices_at_purchase_price(self):
+        ws = export_and_recalc(self.client, dict(V8_PAYLOAD, ttmNoi=0))
+        self.assertAlmostEqual(ws['D37'].value, 6700000, delta=1.0)
+        self.assertGreater(ws['D32'].value, 0, 'LP equity must stay positive')
 
     def test_export_reproduces_v8_results(self):
         for cell, (label, expected) in V8_RESULTS.items():

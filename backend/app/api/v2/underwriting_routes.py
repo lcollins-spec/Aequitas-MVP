@@ -30,7 +30,7 @@ ROWS = {
     # Valuation
     'ttm_noi': 8,
     'purchase_price': 84,
-    'cap_rate_valuation': 9,         # feeds the equity-basis formula on Pro Forma
+    'cap_rate_valuation': 9,         # analyst's entry cap rate; display-only valuation column
     'sales_cost_pct': 10,
     'closing_cost_pct': 11,          # feeds Sources & Uses "Uses" total (Pro Forma!D38)
     'working_capital_reserve': 85,   # $ total; derived from working_capital_per_unit x unit count
@@ -273,12 +273,10 @@ def export():
     if purchase_price is not None:
         set_row(ROWS['purchase_price'], purchase_price)
 
-    # Cap Rate Aequitas Valuation — feeds the equity-basis formula on Pro Forma.
-    # Always derive from actual NOI / purchase price so the model's implied basis matches
-    # the confirmed purchase price. Fall back to the user-entered entry cap rate.
-    if ttm_noi and purchase_price:
-        set_row(ROWS['cap_rate_valuation'], ttm_noi / purchase_price)
-    elif body.get('entryCapRate') is not None:
+    # Cap Rate Aequitas Valuation — the analyst's own entry cap rate, written as entered.
+    # Display only (Pro Forma "Aequitas Valuation" / Delta columns): Sources & Uses spends
+    # Purchase Price directly (Pro Forma!D37 = C24 = Inputs!C84).
+    if body.get('entryCapRate') is not None:
         set_row(ROWS['cap_rate_valuation'], _to_decimal(body['entryCapRate']))
 
     if body.get('salesCostPct') is not None:
