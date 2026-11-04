@@ -208,5 +208,44 @@ class UnderwritingExportBenchmarkTests(unittest.TestCase):
                     self.assertAlmostEqual(actual, expected, delta=1.0, msg=label)
 
 
+class UnderwritingExportInputCheckTests(unittest.TestCase):
+    """Incomplete deals are refused with a clear message instead of exporting a
+    broken or misleading file (e.g. Douglas Avenue had no price; South Salt Lake
+    had no rents)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = create_app().test_client()
+
+    def _problems(self, **overrides):
+        resp = self.client.post('/api/v2/underwriting/export', json=dict(V8_PAYLOAD, **overrides))
+        if resp.status_code == 200:
+            return []
+        self.assertEqual(resp.status_code, 400)
+        return resp.get_json()['problems']
+
+    def test_complete_deal_exports(self):
+        self.assertEqual(self._problems(), [])
+
+    def test_missing_unit_mix_is_refused(self):
+        self.assertEqual(len(self._problems(unitMix=[])), 1)
+
+    def test_zero_rents_are_refused(self):
+        mix = [dict(u, askingRent=0) for u in V8_PAYLOAD['unitMix']]
+        self.assertEqual(len(self._problems(unitMix=mix)), 1)
+
+    def test_missing_purchase_price_is_refused(self):
+        self.assertEqual(len(self._problems(purchasePrice=0)), 1)
+
+    def test_hold_beyond_model_length_is_refused(self):
+        self.assertEqual(len(self._problems(holdPeriodYears=12)), 1)
+        self.assertEqual(self._problems(holdPeriodYears=11), [])
+
+    def test_hold_not_longer_than_bridge_is_refused(self):
+        self.assertEqual(len(self._problems(holdPeriodYears=2, bridgePeriodMonths=36)), 1)
+        self.assertEqual(len(self._problems(holdPeriodYears=3, bridgePeriodMonths=36)), 1)
+        self.assertEqual(self._problems(holdPeriodYears=4, bridgePeriodMonths=36), [])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -106,6 +106,9 @@ ROWS = {
 
 REFI_SIZING_METHODS = ('DSCR', 'DY', 'LTV')
 
+# The Pro Forma's monthly grid runs months 0-132 (columns Z:FB), so exit can be at most year 11.
+MAX_HOLD_YEARS = 11
+
 
 # ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -132,6 +135,28 @@ def _clamp01(val):
 def _as_list(val):
     """Wrap a scalar in a list; pass lists through unchanged."""
     return val if isinstance(val, list) else [val]
+
+
+def _export_input_problems(body):
+    """Inputs the model can't produce a meaningful result without. Each one otherwise
+    exports a file full of #DIV/0!/#N/A or returns that look real but aren't."""
+    problems = []
+    unit_mix = body.get('unitMix') or []
+    if sum(int(u.get('count') or 0) for u in unit_mix) <= 0:
+        problems.append('Add the unit mix (at least one unit).')
+    elif not any(float(u.get('askingRent') or u.get('rent') or 0) > 0 for u in unit_mix):
+        problems.append('Enter rents for the unit mix (all rents are $0).')
+    if not body.get('purchasePrice') or float(body['purchasePrice']) <= 0:
+        problems.append('Enter a purchase price.')
+    hold = body.get('holdPeriodYears') or body.get('holdingPeriod')
+    bridge = body.get('bridgePeriodMonths') or body.get('bridgeLoanTermMonths')
+    if hold is not None:
+        if not 1 <= int(hold) <= MAX_HOLD_YEARS:
+            problems.append(f'Hold period must be between 1 and {MAX_HOLD_YEARS} years.')
+        elif bridge is not None and int(hold) * 12 <= int(bridge):
+            problems.append('Hold period must be longer than the senior/bridge loan term, '
+                            'or the loan is never repaid in the model.')
+    return problems
 
 
 def _write_5yr_rows(ws, rows, value_or_list):
@@ -240,6 +265,11 @@ def export():
         return jsonify({'success': False, 'error': f'Template not found at {TEMPLATE_PATH}'}), 500
 
     body = request.get_json(silent=True) or {}
+
+    problems = _export_input_problems(body)
+    if problems:
+        return jsonify({'success': False, 'error': 'Fix before exporting: ' + ' '.join(problems),
+                        'problems': problems}), 400
 
     wb = openpyxl.load_workbook(TEMPLATE_PATH, keep_links=False)
     ws = wb['Inputs']
