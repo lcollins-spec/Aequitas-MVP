@@ -192,6 +192,17 @@ class UnderwritingExportBenchmarkTests(unittest.TestCase):
         dscr = export_and_recalc(self.client, dict(V8_PAYLOAD, refiTargetDscr=1.40))
         self.assertLess(dscr['G46'].value, V8_RESULTS['G46'][1], 'a stricter DSCR must shrink the refi loan')
 
+    def test_acquisition_fee_and_additional_costs_are_paid_at_closing(self):
+        """Like the source models' "Aequitas Acq Fee", the fee and additional costs
+        are Uses paid out at closing. Equity raised must equal cash spent at
+        closing, and LP + GP profit must equal deal-level levered profit (before
+        this, the fee was raised as equity but never spent, so it vanished)."""
+        ws = export_and_recalc(self.client, dict(V8_PAYLOAD, acquisitionFeePct=0.02, additionalFeesTotal=50000))
+        self.assertAlmostEqual(ws['D42'].value, 0.02 * 6700000 + 50000, delta=1.0)
+        self.assertAlmostEqual(ws['Z113'].value, -(ws['D31'].value + ws['D32'].value), delta=1.0)
+        self.assertAlmostEqual(ws['F8'].value + ws['G8'].value, ws['D8'].value, delta=1.0)
+        self.assertLess(ws['D10'].value, V8_RESULTS['D10'][1], 'fees must lower levered IRR')
+
     def test_blank_noi_still_prices_at_purchase_price(self):
         ws = export_and_recalc(self.client, dict(V8_PAYLOAD, ttmNoi=0))
         self.assertAlmostEqual(ws['D37'].value, 6700000, delta=1.0)
